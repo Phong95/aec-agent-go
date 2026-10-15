@@ -1,0 +1,1 @@
+{"traceId":"t1","spanId":"00000000-0000-4000-8000-000000000002","parentSpanId":"00000000-0000-4000-8000-000000000001","name":"iter-1","kind":"iteration","startTime":1700000000001,"status":"ok","attributes":{},"events":[{"name":"tick","timestamp":1700000000002},{"name":"tock","timestamp":1700000000003,"attributes":{"n":1}}],"endTime":1700000000004,"durationMs":3}

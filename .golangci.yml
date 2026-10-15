@@ -1,0 +1,101 @@
+version: "2"
+
+run:
+  go: "1.25"
+  tests: true
+
+linters:
+  default: standard
+  # gochecknoglobals stays disabled on purpose (04-CONTEXT): sentinel errors,
+  # kind descriptors and lookup tables are package-level by design.
+  enable: [errorlint, contextcheck, noctx, bodyclose, nilerr, exhaustive, gosec, revive, forbidigo, unparam, godot, intrange, usestdlibvars, unconvert, gocritic]
+  settings:
+    gocritic:
+      # A curated set of diagnostic checkers: each one flags a likely bug, not a
+      # style preference. The opinionated and performance tags (hugeParam,
+      # rangeValCopy, sprintfQuotedString ...) were tried and are mostly noise
+      # here. caseOrder and nilValReturn are left out on purpose: the generic
+      # switch of events.PayloadAs must test P before *P, and ordered.cloneValue
+      # must return a typed nil slice/map, not an untyped nil.
+      disable-all: true
+      enabled-checks:
+        - appendAssign
+        - badCall
+        - badCond
+        - badLock
+        - badRegexp
+        - badSorting
+        - badSyncOnceFunc
+        - deferInLoop
+        - dupArg
+        - dupBranchBody
+        - dupCase
+        - dupSubExpr
+        - evalOrder
+        - exitAfterDefer
+        - externalErrorReassign
+        - flagDeref
+        - flagName
+        - mapKey
+        - offBy1
+        - rangeAppendAll
+        - regexpMust
+        - returnAfterHttpError
+        - sloppyLen
+        - sloppyTypeAssert
+        - sloppyReassign
+        - truncateCmp
+        - uncheckedInlineErr
+        - weakCond
+    exhaustive:
+      # Error codes and event kinds are string-typed consts, which exhaustive
+      # treats as enums; a default case counts as handling the rest.
+      default-signifies-exhaustive: true
+    forbidigo:
+      forbid:
+        - pattern: '^fmt\.Print(f|ln)?$'
+          msg: use log/slog or an injected io.Writer instead of printing to stdout
+        - pattern: '^panic$'
+          msg: return an error; panic is only allowed in tests
+        - pattern: '^json\.Marshal$'
+          msg: use kernel.EncodeJSON / jsonx.Marshal (no-HTML-escape, wire-exact)
+        - pattern: '^json\.NewEncoder$'
+          msg: json.NewEncoder(...).Encode bypasses jsonx; use kernel.EncodeJSON / jsonx.Marshal
+  exclusions:
+    presets: [comments, std-error-handling, common-false-positives, legacy]
+    rules:
+      # Tests may print, panic and build fixture paths freely.
+      - path: _test\.go
+        linters: [forbidigo, gosec]
+      # Test helpers take constant arguments by design (one fixture, one name),
+      # which is all unparam reports there. The conformance suites are test code
+      # shipped as a package, so the same holds for them.
+      - path: (_test\.go|^conformance/)
+        linters: [unparam]
+      # Tests deliberately append into a second slice, use keys with odd
+      # whitespace as parser input, and log.Fatal after a defer in Example
+      # functions (the documented shape of a runnable example).
+      - path: _test\.go
+        linters: [gocritic]
+        text: '^(appendAssign|mapKey|exitAfterDefer):'
+      # The EventBus panic-isolation suite must register a panicking handler in
+      # non-test code, so the panic ban cannot apply to the conformance suites.
+      - path: ^conformance/
+        linters: [forbidigo]
+      # Hubs are named after what they are in every package (llmhub.LLMHub,
+      # toolhub.ToolHub, sandboxhub.SandboxHub, persistence.PersistenceHub, ...),
+      # so revive's stutter check is off on purpose.
+      - linters: [revive]
+        text: 'stutters'
+      # jsonx is the one place allowed to wrap encoding/json.
+      - path: ^internal/jsonx/
+        linters: [forbidigo]
+      # wiretest reads fixture paths that come from test code, not user input.
+      - path: ^internal/wiretest/
+        linters: [gosec]
+
+formatters:
+  enable: [gofumpt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/Phong95/aec-agent-go]

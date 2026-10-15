@@ -1,0 +1,1 @@
+{"traceId":"t1","spanId":"00000000-0000-4000-8000-000000000003","parentSpanId":"00000000-0000-4000-8000-000000000001","name":"compact","kind":"compaction","startTime":1700000000005,"status":"error","attributes":{"a":"v","b":[1,2],"error":"x"},"events":[],"endTime":1700000000006,"durationMs":1}

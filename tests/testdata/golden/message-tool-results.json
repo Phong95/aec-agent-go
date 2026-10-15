@@ -1,0 +1,1 @@
+{"role":"tool","content":"","timestamp":"2026-10-01T08:00:00.000Z","toolResults":[{"toolCallId":"call_1","content":"boom","isError":true},{"toolCallId":"call_2","content":"ok","isError":false},{"toolCallId":"call_3","content":"no flag"}]}

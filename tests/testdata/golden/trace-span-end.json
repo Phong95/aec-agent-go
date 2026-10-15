@@ -1,0 +1,1 @@
+{"traceId":"t1","spanId":"00000000-0000-4000-8000-000000000001","name":"agent","kind":"run","startTime":1700000000000,"status":"ok","attributes":{"agentId":"a1"},"events":[],"endTime":1700000000007,"durationMs":7}

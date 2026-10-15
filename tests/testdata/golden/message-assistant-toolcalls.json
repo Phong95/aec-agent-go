@@ -1,0 +1,1 @@
+{"role":"assistant","content":"Let me look at that.","timestamp":"2026-10-01T08:00:00.000Z","toolCalls":[{"id":"call_1","name":"read_file","arguments":{"path":"src/a.ts"}},{"id":"call_2","name":"list_dir","arguments":{"path":"src","recursive":true}}]}

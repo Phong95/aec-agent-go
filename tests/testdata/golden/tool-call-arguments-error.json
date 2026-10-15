@@ -1,0 +1,1 @@
+{"id":"call_1","name":"write_file","arguments":{},"argumentsError":"the arguments are not valid JSON (Expected ',' or '}' after property value in JSON at position 49 (line 1 column 50)): {\"path\": \"notes/report.md\", \"content\": \"He said \"hi\"\"}"}

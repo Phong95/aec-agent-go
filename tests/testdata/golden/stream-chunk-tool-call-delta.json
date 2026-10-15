@@ -1,0 +1,1 @@
+{"type":"tool_call_delta","toolCallProgress":{"id":"call_1","name":"write_file","argumentsDelta":"{\"path\":\"a"}}

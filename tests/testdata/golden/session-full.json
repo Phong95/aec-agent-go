@@ -1,0 +1,1 @@
+{"id":"s2","metadata":{"tags":["x","y"],"agentId":"a","nested":{"k":1,"b":{"y":1,"x":2}}},"createdAt":1700000000000,"updatedAt":1700000005000,"llmModel":"claude-sonnet","currentTokenUsage":{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":0,"cacheWriteTokens":0},"counterCalibration":{"charsPerToken":3.5,"samples":12},"consolidatedMessageCount":0}

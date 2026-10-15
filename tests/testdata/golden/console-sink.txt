@@ -1,0 +1,8 @@
+[trace] ▶ RUN agent span=00000000 {agentId="a1"}
+[trace] ▶ ITER iter-1 span=00000000 parent=00000000
+[trace] ◀ ITER iter-1 3ms
+[trace] ▶ compaction compact span=00000000 parent=00000000 {a="v", b=[1,2]}
+[trace] ◀ compaction compact 1ms ERROR {a="v", b=[1,2], error="x"}
+[trace] ◀ RUN agent 7ms {agentId="a1"}
+[trace] ▶ MODEL model span=00000000
+[trace] ◀ MODEL model 0ms

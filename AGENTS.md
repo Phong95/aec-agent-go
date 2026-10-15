@@ -1,0 +1,8 @@
+# Go SDK (`core/go/`)
+- **One package per folder**, named after the last part of its path. The root package `aec` (`aec.go`, `agentcore*.go`, `createagent.go`) is the entry point (`CreateAgent`, `AgentCore`); it re-exports nothing, so users import the component packages they need (e.g. `components/agent`).
+- **Contracts live with their owner**, in the owning package: `types.go`, or `types_<topic>.go` files once there are several (e.g. `components/agent/types_deps.go`, `components/persistence/types_session.go`). A contract that a hub shares with its stores gets its own subpackage in the hub's folder (`skillhub/skill`, `artifacthub/artifact`, `memorysystem/memory`) to avoid import cycles.
+- **`kernel/` holds only cross-cutting contracts** (shared types, typed errors, `Plugin`, `EncodeJSON`), as in TS.
+- **Keep the internals unexported.** Only what a user of the SDK calls is exported; module-private helpers go in `internal/`.
+- **Layering is enforced by `tests/arch`:** a new package must be added to the layer table in `tests/arch/arch_test.go`, and the root must not import a vendor SDK or a sandbox backend (`llmhub/providers/...`, `sandboxhub/host`, `sandboxhub/docker` are opt-in).
+- Tests: `foo_test.go` next to `foo.go`; module-wide checks and end-to-end runs in `tests/` (`arch/`, `e2e/`, `testdata/`). `aecmock/` (fakes) and `conformance/` (suites for custom stores, providers, tools) are public helpers for SDK users, not SDK tests.
+- Run `gofmt`, `go vet` and `go test -race ./...` before handing work back.

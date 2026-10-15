@@ -1,0 +1,10 @@
+# Generated from github.com/Phong95/aec-agent/.gitattributes by the go-sdk-mirror workflow.
+**/*.go            text eol=lf
+go.mod             text eol=lf
+go.sum             text eol=lf
+.golangci.yml      text eol=lf
+scripts/**         text eol=lf
+Makefile           text eol=lf
+tests/testdata/**        -text
+components/skillhub/essential/** -text
+components/sandboxhub/docker/embed/** -text

@@ -1,0 +1,1 @@
+keep this layer (class Agent) as thin as possible, dont handle logic directly here because we have components and services to do that. Make a clear ownership
