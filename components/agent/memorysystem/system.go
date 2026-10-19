@@ -44,6 +44,21 @@ type Deps struct {
 	Events events.Bus
 	// Model is the agent's model access (its ModelManager).
 	Model Model
+	// MemoryFiles returns the agent's current USER.md, MEMORY.md and SOUL.md, read
+	// before each compaction. Optional: nil means all are empty.
+	MemoryFiles func() CompactedMemoryFiles
+	// OnMemoryFilesCompacted is called after a consolidation pass rebuilt USER.md,
+	// MEMORY.md and/or SOUL.md, with only the rebuilt files set; the owner (the Agent) applies
+	// and saves them. Optional: nil means no compaction runs.
+	OnMemoryFilesCompacted func(ctx context.Context, files CompactedMemoryFiles) error
+}
+
+// CompactedMemoryFiles is the initial context files a consolidation pass compacts. A
+// nil field is a file that is not set (or, in an update, not rebuilt).
+type CompactedMemoryFiles struct {
+	UserMd   *string
+	MemoryMd *string
+	SoulMd   *string
 }
 
 // System is the memory system of one agent. Its methods are safe for concurrent use.
@@ -55,6 +70,9 @@ type Deps struct {
 type System struct {
 	agentID string
 	opts    options
+
+	memoryFiles            func() CompactedMemoryFiles
+	onMemoryFilesCompacted func(ctx context.Context, files CompactedMemoryFiles) error
 
 	memory    *memoryComponent
 	dreaming  *dreaming
@@ -94,7 +112,10 @@ func New(deps Deps, cfg memory.Config, opts ...Option) (*System, error) {
 	d := newPipelineDeps(deps.AgentID, newOptions(opts...))
 	hub := deps.Persistence
 
-	s := &System{agentID: deps.AgentID, opts: d.opts, cfg: cfg}
+	s := &System{
+		agentID: deps.AgentID, opts: d.opts, cfg: cfg,
+		memoryFiles: deps.MemoryFiles, onMemoryFilesCompacted: deps.OnMemoryFilesCompacted,
+	}
 	s.memory = newMemory(d, deps.Model, hub.Memory)
 	s.dreaming = newDreaming(d, hub.Messages, hub.Sessions, hub.Memory, s.memory, cfg.Dreaming)
 	s.indexing = newIndexing(deps.AgentID, hub.Memory)
@@ -179,7 +200,65 @@ func (s *System) Consolidate(ctx context.Context, sessionID string) ([]memory.Co
 	s.indexMu.Lock()
 	s.indexBuilt = true
 	s.indexMu.Unlock()
+	// Saved memories changed: rebuild the compacted files from them.
+	if len(results) > 0 {
+		if err := s.compactMemoryFiles(ctx); err != nil {
+			return nil, err
+		}
+	}
 	return results, nil
+}
+
+// compactMemoryFiles runs the two actions after a consolidation pass: update the
+// compacted user memory (USER.md, only when Config.UpdateUser allows it) and update the
+// compacted memory (MEMORY.md), then hands the rebuilt files to OnMemoryFilesCompacted.
+// Update: a third action refines the soul (SOUL.md, only when Config.UpdateSoul allows it).
+//
+// A failed compaction is logged, not returned: the pass itself succeeded and its
+// checkpoint already advanced, so failing here would only hide its results. The error
+// of OnMemoryFilesCompacted is returned.
+func (s *System) compactMemoryFiles(ctx context.Context) error {
+	if s.onMemoryFilesCompacted == nil {
+		return nil
+	}
+	var current CompactedMemoryFiles
+	if s.memoryFiles != nil {
+		current = s.memoryFiles()
+	}
+	var files CompactedMemoryFiles
+
+	if s.config().UpdateUser {
+		if text, ok, err := s.memory.compactUserMemory(ctx, deref(current.UserMd)); err != nil {
+			s.opts.logger.Error("memory: USER.md compaction failed", "agent", s.agentID, "err", err)
+		} else if ok && text != deref(current.UserMd) {
+			files.UserMd = &text
+		}
+	}
+	if text, ok, err := s.memory.compactMemory(ctx, deref(current.MemoryMd)); err != nil {
+		s.opts.logger.Error("memory: MEMORY.md compaction failed", "agent", s.agentID, "err", err)
+	} else if ok && text != deref(current.MemoryMd) {
+		files.MemoryMd = &text
+	}
+	if s.config().UpdateSoul {
+		if text, ok, err := s.memory.compactSoul(ctx, deref(current.SoulMd)); err != nil {
+			s.opts.logger.Error("memory: SOUL.md compaction failed", "agent", s.agentID, "err", err)
+		} else if ok && text != deref(current.SoulMd) {
+			files.SoulMd = &text
+		}
+	}
+
+	if files.UserMd == nil && files.MemoryMd == nil && files.SoulMd == nil {
+		return nil
+	}
+	return s.onMemoryFilesCompacted(ctx, files)
+}
+
+// deref is *p, or "" for nil.
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // Recall returns the memories relevant to the query, best first. It returns an empty

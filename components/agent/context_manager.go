@@ -24,6 +24,8 @@ import (
 // The system message is built once, so a later profile change does not reach it. It
 // is a fresh value on every call, which matters for the duplicated system message
 // after a second compaction (a quirk the loop keeps).
+// Update: RefreshProfile rebuilds it, e.g. after a consolidation pass compacted
+// USER.md / MEMORY.md.
 //
 // The agent's skill index (the <available_skills> block) is appended to the end of
 // the system message on every call, so skills enabled or created mid-conversation
@@ -98,16 +100,8 @@ func WithSecretIndex(f func(ctx context.Context) (string, bool)) ContextOption {
 
 // NewContextManager returns a ContextManager for p.
 func NewContextManager(p profile.AgentProfile, opts ...ContextOption) *ContextManager {
-	parts := []string{p.SystemPrompt}
-	if ic := p.InitialContext; ic != nil {
-		for _, extra := range []string{ic.UserMd, ic.MemoryMd, ic.SoulMd} {
-			if extra != "" {
-				parts = append(parts, extra)
-			}
-		}
-	}
 	c := &ContextManager{
-		system:          kernel.Message{Role: kernel.RoleSystem, Content: strings.Join(parts, "\n\n")},
+		system:          systemMessage(p),
 		profileSections: profileSections(p),
 	}
 	for _, opt := range opts {
@@ -116,6 +110,38 @@ func NewContextManager(p profile.AgentProfile, opts ...ContextOption) *ContextMa
 		}
 	}
 	return c
+}
+
+// RefreshProfile rebuilds the always-loaded system message from p: call it after the
+// system prompt or the initial context files (e.g. a compacted USER.md / MEMORY.md)
+// changed, so the next model call sees them.
+func (c *ContextManager) RefreshProfile(p profile.AgentProfile) {
+	system, sections := systemMessage(p), profileSections(p)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.system, c.profileSections = system, sections
+}
+
+// profileParts returns a copy of the system message and of the profile's sections.
+func (c *ContextManager) profileParts() (kernel.Message, []agentloop.ContextSection) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.system.Clone(), slices.Clone(c.profileSections)
+}
+
+// systemMessage is the always-loaded system message of p: the system prompt, then the
+// initial context parts userMd, memoryMd and soulMd that are not empty, joined by a
+// blank line.
+func systemMessage(p profile.AgentProfile) kernel.Message {
+	parts := []string{p.SystemPrompt}
+	if ic := p.InitialContext; ic != nil {
+		for _, extra := range []string{ic.UserMd, ic.MemoryMd, ic.SoulMd} {
+			if extra != "" {
+				parts = append(parts, extra)
+			}
+		}
+	}
+	return kernel.Message{Role: kernel.RoleSystem, Content: strings.Join(parts, "\n\n")}
 }
 
 // AddMiddleware adds a context middleware and keeps the list in ascending priority
@@ -155,8 +181,8 @@ func (c *ContextManager) PrepareMessages(ctx context.Context, msgs []kernel.Mess
 // PrepareMessages returns.
 func (c *ContextManager) Prepare(ctx context.Context, msgs []kernel.Message, mc agentloop.MiddlewareContext) ([]kernel.Message, []agentloop.ContextSection, error) {
 	prepared := make([]kernel.Message, 0, len(msgs)+1)
-	sections := slices.Clone(c.profileSections)
-	system, skills := c.withSkillIndex(ctx)
+	system, sections := c.profileParts()
+	system, skills := c.withSkillIndex(ctx, system)
 	if skills != "" {
 		sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSkills, Text: skills})
 	}
@@ -203,8 +229,7 @@ func (c *ContextManager) ProcessResponse(ctx context.Context, resp kernel.ModelR
 // as the whole content when it has none.
 // Update (A-104): it also returns the index it added ("" for none), so Prepare can
 // report it as a section.
-func (c *ContextManager) withSkillIndex(ctx context.Context) (kernel.Message, string) {
-	system := c.system.Clone()
+func (c *ContextManager) withSkillIndex(ctx context.Context, system kernel.Message) (kernel.Message, string) {
 	if c.skillIndex == nil {
 		return system, ""
 	}

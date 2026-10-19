@@ -351,6 +351,9 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		Persistence: deps.PersistenceHub,
 		Events:      deps.Events,
 		Model:       a.models,
+		MemoryFiles: a.memoryFiles,
+		// A consolidation pass rebuilt USER.md / MEMORY.md: apply and save them.
+		OnMemoryFilesCompacted: a.onMemoryFilesCompacted,
 	}, own.Memory, memOpts...)
 	if err != nil {
 		return nil, err
@@ -447,6 +450,42 @@ func (a *Agent) sandboxSelection() sandboxhub.Selection {
 // the change stays in memory.
 func (a *Agent) onAllowlistChange(ctx context.Context, names []string) error {
 	a.UpdateSkills(names)
+	if a.saveProfile == nil {
+		return nil
+	}
+	return a.saveProfile(ctx, a.Profile())
+}
+
+// memoryFiles is the memory system's view of the profile's USER.md, MEMORY.md and SOUL.md.
+func (a *Agent) memoryFiles() memorysystem.CompactedMemoryFiles {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	var files memorysystem.CompactedMemoryFiles
+	if ic := a.profile.InitialContext; ic != nil {
+		userMd, memoryMd, soulMd := ic.UserMd, ic.MemoryMd, ic.SoulMd
+		files.UserMd, files.MemoryMd, files.SoulMd = &userMd, &memoryMd, &soulMd
+	}
+	return files
+}
+
+// onMemoryFilesCompacted is the memory system hook: it applies the rebuilt USER.md,
+// MEMORY.md and/or SOUL.md to the agent and then saves the profile through Deps.SaveProfile.
+// Without a SaveProfile the change stays in memory.
+func (a *Agent) onMemoryFilesCompacted(ctx context.Context, files memorysystem.CompactedMemoryFiles) error {
+	ic := profile.InitialContext{}
+	if cur := a.Profile().InitialContext; cur != nil {
+		ic = *cur
+	}
+	if files.UserMd != nil {
+		ic.UserMd = *files.UserMd
+	}
+	if files.MemoryMd != nil {
+		ic.MemoryMd = *files.MemoryMd
+	}
+	if files.SoulMd != nil {
+		ic.SoulMd = *files.SoulMd
+	}
+	a.UpdateInitialContext(&ic)
 	if a.saveProfile == nil {
 		return nil
 	}
@@ -785,6 +824,21 @@ func (a *Agent) UpdateMemoryConfig(c memory.Config) {
 	a.mu.Unlock()
 	// Outside the profile lock, so the scheduler never waits for it.
 	a.memory.UpdateConfig(c)
+}
+
+// UpdateInitialContext replaces the agent's initial context files (USER.md, MEMORY.md,
+// SOUL.md); it applies to the next model call. ic is copied and nil clears them. It
+// does not persist the profile.
+func (a *Agent) UpdateInitialContext(ic *profile.InitialContext) {
+	if ic != nil {
+		c := *ic
+		ic = &c
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.profile.InitialContext = ic
+	// Under the profile lock, so two updates reach the context manager in order.
+	a.ctxMgr.RefreshProfile(a.profile)
 }
 
 // UpdateSubagents replaces who the agent may delegate to and its subagent budget
