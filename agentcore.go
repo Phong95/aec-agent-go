@@ -17,6 +17,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub"
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
 	"github.com/Phong95/aec-agent-go/components/events"
+	"github.com/Phong95/aec-agent-go/components/grouphub"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
 	"github.com/Phong95/aec-agent-go/components/orchestration"
 	"github.com/Phong95/aec-agent-go/components/persistence"
@@ -96,6 +97,14 @@ type AgentCore struct {
 	// subagentRunner runs the child turns of every agent (A-105; nil means the child
 	// agent's own Chat); guarded by mu.
 	subagentRunner subagent.Runner
+	// groups is group chats (A-106) - several agents in one conversation: the groups, their
+	// sessions and threads, and the group turns (a lead routes the work, everyone answers,
+	// or only the members the user addresses). Stored in PersistenceHub.Groups and
+	// GroupMessages; its spawn scopes are every agent's Deps.SubagentScopes.
+	groups *grouphub.Hub
+	// groupRunner runs the member turns of group chats (A-106; nil means the member's own
+	// ChatStream); guarded by mu.
+	groupRunner grouphub.MemberRunner
 	// hostCommands is the host's slash commands (A-136, UseCommand), offered by every
 	// agent; guarded by mu.
 	hostCommands []command.HostCommand
@@ -166,6 +175,21 @@ func NewAgentCore(opts ...AgentCoreOption) (*AgentCore, error) {
 	// handed out.
 	c.artifacts = artifacthub.NewArtifactHub(func() persistence.ArtifactStore { return c.PersistenceHub().Artifacts },
 		artifacthub.WithEvents(c.events), artifacthub.WithLogger(c.logger))
+	// A-106: group chats over the agents above; stores resolved on every call
+	// (UsePersistence). It leaves a deleted agent's groups as a subscriber of agent:removed.
+	c.groups = grouphub.New(grouphub.Deps{
+		Events:   c.events,
+		Store:    func() persistence.GroupStore { return c.PersistenceHub().Groups },
+		Messages: func() persistence.GroupMessageStore { return c.PersistenceHub().GroupMessages },
+		Sessions: func() persistence.SessionStore { return c.PersistenceHub().Sessions },
+		MemberMessages: func() []persistence.MessageStore {
+			h := c.PersistenceHub()
+			return []persistence.MessageStore{h.Messages, h.CompactedMessages}
+		},
+		Agents: func() grouphub.AgentHost { return c.agents },
+		Runner: c.groupTurnRunner,
+		Logger: c.logger,
+	})
 
 	// Essential skills (skill-creator, plan, web-research) ship with the SDK; an agent
 	// uses one when it is in its profile.skills and it has the tools the skill requires.
@@ -402,6 +426,8 @@ func (c *AgentCore) spawnFactory(ctx context.Context, p profile.AgentProfile) (*
 		SubagentRunner: c.subagentTurnRunner,
 		// A-105 revision: the library the agent's enabled subagent types resolve from.
 		SubagentHub: c.subagentTypes,
+		// A-106: spawn scopes of group leads while they lead a group turn.
+		SubagentScopes: c.groups.Scopes(),
 		// A-101: the secrets the agent's tools use (its own and the global ones it enables).
 		SecretHub: c.secrets,
 		// A-136: the host's slash commands, read on every call.
@@ -436,6 +462,11 @@ func (c *AgentCore) SkillHub() *skillhub.SkillHub { return c.skills }
 // (UseSubagentType) and custom ones (persisted in PersistenceHub.SubagentTypes). Agents
 // enable types by name in AgentProfile.Subagents.Types.
 func (c *AgentCore) SubagentHub() *subagenthub.SubagentHub { return c.subagentTypes }
+
+// Groups returns group chats (A-106): several agents in one conversation - the groups,
+// their sessions and threads, and the group turns. Stored in PersistenceHub.Groups and
+// GroupMessages.
+func (c *AgentCore) Groups() *grouphub.Hub { return c.groups }
 
 // SecretHub returns the hub of secrets (A-101): API keys and tokens agents use without the
 // model seeing them, sealed with envelope encryption under the SecretHub provider
@@ -598,6 +629,23 @@ func (c *AgentCore) UseSubagentRunner(r subagent.Runner) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.subagentRunner = r
+}
+
+// UseGroupRunner sets how the member turns of group chats run (A-106), for example
+// behind the same per-session lock, stop registry, traces and usage as the host's chat
+// routes. It applies to the turns that start afterwards. A nil runner restores the
+// member's own ChatStream (grouphub.MemberTurnContext.Execute).
+func (c *AgentCore) UseGroupRunner(r grouphub.MemberRunner) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.groupRunner = r
+}
+
+// groupTurnRunner is the runner set with UseGroupRunner (nil when none).
+func (c *AgentCore) groupTurnRunner() grouphub.MemberRunner {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.groupRunner
 }
 
 // subagentTurnRunner is the runner set with UseSubagentRunner (nil when none).
@@ -875,6 +923,8 @@ const disposeStepTimeout = 30 * time.Second
 // context.WithoutCancel(ctx) with a timeout of their own each, so they still run when
 // ctx has already ended.
 func (c *AgentCore) Dispose(ctx context.Context) error {
+	// A-106: stops running group turns (their members' turns end with the agents below).
+	c.groups.Dispose()
 	agents := c.agents.List()
 	var mu sync.Mutex
 	var errs []error

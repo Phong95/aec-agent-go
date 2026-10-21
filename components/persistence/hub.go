@@ -18,6 +18,7 @@ import (
 // (Update (A-126): ten again - Jobs replaces ScheduledJobs and Triggers.)
 // (Update (A-105): eleven, with SubagentRuns; twelve with SubagentTypes.)
 // (Update (A-101): thirteen, with Secrets.)
+// (Update (A-106): fifteen, with Groups and GroupMessages.)
 //
 // The two message slots are distinct instances: Messages is the full history and
 // CompactedMessages is the compacted LLM working set.
@@ -60,6 +61,12 @@ type PersistenceHub struct {
 	// secrethub.SecretHub) and their metadata, global or owned by an agent. Write through
 	// the SecretHub. The in-memory default keeps nothing across a restart.
 	Secrets SecretStore
+	// Groups holds group chats (A-106) - several agents in one thread. Write through the
+	// grouphub.Hub.
+	Groups GroupStore
+	// GroupMessages holds the thread of each group session (A-106): user, agent, hand-off
+	// and note messages.
+	GroupMessages GroupMessageStore
 }
 
 // Option sets one store slot of a PersistenceHub.
@@ -110,6 +117,16 @@ func WithSubagentTypes(s SubagentTypeStore) Option {
 // WithSecrets sets the secret store (A-101).
 func WithSecrets(s SecretStore) Option {
 	return func(h *PersistenceHub) { h.Secrets = s }
+}
+
+// WithGroups sets the group store (A-106).
+func WithGroups(s GroupStore) Option {
+	return func(h *PersistenceHub) { h.Groups = s }
+}
+
+// WithGroupMessages sets the group thread store (A-106).
+func WithGroupMessages(s GroupMessageStore) Option {
+	return func(h *PersistenceHub) { h.GroupMessages = s }
 }
 
 // NewPersistenceHub returns a hub whose slots are the given stores. Every slot that is not
@@ -171,6 +188,12 @@ func (h *PersistenceHub) FillDefaults() *PersistenceHub {
 	}
 	if nilcheck.IsNil(h.Secrets) {
 		h.Secrets = NewMemorySecretStore()
+	}
+	if nilcheck.IsNil(h.Groups) {
+		h.Groups = NewMemoryGroupStore()
+	}
+	if nilcheck.IsNil(h.GroupMessages) {
+		h.GroupMessages = NewMemoryGroupMessageStore()
 	}
 	return h
 }

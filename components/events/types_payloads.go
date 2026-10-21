@@ -3,6 +3,7 @@ package events
 import (
 	"encoding/json"
 
+	"github.com/Phong95/aec-agent-go/components/grouphub/group"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
@@ -483,4 +484,60 @@ type SecretUsedPayload struct {
 	AgentID string `json:"agentId,omitempty"`
 	Tool    string `json:"tool"`
 	Host    string `json:"host,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Group chats (A-106) - emitted by the grouphub.Hub; group:changed with SessionID "", the
+// rest with the group session's id.
+// ---------------------------------------------------------------------------
+
+// GroupChangedPayload is the payload of the GroupChanged kind: a group was created,
+// changed (members, lead, reply mode...) or deleted.
+type GroupChangedPayload struct {
+	GroupID string       `json:"groupId"`
+	Change  group.Change `json:"change"`
+}
+
+// GroupMessagePayload is the payload of the GroupMessageAdded and GroupMessageUpdated
+// kinds: a thread message was added or changed.
+type GroupMessagePayload struct {
+	GroupID string        `json:"groupId"`
+	Message group.Message `json:"message"`
+}
+
+// GroupMessageDeltaPayload is the payload of the GroupMessageDelta kind: more text of a
+// member's answer streaming in.
+type GroupMessageDeltaPayload struct {
+	GroupID   string `json:"groupId"`
+	MessageID string `json:"messageId"`
+	AgentID   string `json:"agentId"`
+	Text      string `json:"text"`
+}
+
+// GroupPresencePayload is the payload of the GroupPresence kind: what a member of a group
+// session is doing now.
+type GroupPresencePayload struct {
+	GroupID string              `json:"groupId"`
+	AgentID string              `json:"agentId"`
+	State   group.PresenceState `json:"state"`
+	// Tool is the tool it runs (state "tool").
+	Tool    string `json:"tool,omitempty"`
+	RoundID string `json:"roundId,omitempty"`
+}
+
+// GroupTurnStartedPayload is the payload of the GroupTurnStarted kind: a user message
+// started a group turn.
+type GroupTurnStartedPayload struct {
+	GroupID string         `json:"groupId"`
+	TurnID  string         `json:"turnId"`
+	Plan    group.PlanKind `json:"plan"`
+}
+
+// GroupTurnFinishedPayload is the payload of the GroupTurnFinished kind: a group turn
+// ended.
+type GroupTurnFinishedPayload struct {
+	GroupID string            `json:"groupId"`
+	TurnID  string            `json:"turnId"`
+	Status  group.TurnStatus  `json:"status"`
+	Usage   kernel.TokenUsage `json:"usage"`
 }

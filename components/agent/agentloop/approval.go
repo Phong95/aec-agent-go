@@ -56,10 +56,15 @@ func (e *executor) gateCall(ctx context.Context, run *toolRun, call kernel.ToolC
 	}
 	// A-135: a session in YOLO mode runs the call without asking (read now, so a switch
 	// during the turn applies to its next call).
+	// A-106: a call the user already agreed to for the session (a group lead's hand-offs)
+	// runs too.
 	var approval approvalResult
-	if e.approvalMode(ctx, tc.SessionID) == kernel.ApprovalModeYolo {
+	switch {
+	case e.deps.PreApproved != nil && e.deps.PreApproved(tc.SessionID, call.Name):
+		approval = approvalResult{trace: obj("approved", true, "auto", "pre-approved")}
+	case e.approvalMode(ctx, tc.SessionID) == kernel.ApprovalModeYolo:
 		approval = e.autoApprove(run, def, call, g)
-	} else {
+	default:
 		approval = e.requestApproval(ctx, run, def, call, tc, g)
 	}
 	if span != nil {

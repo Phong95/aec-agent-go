@@ -382,10 +382,15 @@ type TurnContext struct {
 	// Update (A-105 revision): the agent that owns the child's session (the target agent,
 	// or the parent for a type).
 	AgentID string
+	// ChildAgentName (A-106) is the target agent's name, or the subagent type's name.
+	ChildAgentName string
 	// SessionID is the child's session, created for this run.
+	// (A-106: or the one the spawn scope named - SpawnScope.ChildSession.)
 	SessionID string
 	// Prompt is the brief, as the child's user message.
 	Prompt string
+	// Task (A-106) is the task text the parent sent (a group shows it as the hand-off).
+	Task string
 	// Parent is the parent turn - put on the child's run span so traces correlate.
 	Parent ParentRef
 	// TraceAttributes are attributes for the child's "agent-run" span
@@ -414,6 +419,56 @@ type TurnResult struct {
 // (Update (A-105 revision): absent = tc.Execute(ctx), the child agent's Chat or the
 // type's short-lived loop.)
 type Runner func(ctx context.Context, tc TurnContext) (TurnResult, error)
+
+// ---------------------------------------------------------------------------
+// Spawn scopes (A-106) - a session whose spawns follow other rules than the profile's
+// ---------------------------------------------------------------------------
+
+// ScopeTarget is the child a SpawnScope's Brief is written for.
+type ScopeTarget struct {
+	// AgentID is the agent that owns the child's session.
+	AgentID string
+	// Name is the target agent's name.
+	Name string
+	// RunID is the child run's id.
+	RunID string
+}
+
+// SpawnScope is how spawns from one session work instead of the profile's subagent
+// config (the SubagentSpawnScope of core/ts). A group chat's lead, while it leads a group
+// turn, delegates to the group's members: they see the group thread (not a fresh brief),
+// work in their own member sessions, stream into the thread, and the hand-offs need no
+// extra approval (the user set the group up for it).
+type SpawnScope struct {
+	// Allow is who may be delegated to from the session - it replaces the profile's
+	// Subagents.Allow; subagent types are off.
+	Allow []TargetConfig
+	// Limits replace the profile's limits field by field (0 keeps the profile's; the hard
+	// caps still apply).
+	Limits Limits
+	// PreApproved: spawn_subagent runs in the session without asking the user (the
+	// children's own approval-gated calls still ask).
+	PreApproved bool
+	// GrantSpawnTool: the session is granted spawn_subagent even when the agent's
+	// allowlist lacks it.
+	GrantSpawnTool bool
+	// IndexIntro replaces the first sentences of the <available_subagents> index (the
+	// default "Each starts fresh..."). "" keeps the default.
+	IndexIntro string
+	// ChildSession returns the session a child of agentID runs in, instead of a fresh
+	// child session (agent targets only). Nil = a fresh session.
+	ChildSession func(ctx context.Context, agentID string) (string, error)
+	// Brief returns the child's user message, instead of the fresh brief. Nil = the brief.
+	Brief func(ctx context.Context, req Request, target ScopeTarget) (string, error)
+	// Runner runs the child turn instead of the host's subagent runner. Nil = the host's.
+	Runner Runner
+}
+
+// Scopes is the spawn scopes of the host's sessions (AgentCore: the GroupHub's, for group
+// leads). Get returns nil for a session without one.
+type Scopes interface {
+	Get(sessionID string) *SpawnScope
+}
 
 // SessionSource is the "source" metadata value of a session created for a child run.
 const SessionSource = "subagent"

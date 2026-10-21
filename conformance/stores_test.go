@@ -86,3 +86,18 @@ func TestSecretStoreDefault(t *testing.T) {
 		return persistence.NewMemorySecretStore()
 	})
 }
+
+// TestGroupStoreDefault runs the GroupStore suite on the persistence default (A-106).
+func TestGroupStoreDefault(t *testing.T) {
+	conformance.GroupStore(t, func(_ *testing.T) persistence.GroupStore {
+		return persistence.NewMemoryGroupStore()
+	})
+}
+
+// TestGroupMessageStoreDefault runs the GroupMessageStore suite on the persistence
+// default (A-106).
+func TestGroupMessageStoreDefault(t *testing.T) {
+	conformance.GroupMessageStore(t, func(_ *testing.T) persistence.GroupMessageStore {
+		return persistence.NewMemoryGroupMessageStore()
+	})
+}

@@ -57,8 +57,16 @@ type subagentManagerDeps struct {
 	// childLoop is what a subagent type's short-lived loop borrows from this agent
 	// (model, tools, sandbox, artifacts, conversations).
 	childLoop childLoopDeps
-	logger    *slog.Logger
+	// scope (A-106) is the spawn scope of one of this agent's sessions (a group lead's
+	// session while it leads a group turn), read on every call. Nil, or a nil result, means
+	// the profile's config.
+	scope  func(sessionID string) *subagent.SpawnScope
+	logger *slog.Logger
 }
+
+// spawnToolName is the spawn_subagent tool's name (A-106: the tool a spawn scope grants
+// and pre-approves).
+const spawnToolName = "spawn_subagent"
 
 // subagentTarget is a resolved target: a subagent type (runs inside this agent) or an
 // existing agent.
@@ -224,12 +232,13 @@ func (m *subagentManager) Running() int {
 // Update (A-105 revision): what this agent may delegate to - the enabled subagent types,
 // then the allowed running agents. A type the library cannot read is left out.
 func (m *subagentManager) Targets(ctx context.Context) []subagent.TargetInfo {
-	return m.targets(ctx, m.d.profile())
+	return m.targets(ctx, m.configFor(nil))
 }
 
-func (m *subagentManager) targets(ctx context.Context, self profile.AgentProfile) []subagent.TargetInfo {
+// targets lists what cfg allows: the enabled types, then the allowed running agents.
+// (A-106: it takes the resolved config, the profile's or a spawn scope's.)
+func (m *subagentManager) targets(ctx context.Context, cfg subagent.ResolvedConfig) []subagent.TargetInfo {
 	out := []subagent.TargetInfo{}
-	cfg := subagent.ResolveConfig(self.Subagents)
 	if hub := m.typeHub(); hub != nil {
 		for _, name := range cfg.Types {
 			t, ok, err := hub.Get(ctx, name)
@@ -309,7 +318,9 @@ func (m *subagentManager) Spawn(ctx context.Context, req subagent.Request, sc su
 		return subagent.Run{}, subagent.NewError("this agent is shutting down", subagent.CodeNotFound)
 	}
 	self := m.d.profile()
-	cfg := subagent.ResolveConfig(self.Subagents)
+	// A-106: a scoped session (a group lead) delegates by its scope, not the profile's config.
+	scope := m.scopeOf(sc.SessionID)
+	cfg := m.configFor(scope)
 	if err := m.refuseNested(ctx, sc.SessionID); err != nil {
 		return subagent.Run{}, err
 	}
@@ -387,7 +398,60 @@ func (m *subagentManager) Spawn(ctx context.Context, req subagent.Request, sc su
 	if late != "" {
 		return m.finishUnstarted(persistCtx, run, started, subagent.StatusBudgetExhausted, late), nil
 	}
-	return m.runChild(ctx, run, started, target, brief, sc, budget, cfg), nil
+	return m.runChild(ctx, run, started, target, brief, sc, budget, cfg, scope), nil
+}
+
+// grantedTools (A-106) is the session's grants: spawn_subagent for a scoped session that
+// asks for it.
+func (m *subagentManager) grantedTools(sessionID string) []string {
+	if s := m.scopeOf(sessionID); s != nil && s.GrantSpawnTool {
+		return []string{spawnToolName}
+	}
+	return nil
+}
+
+// preApproved (A-106): spawn_subagent runs without asking in a scoped session that the
+// user set up for it.
+func (m *subagentManager) preApproved(sessionID, toolName string) bool {
+	if toolName != spawnToolName {
+		return false
+	}
+	s := m.scopeOf(sessionID)
+	return s != nil && s.PreApproved
+}
+
+// scopeOf (A-106) is the session's spawn scope, or nil.
+func (m *subagentManager) scopeOf(sessionID string) *subagent.SpawnScope {
+	if m.d.scope == nil || sessionID == "" {
+		return nil
+	}
+	return m.d.scope(sessionID)
+}
+
+// configFor is the profile's config, or (A-106) the scope's targets and limits over it.
+func (m *subagentManager) configFor(scope *subagent.SpawnScope) subagent.ResolvedConfig {
+	own := m.d.profile().Subagents
+	if scope == nil {
+		return subagent.ResolveConfig(own)
+	}
+	var c subagent.Config
+	if own != nil {
+		c = *own
+	}
+	override := func(dst *int, v int) {
+		if v > 0 {
+			*dst = v
+		}
+	}
+	override(&c.MaxConcurrent, scope.Limits.MaxConcurrent)
+	override(&c.MaxRunsPerTurn, scope.Limits.MaxRunsPerTurn)
+	override(&c.MaxTokensPerTurn, scope.Limits.MaxTokensPerTurn)
+	override(&c.MaxToolCallsPerTurn, scope.Limits.MaxToolCallsPerTurn)
+	override(&c.MaxElapsedMsPerTurn, scope.Limits.MaxElapsedMsPerTurn)
+	override(&c.ChildTimeoutMs, scope.Limits.ChildTimeoutMs)
+	c.Allow = scope.Allow
+	c.Types = nil
+	return subagent.ResolveConfig(&c)
 }
 
 // dispose stops every running child and stops listening. Runs in progress record
@@ -416,6 +480,7 @@ func (m *subagentManager) runChild(
 	sc subagent.SpawnContext,
 	budget *turnBudget,
 	cfg subagent.ResolvedConfig,
+	scope *subagent.SpawnScope,
 ) subagent.Run {
 	persistCtx := context.WithoutCancel(ctx)
 	parent := subagent.ParentRef{RunID: run.ParentRunID, AgentID: m.d.agentID, SessionID: sc.SessionID, SubagentRunID: run.ID}
@@ -428,7 +493,14 @@ func (m *subagentManager) runChild(
 	meta.Set("parentAgentId", parent.AgentID)
 	meta.Set("subagentRunId", run.ID)
 	meta.Set("title", target.name+": "+firstLine(brief.Task, 60))
-	session, err := m.d.sessions.Create(persistCtx, meta)
+	// A-106: a scope may name the child's session (a group member's own session in the group).
+	var session kernel.Session
+	var err error
+	if scope != nil && scope.ChildSession != nil && target.kind == subagent.KindAgent {
+		session.ID, err = scope.ChildSession(persistCtx, target.agent.ID())
+	} else {
+		session, err = m.d.sessions.Create(persistCtx, meta)
+	}
 	if err != nil {
 		return m.finishUnstarted(persistCtx, run, started, subagent.StatusFailed, "could not create the subagent's session: "+err.Error())
 	}
@@ -478,6 +550,12 @@ func (m *subagentManager) runChild(
 	timer := time.AfterFunc(max(0, min(childTimeout, remaining)), func() { m.abort(active, reasonAtDeadline) })
 
 	prompt := subagent.BuildBrief(brief, m.d.profile().Name, run.Access)
+	// A-106: a scope may write the child's user message itself (a group member is told the
+	// thread and the lead's ask).
+	var briefErr error
+	if scope != nil && scope.Brief != nil {
+		prompt, briefErr = scope.Brief(childCtx, brief, subagent.ScopeTarget{AgentID: run.ChildAgentID, Name: target.name, RunID: run.ID})
+	}
 	traceAttributes := map[string]any{
 		"source":          subagent.SessionSource,
 		"subagentKind":    string(target.kind),
@@ -496,8 +574,10 @@ func (m *subagentManager) runChild(
 	turn := subagent.TurnContext{
 		Kind:            target.kind,
 		AgentID:         run.ChildAgentID,
+		ChildAgentName:  target.name,
 		SessionID:       sessionID,
 		Prompt:          prompt,
+		Task:            brief.Task,
 		Parent:          parent,
 		TraceAttributes: traceAttributes,
 		Execute: func(ctx context.Context) (subagent.TurnResult, error) {
@@ -509,7 +589,13 @@ func (m *subagentManager) runChild(
 			return chatTurn(ctx, target.agent, sessionID, prompt, traceAttributes)
 		},
 	}
-	result, failure := m.runTurn(childCtx, turn)
+	var result *subagent.TurnResult
+	var failure error
+	if briefErr != nil {
+		failure = briefErr
+	} else {
+		result, failure = m.runTurn(childCtx, turn, scope)
+	}
 
 	timer.Stop()
 	stopParent()
@@ -572,7 +658,7 @@ func (m *subagentManager) runChild(
 // panic of the runner is a failure of the run (logged redacted), never a crash.
 // (Update (A-105 revision): without a host runner, the turn itself -
 // TurnContext.Execute.)
-func (m *subagentManager) runTurn(ctx context.Context, turn subagent.TurnContext) (result *subagent.TurnResult, failure error) {
+func (m *subagentManager) runTurn(ctx context.Context, turn subagent.TurnContext, scope *subagent.SpawnScope) (result *subagent.TurnResult, failure error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			m.d.logger.Error("subagent: the runner panicked", "agent", m.d.agentID, "child", turn.AgentID, "panic", redact.Panic(rec))
@@ -584,6 +670,10 @@ func (m *subagentManager) runTurn(ctx context.Context, turn subagent.TurnContext
 		if r := m.d.runner(); r != nil {
 			runner = r
 		}
+	}
+	// A-106: a spawn scope's runner wins (a group streams the member's answer into its thread).
+	if scope != nil && scope.Runner != nil {
+		runner = scope.Runner
 	}
 	res, err := runner(ctx, turn)
 	if err != nil {
@@ -795,7 +885,7 @@ func (m *subagentManager) resolveTarget(ctx context.Context, ref string, cfg sub
 			return subagentTarget{}, subagent.NewError(`the agent "`+ref+`" is not running`, subagent.CodeNotFound)
 		}
 		var allowed []string
-		for _, t := range m.targets(ctx, self) {
+		for _, t := range m.targets(ctx, cfg) {
 			if t.Kind == subagent.KindType {
 				allowed = append(allowed, `"`+t.Name+`"`)
 			} else {
@@ -1087,10 +1177,14 @@ func (m *subagentManager) buildIndex(ctx context.Context, session kernel.Session
 	m.mu.Lock()
 	_, bound := m.bindings[session.ID]
 	m.mu.Unlock()
-	if bound || subagent.IsSession(&session) || m.d.hasSpawnTool == nil || !m.d.hasSpawnTool() {
+	// A-106: a scoped session (a group lead) is granted spawn_subagent and sees its scope's
+	// targets.
+	scope := m.scopeOf(session.ID)
+	hasSpawn := m.d.hasSpawnTool != nil && m.d.hasSpawnTool()
+	if bound || subagent.IsSession(&session) || (!hasSpawn && (scope == nil || !scope.GrantSpawnTool)) {
 		return "", false
 	}
-	targets := m.Targets(ctx)
+	targets := m.targets(ctx, m.configFor(scope))
 	if len(targets) == 0 {
 		return "", false
 	}
@@ -1107,10 +1201,14 @@ func (m *subagentManager) buildIndex(ctx context.Context, session kernel.Session
 		}
 		lines = append(lines, line)
 	}
+	intro := "Each starts fresh: give it everything it needs in the task. A subagent type is a specialist that runs with your " +
+		"tools and workspace; an agent is a separate agent with its own tools, memory and workspace."
+	if scope != nil && scope.IndexIntro != "" {
+		intro = scope.IndexIntro
+	}
 	return "<available_subagents>\n" +
 		"Subagents you can delegate a bounded task to with spawn_subagent (name the subagent type, or the agent's id). " +
-		"Each starts fresh: give it everything it needs in the task. A subagent type is a specialist that runs with your " +
-		"tools and workspace; an agent is a separate agent with its own tools, memory and workspace. " +
+		intro + " " +
 		"Delegate only independent work that benefits from a separate specialist or context " + emDash + " call spawn_subagent several times " +
 		"in one response for independent tasks (they run in parallel), and one after another when a task needs an earlier result.\n" +
 		strings.Join(lines, "\n") + "\n</available_subagents>", true

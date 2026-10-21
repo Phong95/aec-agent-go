@@ -263,7 +263,11 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		},
 	})
 	a.models = NewModelManager(deps.LLMHub, own)
-	a.tools = NewToolManager(deps.ToolHub, own)
+	// A-106: a group lead's session is granted spawn_subagent while it leads (its spawn
+	// scope).
+	a.tools = NewToolManager(deps.ToolHub, own, WithSessionGrants(func(sessionID string) []string {
+		return a.subagents.grantedTools(sessionID)
+	}))
 	// A-105 revision: the sandbox and artifact managers are built before the subagent
 	// manager, whose subagent types work in this agent's sandbox and artifacts.
 	var sandboxes agentloop.Sandboxes
@@ -321,6 +325,13 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 			secrets: a.secrets,
 			// A-135: a type child's approvals use its parent session's approval mode.
 			approvalMode: a.approvalModeFor,
+		},
+		// A-106: a session's spawn scope (a group lead's, while it leads a group turn).
+		scope: func(sessionID string) *subagent.SpawnScope {
+			if deps.SubagentScopes == nil {
+				return nil
+			}
+			return deps.SubagentScopes.Get(sessionID)
 		},
 		logger: deps.Logger,
 	})
@@ -433,6 +444,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		// (read-only by default).
 		Subagents: a.subagents,
 		ToolScope: a.subagents.toolScope,
+		// A-106: a group lead's hand-offs to the group's members need no extra approval.
+		PreApproved: a.subagents.preApproved,
 		// A-101: for the tools that use secrets; tool results and errors are redacted
 		// through it.
 		Secrets: a.secrets,

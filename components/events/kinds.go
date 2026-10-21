@@ -122,6 +122,21 @@ var (
 	// A-136: a slash command ran (the agent's command manager, Agent.Commands().Run),
 	// whatever its outcome, with the session it ran in. No built-in subscribers (hosts).
 	CommandExecuted = Kind[CommandExecutedPayload]{Name: "command:executed"}
+
+	// A-106: the grouphub.Hub emits group:* - group:changed with SessionID "" (a group was
+	// created, changed or deleted), and the rest with the GROUP session's id: the thread's
+	// messages as they are added and updated, text deltas of answers streaming in, each
+	// member's presence, and the start and end of a group turn. Hosts stream them to the
+	// thread's viewers; nothing in the SDK needs them to work. The Hub itself listens for
+	// agent:removed (drops the agent from every group) and for its lead's subagent:* (a
+	// hand-off's final status).
+	GroupChanged        = Kind[GroupChangedPayload]{Name: "group:changed"}
+	GroupMessageAdded   = Kind[GroupMessagePayload]{Name: "group:message-added"}
+	GroupMessageUpdated = Kind[GroupMessagePayload]{Name: "group:message-updated"}
+	GroupMessageDelta   = Kind[GroupMessageDeltaPayload]{Name: "group:message-delta"}
+	GroupPresence       = Kind[GroupPresencePayload]{Name: "group:presence"}
+	GroupTurnStarted    = Kind[GroupTurnStartedPayload]{Name: "group:turn-started"}
+	GroupTurnFinished   = Kind[GroupTurnFinishedPayload]{Name: "group:turn-finished"}
 )
 
 // KindNames returns the 32 event type strings in their canonical order.
@@ -133,6 +148,7 @@ var (
 // (Update (A-104): 43, with agent-loop:context-usage.)
 // (Update (A-135): 45, with agent-loop:tool-auto-approved and session:approval-mode.)
 // (Update (A-136): 47, with session:updated and command:executed.)
+// (Update (A-106): 54, with the seven group kinds.)
 // The slice is fresh on every call.
 func KindNames() []string {
 	return []string{
@@ -183,5 +199,12 @@ func KindNames() []string {
 		SessionApprovalModeChanged.Name,
 		SessionUpdated.Name,
 		CommandExecuted.Name,
+		GroupChanged.Name,
+		GroupMessageAdded.Name,
+		GroupMessageUpdated.Name,
+		GroupMessageDelta.Name,
+		GroupPresence.Name,
+		GroupTurnStarted.Name,
+		GroupTurnFinished.Name,
 	}
 }

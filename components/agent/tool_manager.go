@@ -28,16 +28,68 @@ import (
 // every read, so SetAllowedTools may run while a chat is in flight.
 type ToolManager struct {
 	hub *toolhub.ToolHub
+	// sessionGrants (A-106) is the tools a session may use beyond the allowlist, read on
+	// every call; nil means none.
+	sessionGrants func(sessionID string) []string
 
 	mu      sync.RWMutex
 	allowed []string
 }
 
-var _ agentloop.Tools = (*ToolManager)(nil)
+var (
+	_ agentloop.Tools        = (*ToolManager)(nil)
+	_ agentloop.SessionTools = (*ToolManager)(nil)
+)
+
+// ToolManagerOption configures a ToolManager (A-106).
+type ToolManagerOption func(*ToolManager)
+
+// WithSessionGrants sets the tools a session may use beyond the allowlist (A-106), read
+// on every call: a group lead's session is granted spawn_subagent to hand work to the
+// group's members.
+func WithSessionGrants(grants func(sessionID string) []string) ToolManagerOption {
+	return func(m *ToolManager) { m.sessionGrants = grants }
+}
 
 // NewToolManager returns a ToolManager over hub whose allowlist is p.Tools (copied).
-func NewToolManager(hub *toolhub.ToolHub, p profile.AgentProfile) *ToolManager {
-	return &ToolManager{hub: hub, allowed: slices.Clone(p.Tools)}
+func NewToolManager(hub *toolhub.ToolHub, p profile.AgentProfile, opts ...ToolManagerOption) *ToolManager {
+	m := &ToolManager{hub: hub, allowed: slices.Clone(p.Tools)}
+	for _, o := range opts {
+		if o != nil {
+			o(m)
+		}
+	}
+	return m
+}
+
+// GrantedTools (A-106) returns the tools sessionID is granted beyond the allowlist (none
+// without a session).
+func (m *ToolManager) GrantedTools(sessionID string) []string {
+	if sessionID == "" || m.sessionGrants == nil {
+		return nil
+	}
+	return slices.Clone(m.sessionGrants(sessionID))
+}
+
+// grantsBeyond is the session's granted tools that allowed lacks.
+func (m *ToolManager) grantsBeyond(allowed []string, sessionID string) []string {
+	var out []string
+	for _, name := range m.GrantedTools(sessionID) {
+		if !slices.Contains(allowed, name) && !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// ListFor (A-106) is List plus the tools sessionID is granted beyond the allowlist
+// (agentloop.SessionTools).
+func (m *ToolManager) ListFor(sessionID string) []toolhub.Definition {
+	allowed := m.allowlist()
+	if granted := m.grantsBeyond(allowed, sessionID); len(granted) > 0 {
+		allowed = append(allowed, granted...)
+	}
+	return m.hub.GetByNames(allowed)
 }
 
 // allowlist returns a copy of the current allowlist.
@@ -95,10 +147,16 @@ func (m *ToolManager) ScheduleProblem(name string) string {
 // hub is asked, an error matching toolhub.ErrNotFound with the text `Tool "x" not
 // available for this agent`. A denial is the returned Decision with Allowed false and
 // a nil error, exactly like toolhub.ToolHub.Authorize.
+// A-106: the session's granted tools (tc.SessionID) are available and allowed too; an
+// empty allowlist stays "no restriction" for the policy.
 func (m *ToolManager) Authorize(ctx context.Context, name string, args kernel.Arguments, tc toolhub.Context) (toolhub.Authorized, toolhub.Decision, error) {
 	allowed := m.allowlist()
-	if !slices.Contains(allowed, name) {
+	granted := m.grantsBeyond(allowed, tc.SessionID)
+	if !slices.Contains(allowed, name) && !slices.Contains(granted, name) {
 		return toolhub.Authorized{}, toolhub.Decision{}, &notAvailableError{name: name}
+	}
+	if len(allowed) > 0 && len(granted) > 0 {
+		allowed = append(allowed, granted...)
 	}
 	return m.hub.Authorize(ctx, name, args, tc, allowed)
 }

@@ -28,6 +28,7 @@ method (*AgentCore) ChannelPlatformHub() *channelplatformhub.ChannelPlatformHub
 method (*AgentCore) Dispose(ctx context.Context) error
 method (*AgentCore) DisposeAgent(ctx context.Context, id string) error
 method (*AgentCore) Events() events.Bus
+method (*AgentCore) Groups() *grouphub.Hub
 method (*AgentCore) HandleChannelWebhook(ctx context.Context, channelID string, req channel.WebhookRequest) channel.WebhookResponse
 method (*AgentCore) HandleJobWebhook(ctx context.Context, jobID string, req job.WebhookRequest) (job.WebhookResponse, error)
 method (*AgentCore) Initialize(ctx context.Context) error
@@ -47,6 +48,7 @@ method (*AgentCore) Trace() *trace.Service
 method (*AgentCore) UseChannelPlatform(p channel.Platform) error
 method (*AgentCore) UseChannelTurnRunner(r channel.TurnRunner)
 method (*AgentCore) UseCommand(spec command.Spec, opts command.RegisterOptions) error
+method (*AgentCore) UseGroupRunner(r grouphub.MemberRunner)
 method (*AgentCore) UseJobRunner(r job.Runner)
 method (*AgentCore) UseLLMProvider(p llmhub.Provider) error
 method (*AgentCore) UsePersistence(h *persistence.PersistenceHub) error

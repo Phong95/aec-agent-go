@@ -88,6 +88,10 @@ type Deps struct {
 	// types (AgentProfile.Subagents.Types) resolve from, on every spawn - AgentCore passes
 	// its own. Optional: nil means the agent has no subagent types.
 	SubagentHub *subagenthub.SubagentHub
+	// SubagentScopes (A-106) is the spawn scopes of sessions, read on every spawn - a group
+	// lead's session delegates to the group's members while it leads a group turn
+	// (AgentCore passes its GroupHub's). Optional: nil means none.
+	SubagentScopes subagent.Scopes
 	// SecretHub (A-101) is the host's secrets - sealed keys the agent's tools use without
 	// the model seeing them (AgentCore passes its own). Optional: nil means no secrets.
 	SecretHub *secrethub.SecretHub

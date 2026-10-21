@@ -69,6 +69,23 @@ type Tools interface {
 	Authorize(ctx context.Context, name string, args kernel.Arguments, tc toolhub.Context) (toolhub.Authorized, toolhub.Decision, error)
 }
 
+// SessionTools is the optional session side of Tools (A-106), found by type assertion:
+// ListFor is List plus the tools the session is granted beyond the agent's tool list (a
+// group lead's session is granted spawn_subagent while it leads). Authorize already
+// sees the session (toolhub.Context.SessionID). Without it, List is used for every
+// session.
+type SessionTools interface {
+	ListFor(sessionID string) []toolhub.Definition
+}
+
+// listTools is the session's tools: SessionTools.ListFor when t has it, List otherwise.
+func listTools(t Tools, sessionID string) []toolhub.Definition {
+	if st, ok := t.(SessionTools); ok {
+		return st.ListFor(sessionID)
+	}
+	return t.List()
+}
+
 // Skills is the agent's skill access. It is optional in Deps:
 // an agent without skills passes nil.
 //
@@ -215,6 +232,11 @@ type Deps struct {
 	// spawn_subagent. Resolved per model call and per dispatch; nil, or a nil result,
 	// means every tool of the agent.
 	ToolScope func(sessionID string) func(def toolhub.Definition) bool
+	// PreApproved (A-106) says whether a call runs without asking even though it needs
+	// approval - the user already agreed to it for this session (a group lead handing work
+	// to the group's members through spawn_subagent). The callee's own approval-gated
+	// calls still ask. Nil means none.
+	PreApproved func(sessionID, toolName string) bool
 	// Secrets (A-101) is the agent's secrets, handed to tools as toolhub.Context.Secrets;
 	// every tool result and tool error is passed through its Redact before anyone sees it
 	// (the model, the conversation, traces, events, the UI). Nil means none.

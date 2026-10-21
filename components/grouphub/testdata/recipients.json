@@ -1,0 +1,2176 @@
+{
+  "about": "A-108 recipient resolution: who answers a group message. Shared by the core/go and core/ts tests, so both SDKs resolve the same way; edit the cases here.",
+  "members": [
+    {
+      "id": "rfi",
+      "name": "RFI Desk"
+    },
+    {
+      "id": "spec",
+      "name": "Spec Checker"
+    },
+    {
+      "id": "sched",
+      "name": "Site Scheduler"
+    },
+    {
+      "id": "takeoff",
+      "name": "Takeoff"
+    }
+  ],
+  "leadId": "rfi",
+  "cases": [
+    {
+      "name": "lead / no To / no mention / none muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "lead",
+          "leadId": "rfi",
+          "helpers": [
+            "spec",
+            "sched",
+            "takeoff"
+          ]
+        }
+      }
+    },
+    {
+      "name": "lead / no To / no mention / sched muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "lead",
+          "leadId": "rfi",
+          "helpers": [
+            "spec",
+            "takeoff"
+          ]
+        }
+      }
+    },
+    {
+      "name": "lead / no To / @Site Scheduler / none muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "lead / no To / @Site Scheduler / sched muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "lead / no To / @spec checker (lower case) / none muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / no To / @spec checker (lower case) / sched muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / no To / @takeoff by id, with punctuation / none muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "lead / no To / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / no mention / none muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / no mention / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / @Site Scheduler / none muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "spec",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / @Site Scheduler / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "spec",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / @spec checker (lower case) / none muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / @spec checker (lower case) / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / @takeoff by id, with punctuation / none muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To spec / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / no mention / none muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / no mention / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / @Site Scheduler / none muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / @Site Scheduler / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / @spec checker (lower case) / none muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / @spec checker (lower case) / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / @takeoff by id, with punctuation / none muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To sched+spec / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / no mention / none muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "lead",
+          "leadId": "rfi",
+          "helpers": [
+            "spec",
+            "sched",
+            "takeoff"
+          ]
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / no mention / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "lead",
+          "leadId": "rfi",
+          "helpers": [
+            "spec",
+            "takeoff"
+          ]
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / @Site Scheduler / none muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / @Site Scheduler / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / @spec checker (lower case) / none muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / @spec checker (lower case) / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / @takeoff by id, with punctuation / none muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "lead / To a stranger / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "lead",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "all / no To / no mention / none muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "rfi",
+            "spec",
+            "sched",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / no To / no mention / sched muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "rfi",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / no To / @Site Scheduler / none muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "all / no To / @Site Scheduler / sched muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "all / no To / @spec checker (lower case) / none muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / no To / @spec checker (lower case) / sched muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / no To / @takeoff by id, with punctuation / none muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "all / no To / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "all",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "all / To spec / no mention / none muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / To spec / no mention / sched muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / To spec / @Site Scheduler / none muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "spec",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To spec / @Site Scheduler / sched muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "spec",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To spec / @spec checker (lower case) / none muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / To spec / @spec checker (lower case) / sched muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / To spec / @takeoff by id, with punctuation / none muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To spec / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "all",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / no mention / none muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / no mention / sched muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / @Site Scheduler / none muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / @Site Scheduler / sched muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / @spec checker (lower case) / none muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / @spec checker (lower case) / sched muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / @takeoff by id, with punctuation / none muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To sched+spec / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "all",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / no mention / none muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "rfi",
+            "spec",
+            "sched",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / no mention / sched muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "rfi",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / @Site Scheduler / none muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / @Site Scheduler / sched muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / @spec checker (lower case) / none muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / @spec checker (lower case) / sched muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / @takeoff by id, with punctuation / none muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "all / To a stranger / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "all",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "mention / no To / no mention / none muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "none",
+          "reason": "Nobody was mentioned, so nobody answers. @mention a member or pick one in “To”."
+        }
+      }
+    },
+    {
+      "name": "mention / no To / no mention / sched muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "none",
+          "reason": "Nobody was mentioned, so nobody answers. @mention a member or pick one in “To”."
+        }
+      }
+    },
+    {
+      "name": "mention / no To / @Site Scheduler / none muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "mention / no To / @Site Scheduler / sched muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "mention / no To / @spec checker (lower case) / none muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / no To / @spec checker (lower case) / sched muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / no To / @takeoff by id, with punctuation / none muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "mention / no To / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / no mention / none muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / no mention / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / @Site Scheduler / none muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "spec",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / @Site Scheduler / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "spec",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / @spec checker (lower case) / none muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / @spec checker (lower case) / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / @takeoff by id, with punctuation / none muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To spec / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / no mention / none muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / no mention / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / @Site Scheduler / none muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / @Site Scheduler / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / @spec checker (lower case) / none muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / @spec checker (lower case) / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / @takeoff by id, with punctuation / none muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To sched+spec / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "sched",
+        "spec"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "sched",
+          "spec",
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "sched",
+            "spec",
+            "takeoff"
+          ],
+          "summarize": true
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / no mention / none muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "none",
+          "reason": "Nobody was mentioned, so nobody answers. @mention a member or pick one in “To”."
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / no mention / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "Can the east façade start in week 33?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "none",
+          "reason": "Nobody was mentioned, so nobody answers. @mention a member or pick one in “To”."
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / @Site Scheduler / none muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / @Site Scheduler / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "@Site Scheduler what slips if the RFI takes 5 days?",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / @spec checker (lower case) / none muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / @spec checker (lower case) / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "ask @spec checker about 08 44 13",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / @takeoff by id, with punctuation / none muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "mention / To a stranger / @takeoff by id, with punctuation / sched muted",
+      "replyMode": "mention",
+      "to": [
+        "stranger"
+      ],
+      "muted": [
+        "sched"
+      ],
+      "text": "quantities please, @takeoff.",
+      "want": {
+        "addressed": [
+          "takeoff"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "takeoff"
+        }
+      }
+    },
+    {
+      "name": "longest name wins: @Spec Checker is not also @Spec",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [],
+      "text": "@Spec Checker and nobody else",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "a name inside a word is not a mention",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [],
+      "text": "email rfi@example.com or @rfidesk",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "none",
+          "reason": "Nobody was mentioned, so nobody answers. @mention a member or pick one in “To”."
+        }
+      }
+    },
+    {
+      "name": "mention at the very end",
+      "replyMode": "mention",
+      "to": [],
+      "muted": [],
+      "text": "thoughts, @RFI Desk",
+      "want": {
+        "addressed": [
+          "rfi"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "rfi"
+        }
+      }
+    },
+    {
+      "name": "the same member twice is addressed once",
+      "replyMode": "lead",
+      "to": [
+        "spec"
+      ],
+      "muted": [],
+      "text": "@Spec Checker again",
+      "want": {
+        "addressed": [
+          "spec"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "spec"
+        }
+      }
+    },
+    {
+      "name": "a muted member addressed directly answers",
+      "replyMode": "all",
+      "to": [],
+      "muted": [
+        "sched",
+        "takeoff"
+      ],
+      "text": "@Site Scheduler only",
+      "want": {
+        "addressed": [
+          "sched"
+        ],
+        "plan": {
+          "kind": "single",
+          "agentId": "sched"
+        }
+      }
+    },
+    {
+      "name": "everyone answers with all but the lead muted is the lead alone",
+      "replyMode": "all",
+      "to": [],
+      "muted": [
+        "spec",
+        "sched",
+        "takeoff"
+      ],
+      "text": "status?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "single",
+          "agentId": "rfi"
+        }
+      }
+    },
+    {
+      "name": "lead routes with all helpers muted is the lead alone",
+      "replyMode": "lead",
+      "to": [],
+      "muted": [
+        "spec",
+        "sched",
+        "takeoff"
+      ],
+      "text": "status?",
+      "want": {
+        "addressed": [],
+        "plan": {
+          "kind": "single",
+          "agentId": "rfi"
+        }
+      }
+    },
+    {
+      "name": "To order is kept, mentions follow in group order",
+      "replyMode": "mention",
+      "to": [
+        "takeoff"
+      ],
+      "muted": [],
+      "text": "@Site Scheduler and @RFI Desk",
+      "want": {
+        "addressed": [
+          "takeoff",
+          "rfi",
+          "sched"
+        ],
+        "plan": {
+          "kind": "round",
+          "agentIds": [
+            "takeoff",
+            "rfi",
+            "sched"
+          ],
+          "summarize": true
+        }
+      }
+    }
+  ]
+}

@@ -72,7 +72,7 @@ var layerTable = map[string][]string{
 	"kernel":                {"internal/jsonx", "internal/nilcheck", "kernel/ordered"},
 	// Phase 12 (12-02): events, agent and memorysystem log a recovered panic through
 	// internal/redact.Panic (10-SECURITY UF-1).
-	"components/events":                    {"kernel", "internal/jsonx", "internal/redact"},
+	"components/events":                    {"kernel", "internal/jsonx", "internal/redact", "components/grouphub/group"}, // A-106: the group:* payloads carry group.Message
 	"components/trace":                     {"kernel", "internal/jsonx", "kernel/ordered"},
 	"components/sandboxhub":                {"kernel", "components/events", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "kernel/ordered"},
 	"components/sandboxhub/host":           {"kernel", "components/sandboxhub", "internal/jsstr", "internal/viewkit"},
@@ -129,7 +129,7 @@ var layerTable = map[string][]string{
 	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret"},                                                                   // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets
 	"components/toolhub":                                {"kernel", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "internal/jsonx", "kernel/ordered", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"}, // Update (A-70 agent tools): toolhub.Context.Triggers is a trigger.Triggers; A-105: toolhub.Context.Subagents; A-101: toolhub.Context.Secrets
 	"components/llmhub":                                 {"kernel", "components/toolhub", "internal/jsonx", "internal/jsstr", "internal/viewkit", "internal/redact", "kernel/ordered"},
-	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret"}, // A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore
+	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret", "components/grouphub/group"}, // A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore; A-106: GroupStore, GroupMessageStore
 	"components/skillhub":                               {"kernel", "components/skillhub/skill", "components/persistence", "components/events", "kernel/ordered", "internal/nilcheck"},
 	"components/artifacthub":                            {"kernel", "components/artifacthub/artifact", "components/sandboxhub", "components/persistence", "components/events", "internal/jsstr", "internal/nilcheck"},
 	// Phase 9: agentloop is the OTAR loop. It talks to the rest of the SDK only
@@ -137,7 +137,7 @@ var layerTable = map[string][]string{
 	// concrete tool hub; aecmock and conformance sit above it.
 	"components/agent/agentloop": {"kernel", "internal/redact", "components/events", "components/trace", "components/toolhub", "components/llmhub", "components/agent/profile", "components/agent/memorysystem/memory", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"}, // Update (A-70 agent tools): agentloop.Deps.Triggers, handed to the tools; A-105: agentloop.Deps.Subagents; A-101: agentloop.Deps.Secrets
 	"aecmock":                    {"components/channelplatformhub/channel", "kernel", "components/toolhub", "components/llmhub", "components/persistence", "components/sandboxhub", "components/agent/agentloop", "components/agent/profile", "components/agent/memorysystem/memory", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/viewkit"},
-	"conformance":                {"kernel", "components/events", "components/toolhub", "components/llmhub", "components/persistence", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/agent/profile", "components/sandboxhub", "kernel/ordered", "components/agent/agentloop", "components/trace", "conformance/internal/check", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"},
+	"conformance":                {"kernel", "components/events", "components/toolhub", "components/llmhub", "components/persistence", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/agent/profile", "components/sandboxhub", "kernel/ordered", "components/agent/agentloop", "components/trace", "conformance/internal/check", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/grouphub/group"},
 	"conformance/internal/check": {},
 	// Phase 8: the four provider leaves, each registering itself in init(), and
 	// llm/all, the one blank-import package that links them. A leaf may import
@@ -242,6 +242,16 @@ var layerTable = map[string][]string{
 		"components/secrethub",
 		// A-136: AgentCore.UseCommand takes a command.Spec.
 		"components/agent/command",
+		// A-106: AgentCore owns the group hub (Groups, UseGroupRunner).
+		"components/grouphub",
+	},
+	// A-106: group chats. group is the type-only leaf the hub shares with its stores and
+	// the event payloads; grouphub runs the turns over the agents (agent.Agent.ChatStream)
+	// and their subagent managers (spawn scopes).
+	"components/grouphub/group": {"kernel", "internal/jsonx"},
+	"components/grouphub": {
+		"kernel", "kernel/ordered", "components/grouphub/group", "components/agent", "components/agent/subagent", "components/events",
+		"components/persistence", "components/sandboxhub", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/redact",
 	},
 }
 

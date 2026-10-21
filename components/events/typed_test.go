@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Phong95/aec-agent-go/components/events"
+	"github.com/Phong95/aec-agent-go/components/grouphub/group"
 	"github.com/Phong95/aec-agent-go/internal/wiretest"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
@@ -135,6 +136,22 @@ func lifecycleSamples() []sample {
 		// A-136: a session's settings changed, and a slash command ran.
 		mk("SessionUpdated", events.SessionUpdated, events.SessionUpdatedPayload{AgentID: agentID, SessionID: "s-1", Fields: []string{"title"}}),
 		mk("CommandExecuted", events.CommandExecuted, events.CommandExecutedPayload{AgentID: agentID, SessionID: "s-1", Name: "rename", Client: "web", OK: false, Error: "invalid_arguments"}),
+		// A-106: the group kinds.
+		mk("GroupChanged", events.GroupChanged, events.GroupChangedPayload{GroupID: "g1", Change: group.ChangeUpdated}),
+		mk("GroupMessageAdded", events.GroupMessageAdded, events.GroupMessagePayload{GroupID: "g1", Message: group.Message{
+			ID: "m1", SessionID: "gs1", GroupID: "g1", Seq: 1, Kind: group.KindUser, Text: "hi", To: []string{},
+			CreatedAt: "2026-10-21T00:00:00.000Z", UpdatedAt: "2026-10-21T00:00:00.000Z",
+		}}),
+		mk("GroupMessageUpdated", events.GroupMessageUpdated, events.GroupMessagePayload{GroupID: "g1", Message: group.Message{
+			ID: "m2", SessionID: "gs1", GroupID: "g1", Seq: 2, Kind: group.KindAgent, Text: "done", AgentID: "spec", RoundID: "r1",
+			Status: group.StatusPartial, Tools: []group.ToolStep{{ID: "t1", Name: "read_spec", Status: group.ToolDone, ResultPreview: "ok"}},
+			Usage: &kernel.TokenUsage{InputTokens: 10, OutputTokens: 5}, Error: "the reply hit the output token limit",
+			CreatedAt: "2026-10-21T00:00:00.000Z", UpdatedAt: "2026-10-21T00:00:01.000Z",
+		}}),
+		mk("GroupMessageDelta", events.GroupMessageDelta, events.GroupMessageDeltaPayload{GroupID: "g1", MessageID: "m2", AgentID: "spec", Text: "do"}),
+		mk("GroupPresence", events.GroupPresence, events.GroupPresencePayload{GroupID: "g1", AgentID: "spec", State: group.PresenceTool, Tool: "read_spec", RoundID: "r1"}),
+		mk("GroupTurnStarted", events.GroupTurnStarted, events.GroupTurnStartedPayload{GroupID: "g1", TurnID: "t1", Plan: group.PlanRound}),
+		mk("GroupTurnFinished", events.GroupTurnFinished, events.GroupTurnFinishedPayload{GroupID: "g1", TurnID: "t1", Status: group.TurnCompleted, Usage: kernel.TokenUsage{InputTokens: 20, OutputTokens: 10}}),
 	}
 }
 
@@ -252,8 +269,8 @@ func sdkEventTypeValues(t *testing.T) []string {
 
 func TestKindNames(t *testing.T) {
 	got := events.KindNames()
-	if len(got) != 47 {
-		t.Fatalf("KindNames has %d entries, want 47", len(got))
+	if len(got) != 54 {
+		t.Fatalf("KindNames has %d entries, want 54", len(got))
 	}
 	seen := map[string]bool{}
 	for _, n := range got {

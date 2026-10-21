@@ -336,7 +336,7 @@ func (e *executor) checkScope(run *toolRun, call kernel.ToolCall) *kernel.ToolRe
 	if inScope == nil {
 		return nil
 	}
-	for _, def := range e.deps.Tools.List() {
+	for _, def := range listTools(e.deps.Tools, run.r.sessionID) {
 		if def.Name != call.Name {
 			continue
 		}
