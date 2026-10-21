@@ -365,6 +365,57 @@ func TestChannelCommands(t *testing.T) {
 	})
 }
 
+// A-136: the agent's commands run in the chat - /resume goes back to an older
+// conversation, privileged changes are for owners.
+func TestChannelRunsTheAgentsCommands(t *testing.T) {
+	r := newChannelRig(t, 0)
+	_, adapter := r.open(t)
+	say := func(text, want string) {
+		t.Helper()
+		mustOK(t, adapter.Receive(aecmock.FakeDirectMessage("u1", text)))
+		waitFor(t, text, func() bool { return lastText(adapter) == want })
+	}
+	say("/context", "No conversation yet.")
+	if n := len(channelSessions(t, r.a)); n != 0 {
+		t.Fatalf("a read-only command made %d sessions", n)
+	}
+
+	say("first", "reply from primary")
+	say("/rename Roof RFIs", "Renamed this conversation to \u201cRoof RFIs\u201d.")
+	say("/new", "Started a new conversation.")
+	mustOK(t, adapter.Receive(aecmock.FakeDirectMessage("u1", "/resume")))
+	waitFor(t, "/resume", func() bool { return strings.Contains(lastText(adapter), "1. Roof RFIs") })
+	say("/resume 1", "Resumed \u201cRoof RFIs\u201d.")
+	mustOK(t, adapter.Receive(aecmock.FakeDirectMessage("u1", "second")))
+	waitFor(t, "the second reply", func() bool { return len(adapter.SentTexts()) == 7 && lastText(adapter) == "reply from primary" })
+	var roof kernel.Session
+	for _, s := range channelSessions(t, r.a) {
+		if title, _ := s.Metadata.Get("title"); title == "Roof RFIs" {
+			roof = s
+		}
+	}
+	msgs, err := r.e.hub.Messages.Get(t.Context(), roof.ID)
+	mustOK(t, err)
+	var contents []string
+	for _, m := range msgs {
+		contents = append(contents, strings.TrimSpace(m.Content))
+	}
+	if want := []string{"first", "reply from primary", "second", "reply from primary"}; !slices.Equal(contents, want) {
+		t.Fatalf("Roof RFIs messages = %q, want %q", contents, want)
+	}
+
+	// An open DM: u1 is not on the allow list, so it can look but not widen permissions.
+	say("/permissions yolo", "Only the bot's owners (the senders on its allow list) can use /permissions to change things.")
+	mustOK(t, adapter.Receive(aecmock.FakeDirectMessage("u1", "/permissions")))
+	waitFor(t, "/permissions", func() bool { return strings.Contains(lastText(adapter), "Permissions: ask") })
+	// Unknown names still go to the agent as text (a skill, say).
+	mustOK(t, adapter.Receive(aecmock.FakeDirectMessage("u1", "/web-research roofs")))
+	waitFor(t, "/web-research", func() bool {
+		msgs, err := r.e.hub.Messages.Get(t.Context(), roof.ID)
+		return err == nil && len(msgs) == 6 && msgs[4].Content == "/web-research roofs"
+	})
+}
+
 func TestChannelPublishesItsCommandsAndListsThemInHelp(t *testing.T) {
 	r := newChannelRig(t, 0)
 	_, adapter := r.open(t)
@@ -372,14 +423,23 @@ func TestChannelPublishesItsCommandsAndListsThemInHelp(t *testing.T) {
 	for _, c := range adapter.Commands() {
 		names = append(names, c.Name)
 	}
-	if want := []string{"new", "stop", "status", "model", "approve", "deny", "whoami", "sethome", "help"}; !slices.Equal(names, want) {
+	// A-136: then the agent's own commands (its command manager) that work in a chat.
+	want := []string{
+		"new", "stop", "status", "model", "approve", "deny", "yolo", "whoami", "sethome", "help",
+		"compact", "resume", "rename", "context", "usage", "permissions", "plan", "init", "diff", "review",
+	}
+	if !slices.Equal(names, want) {
 		t.Fatalf("commands = %v, want %v", names, want)
 	}
 	mustOK(t, adapter.Receive(aecmock.FakeDirectMessage("u1", "/help")))
 	waitFor(t, "/help", func() bool { return len(adapter.SentTexts()) == 1 })
 	help := adapter.SentTexts()[0]
-	for _, name := range names[:len(names)-1] {
-		if !strings.Contains(help, "/"+name+" \u2014 ") {
+	for _, name := range names {
+		if name == "help" {
+			continue
+		}
+		// A-136: the agent's commands are listed with their usage ("/compact [focus] - ...").
+		if !regexp.MustCompile(`/` + name + `( \S+)* \x{2014} `).MatchString(help) {
 			t.Fatalf("/help does not list /%s:\n%s", name, help)
 		}
 	}

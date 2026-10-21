@@ -17,6 +17,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/subagenthub/subagenttype"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/components/trace"
+	"github.com/Phong95/aec-agent-go/kernel"
 )
 
 // childLoopDeps is what a subagent type's short-lived loop borrows from its parent agent
@@ -36,11 +37,17 @@ type childLoopDeps struct {
 	// secrets (A-101) is the parent's secrets - a type child uses the secrets its parent may
 	// use (never manage_secret). Nil means none.
 	secrets *secretManager
+	// approvalMode (A-135) is a session's approval mode - a type child uses its parent
+	// session's. Nil means always ask.
+	approvalMode func(ctx context.Context, sessionID string) (kernel.ApprovalMode, error)
 }
 
 // typeTurn is one turn of a subagent type, as runTypeTurn gets it.
 type typeTurn struct {
-	sessionID       string
+	sessionID string
+	// parentSessionID (A-135) is the parent's session: the child's approvals use its
+	// approval mode.
+	parentSessionID string
 	prompt          string
 	traceAttributes map[string]any
 	interaction     toolhub.InteractionHandler
@@ -104,6 +111,12 @@ func runTypeTurn(ctx context.Context, d childLoopDeps, parent profile.AgentProfi
 		ctxOpts = append(ctxOpts, WithSecretIndex(func(ctx context.Context) (string, bool) { return d.secrets.buildIndex(ctx, false) }))
 		secrets = d.secrets
 	}
+	var approvalMode func(context.Context, string) (kernel.ApprovalMode, error)
+	if d.approvalMode != nil {
+		approvalMode = func(ctx context.Context, _ string) (kernel.ApprovalMode, error) {
+			return d.approvalMode(ctx, turn.parentSessionID)
+		}
+	}
 	loop, err := agentloop.New(agentloop.Deps{
 		Models:      d.models,
 		Tools:       NewToolManager(d.toolHub, p),
@@ -114,8 +127,10 @@ func runTypeTurn(ctx context.Context, d childLoopDeps, parent profile.AgentProfi
 		Sandbox:     d.sandboxes,
 		Artifacts:   d.artifacts,
 		Interaction: func(string) toolhub.InteractionHandler { return turn.interaction },
-		ToolScope:   func(string) func(toolhub.Definition) bool { return scope },
-		Secrets:     secrets,
+		// A-135: the parent session's approval mode.
+		ApprovalMode: approvalMode,
+		ToolScope:    func(string) func(toolhub.Definition) bool { return scope },
+		Secrets:      secrets,
 	}, loopOpts...)
 	if err != nil {
 		return subagent.TurnResult{}, err

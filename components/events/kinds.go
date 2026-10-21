@@ -18,15 +18,18 @@ var (
 	ToolDenied            = Kind[ToolDeniedPayload]{Name: "agent-loop:tool-denied"}
 	ToolApprovalRequested = Kind[ToolApprovalRequestedPayload]{Name: "agent-loop:tool-approval-request"}
 	ToolApprovalResolved  = Kind[ToolApprovalResolvedPayload]{Name: "agent-loop:tool-approval-result"}
-	SkillDispatched       = Kind[DispatchStartPayload]{Name: "agent-loop:skill-start"}
-	SkillCompleted        = Kind[DispatchEndPayload]{Name: "agent-loop:skill-end"}
-	SkillRetry            = Kind[DispatchRetryPayload]{Name: "agent-loop:skill-retry"}
-	SkillFailed           = Kind[DispatchFailedPayload]{Name: "agent-loop:skill-error"}
-	RunCompleted          = Kind[RunCompletedPayload]{Name: "agent-loop:complete"}
-	MaxIterationsReached  = Kind[MaxIterationsPayload]{Name: "agent-loop:max-iterations"}
-	ArtifactSaved         = Kind[ArtifactWrittenPayload]{Name: "artifact:saved"}
-	ArtifactUpdated       = Kind[ArtifactWrittenPayload]{Name: "artifact:updated"}
-	ArtifactDeleted       = Kind[ArtifactDeletedPayload]{Name: "artifact:deleted"}
+	// ToolAutoApproved (A-135): a call that needed approval ran without asking - its
+	// session is in YOLO mode.
+	ToolAutoApproved     = Kind[ToolAutoApprovedPayload]{Name: "agent-loop:tool-auto-approved"}
+	SkillDispatched      = Kind[DispatchStartPayload]{Name: "agent-loop:skill-start"}
+	SkillCompleted       = Kind[DispatchEndPayload]{Name: "agent-loop:skill-end"}
+	SkillRetry           = Kind[DispatchRetryPayload]{Name: "agent-loop:skill-retry"}
+	SkillFailed          = Kind[DispatchFailedPayload]{Name: "agent-loop:skill-error"}
+	RunCompleted         = Kind[RunCompletedPayload]{Name: "agent-loop:complete"}
+	MaxIterationsReached = Kind[MaxIterationsPayload]{Name: "agent-loop:max-iterations"}
+	ArtifactSaved        = Kind[ArtifactWrittenPayload]{Name: "artifact:saved"}
+	ArtifactUpdated      = Kind[ArtifactWrittenPayload]{Name: "artifact:updated"}
+	ArtifactDeleted      = Kind[ArtifactDeletedPayload]{Name: "artifact:deleted"}
 	// Update (A-126): the scheduled-job:* kinds of code jobs were removed with scheduled
 	// tasks (plugin code). Every job emits the job:* kinds below.
 
@@ -107,6 +110,18 @@ var (
 	SecretUpdated = Kind[SecretChangedPayload]{Name: "secret:updated"}
 	SecretDeleted = Kind[SecretChangedPayload]{Name: "secret:deleted"}
 	SecretUsed    = Kind[SecretUsedPayload]{Name: "secret:used"}
+
+	// A-135: a session's approval mode was set (Agent.SetApprovalMode, through the
+	// conversation manager), with that session's id. No built-in subscribers (hosts).
+	SessionApprovalModeChanged = Kind[SessionApprovalModeChangedPayload]{Name: "session:approval-mode"}
+
+	// A-136: a session's settings changed outside a turn (its title from /rename, its model
+	// from /model, its working set from /compact), emitted by the conversation manager with
+	// that session's id. No built-in subscribers (hosts).
+	SessionUpdated = Kind[SessionUpdatedPayload]{Name: "session:updated"}
+	// A-136: a slash command ran (the agent's command manager, Agent.Commands().Run),
+	// whatever its outcome, with the session it ran in. No built-in subscribers (hosts).
+	CommandExecuted = Kind[CommandExecutedPayload]{Name: "command:executed"}
 )
 
 // KindNames returns the 32 event type strings in their canonical order.
@@ -116,6 +131,8 @@ var (
 // (Update (A-105): 37, with the four subagent kinds; 38 with subagent-type:deleted.)
 // (Update (A-101): 42, with the four secret kinds.)
 // (Update (A-104): 43, with agent-loop:context-usage.)
+// (Update (A-135): 45, with agent-loop:tool-auto-approved and session:approval-mode.)
+// (Update (A-136): 47, with session:updated and command:executed.)
 // The slice is fresh on every call.
 func KindNames() []string {
 	return []string{
@@ -131,6 +148,7 @@ func KindNames() []string {
 		ToolDenied.Name,
 		ToolApprovalRequested.Name,
 		ToolApprovalResolved.Name,
+		ToolAutoApproved.Name,
 		SkillDispatched.Name,
 		SkillCompleted.Name,
 		SkillRetry.Name,
@@ -162,5 +180,8 @@ func KindNames() []string {
 		SecretUpdated.Name,
 		SecretDeleted.Name,
 		SecretUsed.Name,
+		SessionApprovalModeChanged.Name,
+		SessionUpdated.Name,
+		CommandExecuted.Name,
 	}
 }

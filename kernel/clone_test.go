@@ -30,6 +30,7 @@ func TestSessionCloneIsDeep(t *testing.T) {
 		CounterCalibration:       &kernel.CounterCalibration{CharsPerToken: 3.5, Samples: 1},
 		ConsolidatedMessageCount: &three,
 		JobID:                    "job-1",
+		ApprovalMode:             kernel.ApprovalModeYolo,
 	}
 	clonecheck.AssertDeep(t, sample, kernel.Session.Clone)
 }

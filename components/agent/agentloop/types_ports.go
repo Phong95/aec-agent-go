@@ -183,6 +183,11 @@ type Deps struct {
 	// turn's approvals and questions to its chat and every other session to the host's
 	// handler.
 	Interaction func(sessionID string) toolhub.InteractionHandler
+	// ApprovalMode (A-135) is the session's approval mode, read at every call that needs
+	// approval (so a switch during a turn applies to its next call).
+	// kernel.ApprovalModeYolo runs the call without asking the interaction handler. Nil,
+	// or an error, means kernel.ApprovalModeAsk.
+	ApprovalMode func(ctx context.Context, sessionID string) (kernel.ApprovalMode, error)
 	// Sandbox resolves the agent's sandbox for file and terminal tools and answers
 	// the sandbox-aware approval question. Nil means the agent has no sandbox.
 	Sandbox Sandboxes

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/Phong95/aec-agent-go/components/agent/command"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
@@ -90,6 +91,10 @@ type Deps struct {
 	// SecretHub (A-101) is the host's secrets - sealed keys the agent's tools use without
 	// the model seeing them (AgentCore passes its own). Optional: nil means no secrets.
 	SecretHub *secrethub.SecretHub
+	// HostCommands (A-136) returns the host's slash commands (AgentCore.UseCommand), read
+	// on every call so a command added after the agent was spawned applies. Optional: nil
+	// means none.
+	HostCommands func() []command.HostCommand
 }
 
 // SubagentHost is the agents a parent can reach (A-105): orchestration.Orchestration,

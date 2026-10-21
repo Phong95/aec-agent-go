@@ -261,6 +261,17 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 		}
 	}
 
+	// A-136: plan mode - only read-only calls run; refused before the approval gate, so
+	// nothing is asked. (core/ts checks it before the policy; here the call's own risk -
+	// http_request GET is read-only - is known once the call is authorized, so a call
+	// the policy denies is answered with the policy's denial instead.)
+	if pre != nil && pre.err == nil {
+		if denied := e.checkPlanMode(ctx, run, call, callDefinition(pre.auth)); denied != nil {
+			span.End(obj("error", "plan-mode"))
+			return *denied
+		}
+	}
+
 	// Approval gate: consequential tools, and sandbox operations the sandbox requires
 	// approval for (for example writes on a host folder), pause for the user. Once it
 	// let the call through (gated), later attempts of this call do not ask again.
@@ -338,6 +349,22 @@ func (e *executor) checkScope(run *toolRun, call kernel.ToolCall) *kernel.ToolRe
 		return &res
 	}
 	return nil
+}
+
+// checkPlanMode (A-136) answers a call that is not read-only with a denial while the
+// session is in plan mode, and returns nil otherwise.
+func (e *executor) checkPlanMode(ctx context.Context, run *toolRun, call kernel.ToolCall, def toolhub.Definition) *kernel.ToolResult {
+	if effectiveRisk(def) == toolhub.RiskReadOnly {
+		return nil
+	}
+	if e.approvalMode(ctx, run.r.sessionID) != kernel.ApprovalModePlan {
+		return nil
+	}
+	reason := `"` + call.Name + `" can change things, and this conversation is in plan mode (read-only)`
+	emit(run.r, events.ToolDenied, events.ToolDeniedPayload{AgentID: run.r.agentID, Name: call.Name, Reason: &reason})
+	res := errorResult(call, "Plan mode: "+reason+", so it was not run. Look things up with read-only tools, then "+
+		"present your plan; the user switches plan mode off to carry it out.")
+	return &res
 }
 
 // isSkill reports whether name is a skill tool (skill_view), that is a tool the

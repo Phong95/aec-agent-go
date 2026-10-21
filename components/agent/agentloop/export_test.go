@@ -29,7 +29,7 @@ const MaxBackoff = maxBackoff
 
 // Summarize runs the summarizer over models.
 func Summarize(ctx context.Context, models Models, msgs []kernel.Message, maxOutputTokens int) (string, error) {
-	return summarizer{models: models}.summarize(ctx, msgs, maxOutputTokens, "")
+	return summarizer{models: models}.summarize(ctx, msgs, maxOutputTokens, "", "")
 }
 
 // RepairToolPairs exposes repairToolPairs.

@@ -139,4 +139,6 @@ type CountFunc func(kernel.Message) int
 
 // SummarizeFunc turns the messages to compact into one summary text. model is the
 // optional summarization model, empty for the agent's default.
-type SummarizeFunc func(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model string) (string, error)
+// A-136: instructions is what the user asked the summary to focus on (/compact <focus>),
+// empty for none.
+type SummarizeFunc func(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model, instructions string) (string, error)

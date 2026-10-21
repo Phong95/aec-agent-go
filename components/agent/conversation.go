@@ -214,6 +214,61 @@ func (c *Conversation) UpdateSession(ctx context.Context, s kernel.Session) erro
 	return nil
 }
 
+// setApprovalMode (A-135) sets the session's approval mode and saves the session; the
+// cache changes only when the store accepted it. It is serialized with the turn's other
+// writes (writeMu), so a write of the turn that started from an older copy never puts
+// the old mode back, and the newest token usage is kept. YOLO in a job's session is a
+// kernel.SessionError with SessionCodeNotAllowed and writes nothing.
+func (c *Conversation) setApprovalMode(ctx context.Context, mode kernel.ApprovalMode) (kernel.Session, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	c.mu.Lock()
+	session := c.session.Clone()
+	c.mu.Unlock()
+	if err := applyApprovalMode(&session, mode); err != nil {
+		return kernel.Session{}, err
+	}
+	if err := c.hub.Sessions.Update(ctx, session.Clone()); err != nil {
+		return kernel.Session{}, err
+	}
+	c.mu.Lock()
+	c.session = session.Clone()
+	c.mu.Unlock()
+	return session, nil
+}
+
+// ChangeSession (A-136) changes this turn's session with change and saves it (/compact
+// drops its reported context size): the agentloop.SessionChanger side of the port. The
+// cache changes only when the store accepted it. change must not keep the pointer.
+// (core/ts: Conversation.updateSession; UpdateSession is the port's usage merge here.)
+func (c *Conversation) ChangeSession(ctx context.Context, change func(*kernel.Session)) error {
+	_, err := c.changeSession(ctx, change)
+	return err
+}
+
+var _ agentloop.SessionChanger = (*Conversation)(nil)
+
+// changeSession (A-136) is ChangeSession returning the session as saved; it bumps
+// UpdatedAt. It is serialized with the turn's other writes (writeMu) like
+// setApprovalMode, so a write of the turn that started from an older copy never undoes
+// the change.
+func (c *Conversation) changeSession(ctx context.Context, change func(*kernel.Session)) (kernel.Session, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	c.mu.Lock()
+	session := c.session.Clone()
+	c.mu.Unlock()
+	change(&session)
+	session.UpdatedAt = kernel.NowMillis()
+	if err := c.hub.Sessions.Update(ctx, session.Clone()); err != nil {
+		return kernel.Session{}, err
+	}
+	c.mu.Lock()
+	c.session = session.Clone()
+	c.mu.Unlock()
+	return session, nil
+}
+
 // cloneMessageSlice deep-copies a message slice (nil stays nil).
 func cloneMessageSlice(msgs []kernel.Message) []kernel.Message {
 	if msgs == nil {

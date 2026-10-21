@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Phong95/aec-agent-go/components/agent"
+	"github.com/Phong95/aec-agent-go/components/agent/command"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
@@ -95,6 +96,9 @@ type AgentCore struct {
 	// subagentRunner runs the child turns of every agent (A-105; nil means the child
 	// agent's own Chat); guarded by mu.
 	subagentRunner subagent.Runner
+	// hostCommands is the host's slash commands (A-136, UseCommand), offered by every
+	// agent; guarded by mu.
+	hostCommands []command.HostCommand
 	// triggerRunner runs the trigger turns of every agent (A-70; nil means each agent's
 	// Chat); guarded by mu. unsubscribeTriggerStart is the agent:spawned subscription
 	// StartTriggers makes, so an agent spawned later starts its trigger worker too; Dispose
@@ -400,6 +404,8 @@ func (c *AgentCore) spawnFactory(ctx context.Context, p profile.AgentProfile) (*
 		SubagentHub: c.subagentTypes,
 		// A-101: the secrets the agent's tools use (its own and the global ones it enables).
 		SecretHub: c.secrets,
+		// A-136: the host's slash commands, read on every call.
+		HostCommands: c.hostCommandList,
 	}, p)
 }
 
@@ -543,6 +549,35 @@ func (c *AgentCore) jobTurnRunner() job.Runner {
 func (c *AgentCore) UseSubagentType(def subagenttype.Definition) error {
 	_, err := c.subagentTypes.Register(def, subagenttype.SourceApp)
 	return err
+}
+
+// UseCommand adds a slash command every agent offers (A-136), in the web app and chat apps
+// alike; it applies to the agents that are already live too. An error is a
+// *command.Error: CodeConflict when its name or an alias is taken by a built-in or another
+// host command (opts.Replace replaces a built-in marked replaceable: /usage), CodeInvalid
+// for a bad name or a spec without exactly one of Run and Prompt.
+func (c *AgentCore) UseCommand(spec command.Spec, opts command.RegisterOptions) error {
+	if err := command.Validate(spec); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entries := agent.BuiltInCommandSpecs()
+	for _, h := range c.hostCommands {
+		entries = append(entries, command.Entry{Spec: h.Spec, Source: command.SourceHost})
+	}
+	if err := command.CheckClash(spec, opts, entries, command.SourceHost); err != nil {
+		return err
+	}
+	c.hostCommands = append(c.hostCommands, command.HostCommand{Spec: spec, Options: opts})
+	return nil
+}
+
+// hostCommandList is the commands added with UseCommand (A-136), a fresh slice.
+func (c *AgentCore) hostCommandList() []command.HostCommand {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return slices.Clone(c.hostCommands)
 }
 
 // UseSecretHubProvider sets who holds the master keys secrets are sealed with (A-101):

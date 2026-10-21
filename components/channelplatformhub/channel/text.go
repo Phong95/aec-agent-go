@@ -79,9 +79,14 @@ type Command struct {
 	Target string
 }
 
-var commandPattern = regexp.MustCompile(`^/([A-Za-z0-9_]{1,32})(?:@([A-Za-z0-9_]+))?(?:\s+([\s\S]*))?$`)
+// commandPattern: the name starts with a letter or digit and holds letters, digits, "_"
+// and "-", at most 32 (A-136: "-" too, for custom commands and skills such as
+// /web-research; the same rule as the agent's command manager, package command).
+var commandPattern = regexp.MustCompile(`^/([A-Za-z0-9][A-Za-z0-9_-]{0,31})(?:@([A-Za-z0-9_]+))?(?:\s+([\s\S]*))?$`)
 
 // ParseCommand reads "/name[@bot] args"; false when text is not a command.
+// A-136: only at the start of the text; "/path/to/file" is not a command (the name must
+// end at a space or the end). command.Parse reads commands by the same rule.
 func ParseCommand(text string) (Command, bool) {
 	m := commandPattern.FindStringSubmatch(strings.TrimSpace(text))
 	if m == nil {

@@ -51,25 +51,31 @@ type summarizer struct {
 // waiting at once even when the model ignores ctx; the error is then ctx.Err().
 // maxOutputTokens bounds the summary; a non-empty model overrides the agent's
 // default model.
-func (s summarizer) summarize(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model string) (string, error) {
-	return s.summarizeTraced(ctx, msgs, maxOutputTokens, model, nil)
+// A-136: instructions (the /compact <focus>) are added to the system prompt; "" = none.
+func (s summarizer) summarize(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model, instructions string) (string, error) {
+	return s.summarizeTraced(ctx, msgs, maxOutputTokens, model, instructions, nil)
 }
 
 // traced is summarize with the summary call traced as a "summarize" model-call span
 // under the run's current span (the compaction span), so compaction's model latency
 // and token cost show in the trace.
 func (s summarizer) traced(t *runTrace) SummarizeFunc {
-	return func(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model string) (string, error) {
-		return s.summarizeTraced(ctx, msgs, maxOutputTokens, model, t)
+	return func(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model, instructions string) (string, error) {
+		return s.summarizeTraced(ctx, msgs, maxOutputTokens, model, instructions, t)
 	}
 }
 
 // summarizeTraced is summarize, with the span when t is not nil.
-func (s summarizer) summarizeTraced(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model string, t *runTrace) (string, error) {
+func (s summarizer) summarizeTraced(ctx context.Context, msgs []kernel.Message, maxOutputTokens int, model, instructions string, t *runTrace) (string, error) {
 	if len(msgs) == 0 {
 		return "", errSummarizeEmptyList
 	}
-	opts := llmhub.ModelOptions{SystemPrompt: summarySystemPrompt, MaxTokens: &maxOutputTokens}
+	systemPrompt := summarySystemPrompt
+	// A-136: /compact <focus> - the user's focus is added to the worker's instructions.
+	if instructions != "" {
+		systemPrompt += "\n\nThe user asked this summary to focus on: " + instructions
+	}
+	opts := llmhub.ModelOptions{SystemPrompt: systemPrompt, MaxTokens: &maxOutputTokens}
 	if model != "" {
 		opts.Model = model
 	}

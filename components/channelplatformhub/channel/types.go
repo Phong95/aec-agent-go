@@ -488,6 +488,9 @@ type TurnContext struct {
 	// Text is the user message for the agent (the inbound text).
 	// -> Phase 2: in groups prefixed with the sender's name.
 	Text string `json:"text"`
+	// ReadOnly (A-136) runs the turn read-only (plan mode) - a /review sent from the chat.
+	// A runner passes it on (agent.WithChatReadOnly).
+	ReadOnly bool `json:"readOnly,omitempty"`
 	// OnChunk hands each chunk of the turn to the channel (text, tool calls, tool
 	// results) so it can show the reply while it is written and the tools as they run. A
 	// runner that streams (Agent.ChatStream) calls it; one that does not leaves the chat

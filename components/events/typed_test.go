@@ -70,6 +70,8 @@ var (
 // (Update (A-126): the four job kinds.)
 // (Update (A-105): followed by the four subagent kinds.)
 // (Update (A-101): followed by the four secret kinds.)
+// (Update (A-135): followed by session:approval-mode.)
+// (Update (A-136): followed by session:updated and command:executed.)
 func lifecycleSamples() []sample {
 	return []sample{
 		mk("AgentSpawned", events.AgentSpawned, events.AgentSpawnedPayload{AgentID: agentID}),
@@ -128,6 +130,11 @@ func lifecycleSamples() []sample {
 		mk("SecretUpdated", events.SecretUpdated, events.SecretChangedPayload{Name: "WEATHER_KEY", ValueChanged: boolPtr(true)}),
 		mk("SecretDeleted", events.SecretDeleted, events.SecretChangedPayload{Name: "WEATHER_KEY"}),
 		mk("SecretUsed", events.SecretUsed, events.SecretUsedPayload{Name: "WEATHER_KEY", OwnerAgentID: agentID, AgentID: agentID, Tool: "http_request", Host: "api.example.com"}),
+		// A-135: a session's approval mode.
+		mk("SessionApprovalModeChanged", events.SessionApprovalModeChanged, events.SessionApprovalModeChangedPayload{AgentID: agentID, SessionID: "s-1", Mode: kernel.ApprovalModeYolo}),
+		// A-136: a session's settings changed, and a slash command ran.
+		mk("SessionUpdated", events.SessionUpdated, events.SessionUpdatedPayload{AgentID: agentID, SessionID: "s-1", Fields: []string{"title"}}),
+		mk("CommandExecuted", events.CommandExecuted, events.CommandExecutedPayload{AgentID: agentID, SessionID: "s-1", Name: "rename", Client: "web", OK: false, Error: "invalid_arguments"}),
 	}
 }
 
@@ -138,11 +145,23 @@ func lifecycleSamples() []sample {
 // kinds (code jobs) were removed with scheduled tasks: 20 recorded kinds remain.
 // Update (A-104): agent-loop:context-usage is not in the recorded fixture either; it is
 // inserted after ModelResponded, its place in the TS kind order.
+// Update (A-135): agent-loop:tool-auto-approved is inserted after ToolApprovalResolved,
+// its place in the TS kind order.
 func allSamples() []sample {
 	recorded := samples()
 	i := slices.IndexFunc(recorded, func(s sample) bool { return s.kind == events.ModelResponded.Name })
 	recorded = slices.Insert(recorded, i+1, contextUsageSample())
+	i = slices.IndexFunc(recorded, func(s sample) bool { return s.kind == events.ToolApprovalResolved.Name })
+	recorded = slices.Insert(recorded, i+1, toolAutoApprovedSample())
 	return append(recorded, lifecycleSamples()...)
+}
+
+// toolAutoApprovedSample is a sample of the ToolAutoApproved kind (A-135).
+func toolAutoApprovedSample() sample {
+	return mk("ToolAutoApproved", events.ToolAutoApproved, events.ToolAutoApprovedPayload{
+		AgentID: agentID, Name: "write_file", ToolCallID: "call_2", Risk: "consequential", Mode: kernel.ApprovalModeYolo,
+		Reason: "writes a host folder", Sandbox: &events.ApprovalSandboxPayload{ID: "sb1", Kind: "host", Isolated: false},
+	})
 }
 
 // contextUsageSample is a sample of the ContextUsage kind (A-104).
@@ -233,8 +252,8 @@ func sdkEventTypeValues(t *testing.T) []string {
 
 func TestKindNames(t *testing.T) {
 	got := events.KindNames()
-	if len(got) != 43 {
-		t.Fatalf("KindNames has %d entries, want 43", len(got))
+	if len(got) != 47 {
+		t.Fatalf("KindNames has %d entries, want 47", len(got))
 	}
 	seen := map[string]bool{}
 	for _, n := range got {

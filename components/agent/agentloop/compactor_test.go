@@ -278,7 +278,7 @@ func TestCompactorMatchesGolden(t *testing.T) {
 				model string
 			}
 			var calls []call
-			summarize := func(_ context.Context, msgs []kernel.Message, maxOut int, model string) (string, error) {
+			summarize := func(_ context.Context, msgs []kernel.Message, maxOut int, model, _ string) (string, error) {
 				calls = append(calls, call{msgs: slices.Clone(msgs), max: maxOut, model: model})
 				if e.Summarize != nil {
 					return "", errors.New(e.Summarize.Throws)
@@ -357,7 +357,7 @@ func resultMsg(id, content string) kernel.Message {
 	return kernel.Message{Role: kernel.RoleAssistant, ToolResults: []kernel.ToolResult{{ToolCallID: id, Content: content}}}
 }
 
-func fixedSummary(context.Context, []kernel.Message, int, string) (string, error) {
+func fixedSummary(context.Context, []kernel.Message, int, string, string) (string, error) {
 	return "summary", nil
 }
 
@@ -422,7 +422,7 @@ func TestCompactor_ClearsOldToolResults(t *testing.T) {
 		{Role: kernel.RoleUser, Content: "next"},
 	}
 	var summarised []kernel.Message
-	out := pairCompactor(10).CompactIfNeeded(t.Context(), msgs, overThreshold, pairCount, func(_ context.Context, m []kernel.Message, _ int, _ string) (string, error) {
+	out := pairCompactor(10).CompactIfNeeded(t.Context(), msgs, overThreshold, pairCount, func(_ context.Context, m []kernel.Message, _ int, _, _ string) (string, error) {
 		summarised = slices.Clone(m)
 		return "summary", nil
 	})
@@ -458,7 +458,7 @@ func TestCompactor_ClearsALegacyToolMessage(t *testing.T) {
 		return 10
 	}
 	var summarised []kernel.Message
-	pairCompactor(10).CompactIfNeeded(t.Context(), msgs, overThreshold, count, func(_ context.Context, m []kernel.Message, _ int, _ string) (string, error) {
+	pairCompactor(10).CompactIfNeeded(t.Context(), msgs, overThreshold, count, func(_ context.Context, m []kernel.Message, _ int, _, _ string) (string, error) {
 		summarised = slices.Clone(m)
 		return "summary", nil
 	})
@@ -634,7 +634,7 @@ func TestCompactor_ZeroConfigIsDisabled(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			called := false
-			summarize := func(context.Context, []kernel.Message, int, string) (string, error) {
+			summarize := func(context.Context, []kernel.Message, int, string, string) (string, error) {
 				called = true
 				return "S", nil
 			}
@@ -647,7 +647,7 @@ func TestCompactor_ZeroConfigIsDisabled(t *testing.T) {
 	t.Run("default config compacts past the threshold", func(t *testing.T) {
 		cfg := profile.DefaultCompactorConfig()
 		cfg.ProtectFirstN, cfg.ProtectLastN, cfg.TailTargetRatio = 1, 1, 0.000001
-		summarize := func(context.Context, []kernel.Message, int, string) (string, error) { return "S", nil }
+		summarize := func(context.Context, []kernel.Message, int, string, string) (string, error) { return "S", nil }
 		out := agentloop.NewCompactor(cfg).CompactIfNeeded(t.Context(), msgs, huge, nil, summarize)
 		if !out.Compacted {
 			t.Fatalf("result = %+v, want a compaction", out)

@@ -514,3 +514,64 @@ func TestChannelModelCommandShowsAndSwitchesTheModel(t *testing.T) {
 	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("u1", "/model default")))
 	waitFor(t, "the reset", func() bool { return lastText(r.adapter) == "This conversation now uses the agent's model." })
 }
+
+// A-135: /yolo.
+func TestChannelYoloCommandLetsOwnersRunToolsWithoutAPrompt(t *testing.T) {
+	tool := &dangerTool{}
+	r := newInteractiveRig(t, interactiveOptions{
+		provider: &scriptedProvider{toolName: "delete_drawings", toolArgs: `{"folder":"old"}`, reply: func(_, res string) string { return "result: " + res }},
+		tools:    []toolhub.Handler{tool},
+		access:   &channel.AccessInput{AllowFrom: []string{"owner"}},
+	})
+
+	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("owner", "/yolo")))
+	waitFor(t, "the mode", func() bool { return len(r.adapter.SentTexts()) == 1 })
+	if got := r.adapter.SentTexts()[0]; !strings.Contains(got, "YOLO mode is off") {
+		t.Fatalf("/yolo = %q", got)
+	}
+
+	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("guest", "/yolo on")))
+	waitFor(t, "the refusal", func() bool { return len(r.adapter.SentTexts()) == 2 })
+	if got := r.adapter.SentTexts()[1]; got != "Only the bot's owners (the senders on its allow list) can switch YOLO mode." {
+		t.Fatalf("guest /yolo on = %q", got)
+	}
+
+	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("owner", "/yolo on")))
+	waitFor(t, "the switch", func() bool { return len(r.adapter.SentTexts()) == 3 })
+	if got := r.adapter.SentTexts()[2]; !strings.Contains(got, "YOLO mode is on") {
+		t.Fatalf("/yolo on = %q", got)
+	}
+	// The owner's chat is in YOLO mode, the guest's is not.
+	var yolo []kernel.Session
+	for _, s := range channelSessions(t, r.a) {
+		if mode, err := r.a.ApprovalMode(t.Context(), s.ID); err == nil && mode == kernel.ApprovalModeYolo {
+			yolo = append(yolo, s)
+		}
+	}
+	if len(yolo) != 1 {
+		t.Fatalf("sessions in YOLO mode = %d", len(yolo))
+	}
+
+	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("owner", "clean up")))
+	waitFor(t, "the reply", func() bool { return lastText(r.adapter) == "result: deleted" })
+	if n := tool.runs.Load(); n != 1 {
+		t.Fatalf("runs = %d", n)
+	}
+	if _, ok := findSent(r.adapter, hasButtons); ok {
+		t.Fatal("an approval prompt was sent")
+	}
+
+	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("owner", "/status")))
+	// A-136: /status is the command manager's now - the approval mode is its "Permissions" line.
+	waitFor(t, "the status", func() bool {
+		return strings.Contains(lastText(r.adapter), "Permissions: YOLO \u2014 tools run without asking")
+	})
+
+	mustOK(t, r.adapter.Receive(aecmock.FakeDirectMessage("owner", "/yolo off")))
+	waitFor(t, "the switch back", func() bool {
+		return lastText(r.adapter) == "YOLO mode is off: tools that need approval ask here first."
+	})
+	if mode, err := r.a.ApprovalMode(t.Context(), yolo[0].ID); err != nil || mode != kernel.ApprovalModeAsk {
+		t.Fatalf("mode = %q, %v", mode, err)
+	}
+}

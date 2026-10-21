@@ -149,10 +149,16 @@ func (l *Loop) prepareContext(ctx context.Context, history []kernel.Message, mc 
 
 // toolDefinitions returns the agent's tools, plus skill_view when it has skills.
 // A-105: a subagent's session sees only the tools its scope allows.
+// A-136: a session in plan mode sees only the read-only ones.
 func (l *Loop) toolDefinitions(ctx context.Context, sessionID string) ([]toolhub.Definition, error) {
 	toolDefs := slices.Clone(l.deps.Tools.List())
 	if inScope := l.toolScope(sessionID); inScope != nil {
 		toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return !inScope(d) })
+	}
+	// A-136: in plan mode the model is offered only read-only tools (the executor refuses
+	// the rest).
+	if l.planning(ctx, sessionID) {
+		toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return d.Risk != toolhub.RiskReadOnly })
 	}
 	if toolDefs == nil {
 		toolDefs = []toolhub.Definition{}

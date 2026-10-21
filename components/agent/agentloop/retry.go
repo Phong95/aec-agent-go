@@ -391,6 +391,10 @@ func (e *executor) authorize(ctx context.Context, run *toolRun, call kernel.Tool
 		if ctx.Err() != nil {
 			return toolhub.Authorized{}, &attemptOutcome{content: cancelledMessage, isError: boolPtr(true), final: true}, nil //nolint:nilerr // a stopped run is the cancelled outcome, not an error
 		}
+		// A-136: plan mode, which executeOne checks for a call authorized at once.
+		if denied := e.checkPlanMode(ctx, run, call, callDefinition(auth)); denied != nil {
+			return toolhub.Authorized{}, &attemptOutcome{content: denied.Content, isError: boolPtr(true), final: true}, nil
+		}
 		if denied := e.gateCall(ctx, run, call, tc, callDefinition(auth), pre.span); denied != nil {
 			return toolhub.Authorized{}, &attemptOutcome{content: denied.Content, isError: boolPtr(true), final: true}, nil
 		}

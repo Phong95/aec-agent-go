@@ -150,6 +150,50 @@ type ToolApprovalResolvedPayload struct {
 	WaitedMs int64   `json:"waitedMs"`
 }
 
+// ToolAutoApprovedPayload is the payload of the ToolAutoApproved kind (A-135): why the
+// call needed approval, as the approval request would have said.
+type ToolAutoApprovedPayload struct {
+	AgentID    string `json:"agentId"`
+	Name       string `json:"name"`
+	ToolCallID string `json:"toolCallId"`
+	// Risk is a plain string, as in ToolApprovalRequestedPayload.
+	Risk string              `json:"risk"`
+	Mode kernel.ApprovalMode `json:"mode"`
+	// Reason and Sandbox are those of the approval gate, set as in
+	// ToolApprovalRequestedPayload.
+	Reason  string                  `json:"reason,omitempty"`
+	Sandbox *ApprovalSandboxPayload `json:"sandbox,omitempty"`
+}
+
+// SessionApprovalModeChangedPayload is the payload of the SessionApprovalModeChanged
+// kind (A-135): the session's new approval mode.
+type SessionApprovalModeChangedPayload struct {
+	AgentID   string              `json:"agentId"`
+	SessionID string              `json:"sessionId"`
+	Mode      kernel.ApprovalMode `json:"mode"`
+}
+
+// SessionUpdatedPayload is the payload of the SessionUpdated kind (A-136): what changed
+// about the session (e.g. ["title"], ["llmModel"], ["compactedMessages"]).
+type SessionUpdatedPayload struct {
+	AgentID   string   `json:"agentId"`
+	SessionID string   `json:"sessionId"`
+	Fields    []string `json:"fields"`
+}
+
+// CommandExecutedPayload is the payload of the CommandExecuted kind (A-136): one slash
+// command that ran. Error is the command result's error code when it failed ("" when
+// it did not).
+type CommandExecutedPayload struct {
+	AgentID   string `json:"agentId"`
+	SessionID string `json:"sessionId"`
+	// Name is the canonical name (an alias resolved), or the unknown name as typed.
+	Name   string `json:"name"`
+	Client string `json:"client"`
+	OK     bool   `json:"ok"`
+	Error  string `json:"error,omitempty"`
+}
+
 // RunCompletedPayload is the payload of the RunCompleted kind.
 type RunCompletedPayload struct {
 	AgentID    string            `json:"agentId"`

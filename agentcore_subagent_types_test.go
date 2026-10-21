@@ -450,6 +450,49 @@ func TestSubagentTypes_ATypesApprovalGatedCallAsksTheUserInTheParentsChat(t *tes
 	}
 }
 
+// A-135: a type's approval-gated call uses the parent session's YOLO mode.
+func TestSubagentTypes_ATypesApprovalGatedCallUsesTheParentSessionsYoloMode(t *testing.T) {
+	s := setupTypes(t, typesOptions{
+		tools:    []typeTool{{name: "send_rfi", risk: toolhub.RiskConsequential}},
+		types:    []string{"mailer"},
+		delegate: []map[string]any{{"subagent": "mailer", "task": "send"}},
+		child: func(_ context.Context, msgs []kernel.Message, _ llmhub.ModelOptions) (kernel.ModelResponse, error) {
+			if r := resultsOf(msgs); len(r) > 0 {
+				return typesReply(r[0].Content), nil
+			}
+			return typesCallTool("send_rfi"), nil
+		},
+	})
+	if _, err := s.core.SubagentHub().Create(t.Context(), subagenttype.Definition{Name: "mailer", Description: "Sends mail", SystemPrompt: "You mail.", Access: subagent.AccessWrite}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.parent.SetApprovalMode(t.Context(), s.sessionID, kernel.ApprovalModeYolo); err != nil || !ok {
+		t.Fatalf("SetApprovalMode: ok=%v err=%v", ok, err)
+	}
+	s.chat(t)
+	runs := s.runs(t)
+	if len(runs) != 1 {
+		t.Fatalf("%d runs, want 1", len(runs))
+	}
+	if approvals := s.approvals.recorded(); len(approvals) != 0 {
+		t.Fatalf("approvals = %+v, want none", approvals)
+	}
+	if runs[0].Output != "send_rfi ok" {
+		t.Fatalf("output = %q", runs[0].Output)
+	}
+	s.mu.Lock()
+	var auto []string
+	for _, e := range s.events {
+		if e.Type == events.ToolAutoApproved.Name {
+			auto = append(auto, e.Payload.(events.ToolAutoApprovedPayload).Name)
+		}
+	}
+	s.mu.Unlock()
+	if !slices.Equal(auto, []string{"spawn_subagent", "send_rfi"}) {
+		t.Fatalf("auto-approved = %v", auto)
+	}
+}
+
 func TestSubagentTypes_ATypeNameWinsOverAnAgentWithTheSameName(t *testing.T) {
 	s := setupTypes(t, typesOptions{
 		delegate: []map[string]any{{"subagent": "general-purpose", "task": "x"}},

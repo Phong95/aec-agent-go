@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
+	"github.com/Phong95/aec-agent-go/components/agent/command"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem"
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
@@ -91,6 +92,9 @@ type Agent struct {
 	// secrets (A-101) is the agent's secrets - its own and the global ones it enabled;
 	// values reach tools only.
 	secrets *secretManager
+	// commands (A-136) is the agent's slash commands: the built-ins (working through the
+	// managers above), the host's and the agent's own.
+	commands *commandManager
 	// jobTurn serializes the turns of the default prompt-job runner (runJobTurn): a load
 	// of the run's session and the chat on it are one step. Capacity one.
 	// -> Superseded (A-97): removed. The default runner chats in the run's session
@@ -208,6 +212,16 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		appendMessage: func(ctx context.Context, sessionID string, m kernel.Message) error {
 			return a.conv.AppendMessage(ctx, sessionID, m)
 		},
+		// A-135: /yolo and /status.
+		approvalMode: func(ctx context.Context, sessionID string) (kernel.ApprovalMode, error) {
+			return a.conv.ApprovalMode(ctx, sessionID)
+		},
+		setApprovalMode: func(ctx context.Context, sessionID string, mode kernel.ApprovalMode) error {
+			_, _, err := a.conv.SetApprovalMode(ctx, sessionID, mode)
+			return err
+		},
+		// A-136: every other command runs through the agent's command manager (built below).
+		commands: func() command.Commands { return a.commands },
 		lifetime: lifetime, //nolint:contextcheck // the lifetime derives from Background on purpose (10-SECURITY UF-3)
 		logger:   deps.Logger,
 	})
@@ -305,6 +319,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 			logger: deps.Logger,
 			// A-101: a type child uses its parent's secrets.
 			secrets: a.secrets,
+			// A-135: a type child's approvals use its parent session's approval mode.
+			approvalMode: a.approvalModeFor,
 		},
 		logger: deps.Logger,
 	})
@@ -339,7 +355,18 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	// A-97: the cap is read on every turn, so UpdateLoopConfig applies to the next one.
 	// The runs' context ends with the lifetime one, so the cancel of a failed New (above)
 	// releases it too.
-	a.conv = NewConversationManager(deps.PersistenceHub, withTurns(lifetime, a.maxConcurrentTurns)) //nolint:contextcheck // derived from the lifetime context on purpose (10-SECURITY UF-3)
+	// A-135: it also holds each session's approval mode and announces changes on the bus.
+	a.conv = NewConversationManager(deps.PersistenceHub, withTurns(lifetime, a.maxConcurrentTurns), withApprovalEvents(deps.Events, own.ID)) //nolint:contextcheck // derived from the lifetime context on purpose (10-SECURITY UF-3)
+	// A-136: slash commands - the built-ins work through the managers (the loop is built
+	// below and read when a command runs); the host's (Deps.HostCommands) are read on
+	// every call.
+	a.commands = newCommandManager(commandManagerDeps{
+		agentID:      own.ID,
+		bus:          deps.Events,
+		hostCommands: deps.HostCommands,
+		isBusy:       a.conv.IsBusy,
+		builtIns:     builtInCommands(a.builtInCommandDeps()),
+	})
 
 	memOpts := make([]memorysystem.Option, 0, len(o.memoryOpts)+1)
 	if deps.Logger != nil {
@@ -399,6 +426,9 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		// A-105: a child run's session asks the parent's channel (approvals only), first.
 		// (The router moved to Agent.interactionFor, which the subagent manager uses too.)
 		Interaction: a.interactionFor,
+		// A-135: YOLO mode skips the approval prompt for the session (a child run: its
+		// parent's).
+		ApprovalMode: a.approvalModeFor,
 		// A-105: for spawn_subagent; a child run's session is limited to its scope
 		// (read-only by default).
 		Subagents: a.subagents,
@@ -416,6 +446,48 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	sys.Start(lifetime) //nolint:contextcheck // the lifetime derives from Background on purpose: it must not carry the request values of New (10-SECURITY UF-3)
 	built = true
 	return a, nil
+}
+
+// builtInCommandDeps (A-136) is what the built-in commands use: the agent's managers.
+func (a *Agent) builtInCommandDeps() builtInCommandDeps {
+	return builtInCommandDeps{
+		agentName:    func() string { return a.Profile().Name },
+		defaultModel: func() string { return a.Profile().LLMModel },
+		listModels:   func(ctx context.Context) ([]string, bool) { return a.models.ListModels(ctx) },
+		getSession:   a.conv.GetSession,
+		listSessions: a.conv.ListSessions,
+		messages:     a.conv.Messages,
+		updateSession: func(ctx context.Context, sessionID string, fields []string, change func(*kernel.Session)) (kernel.Session, bool, error) {
+			return a.conv.UpdateSession(ctx, sessionID, fields, change)
+		},
+		startSessionFrom: a.conv.StartSessionFrom,
+		isBusy:           a.conv.IsBusy,
+		approvalMode:     a.conv.ApprovalMode,
+		setApprovalMode:  a.conv.SetApprovalMode,
+		contextUsage:     a.ContextUsage,
+		compact:          a.Compact,
+		describeWorkspace: func() string {
+			if a.sandboxes == nil {
+				return "none"
+			}
+			switch a.sandboxSelection().Mode {
+			case sandboxhub.SelectionNone:
+				return "none"
+			case sandboxhub.SelectionOwn:
+				return "its own sandbox"
+			default:
+				return "the shared sandbox"
+			}
+		},
+		sandbox: func(ctx context.Context) (commandWorkspace, error) {
+			v, err := a.Sandbox(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return v, nil
+		},
+		listCommands: func(ac command.AvailabilityContext) []command.Info { return a.commands.List(ac) },
+	}
 }
 
 // interactionFor is the agent's interaction router (A-100 phase 2): a child run's
@@ -528,6 +600,60 @@ func (a *Agent) LoadSession(ctx context.Context, sessionID string) (kernel.Sessi
 	return a.conv.LoadSession(ctx, sessionID)
 }
 
+// ApprovalMode (A-135) is a session's approval mode: kernel.ApprovalModeAsk unless it
+// was set to kernel.ApprovalModeYolo (always ask in a job's session and for an unknown
+// one).
+func (a *Agent) ApprovalMode(ctx context.Context, sessionID string) (kernel.ApprovalMode, error) {
+	return a.conv.ApprovalMode(ctx, sessionID)
+}
+
+// SetApprovalMode (A-135) sets a session's approval mode - kernel.ApprovalModeYolo runs
+// its calls that need approval without asking. It applies at once, also to a turn
+// running in the session. The bool is false, with a nil error, when there is no such
+// session; YOLO in a job's session is a kernel.SessionError with SessionCodeNotAllowed.
+func (a *Agent) SetApprovalMode(ctx context.Context, sessionID string, mode kernel.ApprovalMode) (kernel.Session, bool, error) {
+	return a.conv.SetApprovalMode(ctx, sessionID, mode)
+}
+
+// approvalModeFor (A-135) is the approval mode a session's calls use - a child run's
+// session uses its parent's.
+func (a *Agent) approvalModeFor(ctx context.Context, sessionID string) (kernel.ApprovalMode, error) {
+	if parent, ok := a.subagents.parentSessionOf(sessionID); ok {
+		sessionID = parent
+	}
+	return a.conv.ApprovalMode(ctx, sessionID)
+}
+
+// Commands (A-136) returns this agent's slash commands: list them (help, autocomplete),
+// run one in a session, and register the agent's own.
+func (a *Agent) Commands() command.Commands { return a.commands }
+
+// Compact (A-136) compacts a session's working set now (/compact), with an optional focus
+// for the summary ("" for none). It waits for the session like a turn does. The bool is
+// false, with a nil error, when there is no such session. A compaction emits
+// SessionUpdated (["compactedMessages"]).
+func (a *Agent) Compact(ctx context.Context, sessionID, focus string) (agentloop.CompactNowResult, bool, error) {
+	if _, ok, err := a.conv.GetSession(ctx, sessionID); err != nil || !ok {
+		return agentloop.CompactNowResult{}, false, err
+	}
+	runCtx, turn, err := a.conv.beginTurn(ctx, sessionID, turnOptions{})
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return agentloop.CompactNowResult{}, false, nil
+		}
+		return agentloop.CompactNowResult{}, false, err
+	}
+	defer turn.release()
+	result, err := a.loop.CompactNow(runCtx, turn.conversation, focus)
+	if err != nil {
+		return agentloop.CompactNowResult{}, true, err
+	}
+	if result.Compacted {
+		a.conv.EmitUpdated(sessionID, []string{"compactedMessages"})
+	}
+	return result, true, nil
+}
+
 // ListSessions lists the sessions of the session store that match the filter.
 // There is no agent filter: a session does not record its agent and
 // kernel.SessionFilter selects by metadata only, so every session of the store is a
@@ -604,7 +730,8 @@ func (a *Agent) ListProviders() []string { return a.models.ListProviders() }
 // failure described in the last paragraph no longer happens.
 func (a *Agent) Chat(ctx context.Context, message string, opts ...ChatOption) (agentloop.RunResult, error) {
 	o := chatOptions(opts)
-	runCtx, turn, err := a.conv.beginTurn(ctx, o.sessionID)
+	// A-136: readOnly - the turn runs in plan mode (/review).
+	runCtx, turn, err := a.conv.beginTurn(ctx, o.sessionID, turnOptions{readOnly: o.readOnly})
 	if err != nil {
 		return agentloop.RunResult{}, err
 	}
@@ -642,7 +769,7 @@ func (a *Agent) Chat(ctx context.Context, message string, opts ...ChatOption) (a
 func (a *Agent) ChatStream(ctx context.Context, message string, opts ...ChatOption) iter.Seq2[kernel.StreamChunk, error] {
 	o := chatOptions(opts)
 	return func(yield func(kernel.StreamChunk, error) bool) {
-		runCtx, turn, err := a.conv.beginTurn(ctx, o.sessionID)
+		runCtx, turn, err := a.conv.beginTurn(ctx, o.sessionID, turnOptions{readOnly: o.readOnly})
 		if err != nil {
 			yield(kernel.StreamChunk{}, err)
 			return
@@ -1007,7 +1134,12 @@ func (a *Agent) StartChannels(ctx context.Context) error { return a.channels.sta
 // -> Phase 2: streamed (ChatStream + channel.TurnFromStream), so the chat shows the reply
 // while it is written.
 func (a *Agent) runChannelTurn(ctx context.Context, tc channel.TurnContext) (channel.TurnResult, error) {
-	out, err := channel.TurnFromStream(a.ChatStream(ctx, tc.Text, WithChatSession(tc.SessionID)), tc.OnChunk)
+	opts := []ChatOption{WithChatSession(tc.SessionID)}
+	// A-136: readOnly - a /review sent from the chat.
+	if tc.ReadOnly {
+		opts = append(opts, WithChatReadOnly())
+	}
+	out, err := channel.TurnFromStream(a.ChatStream(ctx, tc.Text, opts...), tc.OnChunk)
 	if err != nil {
 		// A turn stopped while it waited for its session is a stopped turn, not a failure.
 		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {

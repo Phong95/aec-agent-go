@@ -54,7 +54,14 @@ func (e *executor) gateCall(ctx context.Context, run *toolRun, call kernel.ToolC
 	if g == nil {
 		return nil
 	}
-	approval := e.requestApproval(ctx, run, def, call, tc, g)
+	// A-135: a session in YOLO mode runs the call without asking (read now, so a switch
+	// during the turn applies to its next call).
+	var approval approvalResult
+	if e.approvalMode(ctx, tc.SessionID) == kernel.ApprovalModeYolo {
+		approval = e.autoApprove(run, def, call, g)
+	} else {
+		approval = e.requestApproval(ctx, run, def, call, tc, g)
+	}
 	if span != nil {
 		attrs := obj("risk", string(effectiveRisk(def)), "approval", approval.trace)
 		if g.sandbox != nil {
@@ -109,6 +116,38 @@ func consequentialGate(consequential bool, sb *toolhub.ApprovalSandbox) *gate {
 		return nil
 	}
 	return &gate{sandbox: sb}
+}
+
+// approvalMode is the session's approval mode (A-135), from Deps.ApprovalMode. No
+// ApprovalMode dep, or an error reading it, is ApprovalModeAsk (fail closed).
+func (e *executor) approvalMode(ctx context.Context, sessionID string) kernel.ApprovalMode {
+	if e.deps.ApprovalMode == nil {
+		return kernel.ApprovalModeAsk
+	}
+	mode, err := e.deps.ApprovalMode(ctx, sessionID)
+	if err != nil {
+		return kernel.ApprovalModeAsk
+	}
+	return mode
+}
+
+// autoApprove (A-135): the session is in YOLO mode - the call runs without asking; the
+// event and the span say so.
+func (e *executor) autoApprove(run *toolRun, def toolhub.Definition, call kernel.ToolCall, g *gate) approvalResult {
+	r := run.r
+	auto := events.ToolAutoApprovedPayload{
+		AgentID:    r.agentID,
+		Name:       call.Name,
+		ToolCallID: call.ID,
+		Risk:       string(effectiveRisk(def)),
+		Mode:       kernel.ApprovalModeYolo,
+		Reason:     g.reason,
+	}
+	if g.sandbox != nil {
+		auto.Sandbox = &events.ApprovalSandboxPayload{ID: g.sandbox.ID, Kind: string(g.sandbox.Kind), Isolated: g.sandbox.Isolated}
+	}
+	emit(r, events.ToolAutoApproved, auto)
+	return approvalResult{trace: obj("approved", true, "auto", string(kernel.ApprovalModeYolo))}
 }
 
 // requestApproval pauses the call for the user. It fails

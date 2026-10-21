@@ -46,6 +46,7 @@ method (*AgentCore) ToolHub() *toolhub.ToolHub
 method (*AgentCore) Trace() *trace.Service
 method (*AgentCore) UseChannelPlatform(p channel.Platform) error
 method (*AgentCore) UseChannelTurnRunner(r channel.TurnRunner)
+method (*AgentCore) UseCommand(spec command.Spec, opts command.RegisterOptions) error
 method (*AgentCore) UseJobRunner(r job.Runner)
 method (*AgentCore) UseLLMProvider(p llmhub.Provider) error
 method (*AgentCore) UsePersistence(h *persistence.PersistenceHub) error

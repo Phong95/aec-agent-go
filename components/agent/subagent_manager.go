@@ -503,7 +503,7 @@ func (m *subagentManager) runChild(
 		Execute: func(ctx context.Context) (subagent.TurnResult, error) {
 			if target.kind == subagent.KindType {
 				return runTypeTurn(ctx, m.d.childLoop, m.d.profile(), target.typ, typeTurn{
-					sessionID: sessionID, prompt: prompt, traceAttributes: traceAttributes, interaction: interaction,
+					sessionID: sessionID, parentSessionID: parent.SessionID, prompt: prompt, traceAttributes: traceAttributes, interaction: interaction,
 				})
 			}
 			return chatTurn(ctx, target.agent, sessionID, prompt, traceAttributes)
@@ -1049,6 +1049,18 @@ func (m *subagentManager) interactionFor(sessionID string) toolhub.InteractionHa
 		return nil
 	}
 	return b.interaction
+}
+
+// parentSessionOf (A-135) is the parent session of a child run's session, whose approval
+// mode the child uses (its approvals are asked there); false for other sessions.
+func (m *subagentManager) parentSessionOf(sessionID string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.bindings[sessionID]
+	if !ok {
+		return "", false
+	}
+	return b.parent.SessionID, true
 }
 
 // toolScope is a child session's tool scope (read-only by default); nil for other

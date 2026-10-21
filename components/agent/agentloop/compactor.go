@@ -90,6 +90,22 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, msgs []kernel.Message, 
 	if float64(usage.InputTokens+usage.OutputTokens) < float64(c.config.ContextWindowTokens)*c.config.Threshold {
 		return notCompacted
 	}
+	return c.compact(ctx, msgs, count, summarize, "")
+}
+
+// CompactNow (A-136) compacts msgs now, whatever the context size (/compact). The same
+// split as CompactIfNeeded - protected head, summary, recent tail - with the user's focus
+// (instructions, "" for none) added to the summary request. Not compacted when
+// everything already fits in the head and tail, or when summarization fails (logged as
+// CompactIfNeeded does). Unlike CompactIfNeeded it does not check that the config enables
+// compaction: the user asked for it.
+func (c *Compactor) CompactNow(ctx context.Context, msgs []kernel.Message, count CountFunc, summarize SummarizeFunc, instructions string) CompactorResult {
+	return c.compact(ctx, msgs, count, summarize, instructions)
+}
+
+// compact is the compaction of CompactIfNeeded and CompactNow, past the threshold check.
+func (c *Compactor) compact(ctx context.Context, msgs []kernel.Message, count CountFunc, summarize SummarizeFunc, instructions string) CompactorResult {
+	notCompacted := CompactorResult{Compacted: false, Messages: msgs}
 	if count == nil {
 		count = NewCounter().Count
 	}
@@ -111,7 +127,7 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, msgs []kernel.Message, 
 	if summarize == nil {
 		return notCompacted
 	}
-	summary, err := summarize(ctx, pruned, c.config.SummarizeMaxOutputTokens, c.config.SummarizationModel)
+	summary, err := summarize(ctx, pruned, c.config.SummarizeMaxOutputTokens, c.config.SummarizationModel, instructions)
 	if err != nil {
 		// Summarization failed (model unavailable, timeout, an empty summary): fall back
 		// to the uncompacted messages so the agent loop continues. A stop of the run is

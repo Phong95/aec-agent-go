@@ -68,7 +68,11 @@ func TestParseCommand(t *testing.T) {
 	if c, ok := channel.ParseCommand("/model@my_bot  gpt-5 "); !ok || c != (channel.Command{Name: "model", Args: "gpt-5", Target: "my_bot"}) {
 		t.Errorf("/model@my_bot = %+v %v", c, ok)
 	}
-	for _, text := range []string{"hello /new", "/", ""} {
+	// A-136: names may contain "-"; a path is not a command.
+	if c, ok := channel.ParseCommand("/Web-Research roofs"); !ok || c != (channel.Command{Name: "web-research", Args: "roofs"}) {
+		t.Errorf("/Web-Research = %+v %v", c, ok)
+	}
+	for _, text := range []string{"hello /new", "/", "", "/path/to/file is broken"} {
 		if _, ok := channel.ParseCommand(text); ok {
 			t.Errorf("%q parsed as a command", text)
 		}

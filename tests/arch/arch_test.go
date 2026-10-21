@@ -103,6 +103,9 @@ var layerTable = map[string][]string{
 	// its Error and the brief helpers), shared by profile, persistence, toolhub, agentloop,
 	// agent, conformance and the root.
 	"components/agent/subagent": {"kernel", "kernel/ordered", "internal/jsonx", "internal/jsstr"},
+	// A-136: the slash-command contracts (a type-only leaf); the agent's command manager
+	// implements them, and the root's AgentCore.UseCommand takes them.
+	"components/agent/command": {"kernel", "kernel/ordered"},
 	// A-105 revision: subagenttype is the contract of subagent types (Definition, Type,
 	// Source, the limits), shared by the subagenthub library and its store
 	// (persistence.SubagentTypeStore); subagenthub is the library AgentCore owns.
@@ -171,6 +174,8 @@ var layerTable = map[string][]string{
 		// A-101: the secret hub (Deps.SecretHub) and its contract, which the agent's secret
 		// manager implements.
 		"components/secrethub", "components/secrethub/secret",
+		// A-136: the slash-command contracts the agent's command manager implements.
+		"components/agent/command",
 	},
 	"components/orchestration": {"components/agent", "components/agent/profile", "kernel"},
 	// Phase 10 (10-04): builtin/skills holds skill_view and the workspace copy of a skill.
@@ -235,6 +240,8 @@ var layerTable = map[string][]string{
 		"components/subagenthub", "components/subagenthub/subagenttype",
 		// A-101: AgentCore owns the secret hub (SecretHub, UseSecretHubProvider).
 		"components/secrethub",
+		// A-136: AgentCore.UseCommand takes a command.Spec.
+		"components/agent/command",
 	},
 }
 

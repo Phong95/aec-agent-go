@@ -20,6 +20,8 @@ type callOptions struct {
 	// traceAttributes are the extra attributes of the turn's "agent-run" span (A-105,
 	// WithChatTraceAttributes); nil means none.
 	traceAttributes map[string]any
+	// readOnly runs the turn in plan mode (A-136, WithChatReadOnly).
+	readOnly bool
 }
 
 // ChatOption is a per-call option of Agent.Chat and Agent.ChatStream. Every
@@ -140,6 +142,16 @@ func (t chatTraceOption) applyChat(o *callOptions) { o.traceAttributes = maps.Cl
 func WithChatTraceAttributes(attrs map[string]any) ChatOption {
 	return chatTraceOption{attrs: maps.Clone(attrs)}
 }
+
+// chatReadOnlyOption is the ChatOption of WithChatReadOnly (A-136).
+type chatReadOnlyOption struct{}
+
+func (chatReadOnlyOption) applyChat(o *callOptions) { o.readOnly = true }
+
+// WithChatReadOnly runs the turn in plan mode (A-136): only read-only tool calls run,
+// whatever the session's approval mode - /review reviews without changing anything. Only
+// this turn; the session's mode stays as it was. (core/ts: RunOptions.readOnly.)
+func WithChatReadOnly() ChatOption { return chatReadOnlyOption{} }
 
 // chatOptions applies opts in order. A nil option is skipped.
 func chatOptions(opts []ChatOption) callOptions {

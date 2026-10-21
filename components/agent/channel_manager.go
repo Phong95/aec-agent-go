@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Phong95/aec-agent-go/components/agent/command"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub"
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
@@ -43,7 +44,9 @@ const pairingCodeLength = 8
 const maxListedModels = 30
 
 // immediateCommands are answered at once, even while a turn of the chat is running.
-var immediateCommands = []string{"stop", "status", "whoami", "approve", "deny"}
+// A-135: /yolo too, so YOLO mode can be switched off while a reply is running.
+// A-136: /permissions likewise, and the read-only /help, /context and /usage.
+var immediateCommands = []string{"stop", "status", "whoami", "approve", "deny", "yolo", "permissions", "help", "context", "usage"}
 
 // channelCommands are shown in /help and published to the platform
 // (channel.CommandSetter), so the chat can suggest them. /start and /reset are
@@ -55,9 +58,32 @@ var channelCommands = []channel.BotCommand{
 	{Name: "model", Description: "Show or switch this conversation's model"},
 	{Name: "approve", Description: "Approve a pending tool call"},
 	{Name: "deny", Description: "Deny a pending tool call"},
+	{Name: "yolo", Description: "Run tools without asking (on/off)"},
 	{Name: "whoami", Description: "Show your id"},
 	{Name: "sethome", Description: "Send job results to this chat"},
 	{Name: "help", Description: "Show the commands"},
+}
+
+// chatCommands (A-136) are the commands the chat answers itself; every other one the agent
+// has (its command manager: /compact, /resume, /permissions...) runs through
+// Agent.Commands. /clear is the chat's /new (a chat's session is named after the chat).
+var chatCommands = map[string]bool{
+	"new": true, "reset": true, "clear": true, "start": true, "help": true, "stop": true,
+	"approve": true, "deny": true, "whoami": true, "sethome": true,
+}
+
+// publishableName (A-136): platforms accept command names of lower-case letters, digits
+// and "_" (Telegram: 1-32).
+var publishableName = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
+
+// maxPublishedCommands (A-136) is the most commands a platform takes (Telegram: 100).
+const maxPublishedCommands = 100
+
+// channelPrompt (A-136) is a command's prompt (/review, /init) a turn sends instead of
+// the message's text.
+type channelPrompt struct {
+	text     string
+	readOnly bool
 }
 
 // channelTurnKey is the context key under which the ctx of a channel turn carries the
@@ -87,6 +113,15 @@ type channelManagerDeps struct {
 	// chat's session with it, so a reply in the chat ("tell me more") has it. Nil means
 	// results are only sent.
 	appendMessage func(ctx context.Context, sessionID string, m kernel.Message) error
+	// approvalMode and setApprovalMode (A-135) are a session's approval mode and its
+	// setter (the conversation manager's), for /yolo and /status. Nil means /yolo answers
+	// that it is not available.
+	approvalMode    func(ctx context.Context, sessionID string) (kernel.ApprovalMode, error)
+	setApprovalMode func(ctx context.Context, sessionID string, mode kernel.ApprovalMode) error
+	// commands (A-136) returns the agent's slash commands, for every command the chat does
+	// not answer itself. Nil (or a nil result) means only the chat's own commands (and the
+	// /model, /yolo and /status below).
+	commands func() command.Commands
 	// promptTimeout is how long an approval or question waits in the chat (default 5 min).
 	promptTimeout time.Duration
 	// lifetime is the agent's lifetime context; turns and inbound handling derive from it.
@@ -140,6 +175,7 @@ type chatQueue struct {
 //   - Phase 2: approvals and clarify questions of a channel turn are asked in its chat
 //     (channelPrompts); interactionFor is the channel side of the agent's interaction
 //     router. /approve, /deny and /model are added.
+//     -> A-135: /yolo on|off switches the conversation's approval mode (owners only).
 //
 // The inbound handlers, chat queues and typing loops are counted in wg; close cancels
 // the turns and waits for them, so nothing outlives the agent. It is safe for
@@ -764,7 +800,7 @@ func (m *channelManager) publishCommands(ctx context.Context, lc *liveChannel) {
 	if !ok {
 		return
 	}
-	if err := setter.SetCommands(ctx, slices.Clone(channelCommands)); err != nil {
+	if err := setter.SetCommands(ctx, m.botCommands()); err != nil {
 		m.d.logger.Warn("[channels] could not publish the commands", "agent", m.d.agentID, "channel", lc.id, "error", err)
 	}
 }
@@ -984,12 +1020,23 @@ func (m *channelManager) handleInbound(lc *liveChannel, ch channel.Channel, msg 
 	}
 
 	key := chatKey(ch.ID, msg)
+	// A-136: the agent's commands (its command manager) - all but the chat's own.
+	if command != nil && !chatCommands[command.Name] {
+		if cmds := m.agentCommandSet(); cmds != nil {
+			if info, ok := cmds.Get(command.Name, commandClient()); ok {
+				m.runAgentCommand(lc, ch, msg, target, key, *command, cmds, info)
+				return
+			}
+		}
+	}
 	if command != nil {
 		switch command.Name {
 		case "start", "help":
 			m.reply(ctx, lc, target, m.helpText())
 			return
-		case "new", "reset":
+		// A-136: "clear" - the command manager's /clear, done the chat's way (a session
+		// named after the chat).
+		case "new", "reset", "clear":
 			id, err := m.createSession(ctx, ch, msg, lc.platform)
 			if err != nil {
 				m.d.logger.Error("[channels] could not start a new conversation", "agent", m.d.agentID, "channel", ch.ID, "error", err)
@@ -1030,6 +1077,9 @@ func (m *channelManager) handleInbound(lc *liveChannel, ch channel.Channel, msg 
 		case "sethome":
 			m.reply(ctx, lc, target, m.setHome(ctx, ch, msg))
 			return
+		case "yolo":
+			m.reply(ctx, lc, target, m.yoloCommand(ctx, lc, ch, msg, key, command.Args))
+			return
 		}
 	}
 	if jsstr.Trim(msg.Text) == "" {
@@ -1037,7 +1087,7 @@ func (m *channelManager) handleInbound(lc *liveChannel, ch channel.Channel, msg 
 		return
 	}
 	// handleInbound runs in the chat's queue here, so the turn runs in arrival order.
-	m.runTurn(ch.ID, msg, target, key)
+	m.runTurn(ch.ID, msg, target, key, nil)
 }
 
 // enqueue runs f after the earlier messages of the chat; other chats are not held up.
@@ -1082,7 +1132,9 @@ func (m *channelManager) enqueue(key string, f func()) {
 	})
 }
 
-func (m *channelManager) runTurn(channelID string, msg channel.InboundMessage, target channel.Target, key string) {
+// A-136: prompt is a command's prompt (/review, /init) to send instead of the message's
+// text; nil sends the text.
+func (m *channelManager) runTurn(channelID string, msg channel.InboundMessage, target channel.Target, key string, prompt *channelPrompt) {
 	// Read again: the channel may have been stopped or edited while this message waited.
 	m.mu.Lock()
 	lc := m.live[channelID]
@@ -1119,9 +1171,13 @@ func (m *channelManager) runTurn(channelID string, msg channel.InboundMessage, t
 	m.mu.Lock()
 	m.activeTurns[sessionID] = promptChat{channelID: channelID, key: key, target: target, chatType: msg.Chat.Type, initiator: msg.Sender}
 	m.mu.Unlock()
-	result, err := m.callRunner(turnCtx, channel.TurnContext{
+	tc := channel.TurnContext{
 		AgentID: m.d.agentID, Channel: ch, SessionID: sessionID, Message: msg, Text: agentText(ch, msg, true), OnChunk: view.chunk,
-	})
+	}
+	if prompt != nil {
+		tc.Text, tc.ReadOnly = prompt.text, prompt.readOnly
+	}
+	result, err := m.callRunner(turnCtx, tc)
 	stopTyping()
 	m.mu.Lock()
 	if m.chatRuns[key] == run {
@@ -1246,6 +1302,20 @@ func (m *channelManager) resolveSession(ctx context.Context, ch channel.Channel,
 	return id, nil
 }
 
+// existingSession (A-136) is the chat's current session when it has one (cached, else
+// stored) - never a new one; "" when there is none.
+func (m *channelManager) existingSession(ctx context.Context, ch channel.Channel, msg channel.InboundMessage, key string) (string, error) {
+	m.mu.Lock()
+	cached := m.chatSessions[key]
+	m.mu.Unlock()
+	if cached != "" {
+		if s, err := m.d.sessions.Get(ctx, cached); err == nil && s != nil {
+			return cached, nil
+		}
+	}
+	return m.findSession(ctx, ch, chatKeyOf(msg))
+}
+
 // chatSession (phase 3) is the current session of a chat the agent posts to unprompted
 // (a job's result): the one its messages use, else a new one, so the chat's next
 // message continues it.
@@ -1302,9 +1372,11 @@ func (m *channelManager) findSession(ctx context.Context, ch channel.Channel, ch
 	if err != nil {
 		return "", err
 	}
+	// A-136: the most recently used one (was: the newest created), so a conversation
+	// /resume went back to stays the chat's after a restart.
 	var newest *kernel.Session
 	for i := range stored {
-		if newest == nil || stored[i].CreatedAt > newest.CreatedAt {
+		if newest == nil || stored[i].UpdatedAt > newest.UpdatedAt {
 			newest = &stored[i]
 		}
 	}
@@ -1704,7 +1776,142 @@ func (m *channelManager) helpText() string {
 		}
 		lines = append(lines, "/"+c.Name+" "+emDash+" "+strings.ToLower(c.Description[:1])+c.Description[1:])
 	}
+	// A-136: and the agent's commands that work in a chat.
+	for _, c := range m.agentCommands() {
+		lines = append(lines, commandHelpLine(c))
+	}
 	return strings.Join(lines, "\n")
+}
+
+// agentCommandSet (A-136) is the agent's command manager, or nil when there is none.
+func (m *channelManager) agentCommandSet() command.Commands {
+	if m.d.commands == nil {
+		return nil
+	}
+	return m.d.commands()
+}
+
+// commandClient (A-136) is the client a chat runs commands in: "channel", no
+// capabilities.
+func commandClient() command.AvailabilityContext {
+	return command.AvailabilityContext{Client: "channel"}
+}
+
+// agentCommands (A-136) is the agent's commands a chat can run (not the chat's own, none
+// needing a client capability).
+func (m *channelManager) agentCommands() []command.Info {
+	cmds := m.agentCommandSet()
+	if cmds == nil {
+		return nil
+	}
+	var out []command.Info
+	for _, c := range cmds.List(commandClient()) {
+		if c.Available && !chatCommands[c.Name] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// botCommands (A-136) is the commands published to the platform: the chat's own, then the
+// agent's (the names a platform takes), at most maxPublishedCommands.
+func (m *channelManager) botCommands() []channel.BotCommand {
+	out := slices.Clone(channelCommands)
+	names := map[string]bool{}
+	for _, c := range channelCommands {
+		names[c.Name] = true
+	}
+	for _, c := range m.agentCommands() {
+		if publishableName.MatchString(c.Name) && !names[c.Name] {
+			out = append(out, channel.BotCommand{Name: c.Name, Description: c.Description})
+		}
+	}
+	return out[:min(len(out), maxPublishedCommands)]
+}
+
+// runAgentCommand (A-136) runs one of the agent's commands in the chat. Privileged ones
+// that change something (/permissions yolo) are for the bot's owners only - they typed
+// it, which counts as the confirmation the web app asks for. The result's action is
+// carried out here: a session picked by /resume becomes the chat's, a prompt (/plan
+// <prompt>, /init, /review) runs as a turn. It runs under the agent's lifetime, like
+// handleInbound.
+func (m *channelManager) runAgentCommand(lc *liveChannel, ch channel.Channel, msg channel.InboundMessage, target channel.Target, key string, cmd channel.Command, cmds command.Commands, info command.Info) {
+	ctx := m.d.lifetime
+	owner := slices.Contains(ch.Access.AllowFrom, msg.Sender.ID)
+	if info.Safety == command.SafetyPrivileged && cmd.Args != "" && !owner {
+		if info.Name == "yolo" {
+			m.reply(ctx, lc, target, "Only the bot's owners (the senders on its allow list) can switch YOLO mode.")
+		} else {
+			m.reply(ctx, lc, target, "Only the bot's owners (the senders on its allow list) can use /"+info.Name+" to change things.")
+		}
+		return
+	}
+	// A read-only command does not start a conversation the chat does not have yet.
+	var sessionID string
+	if info.Safety == command.SafetyReadOnly {
+		existing, err := m.existingSession(ctx, ch, msg, key)
+		if err != nil {
+			m.reply(ctx, lc, target, "Sorry, something went wrong: "+err.Error())
+			return
+		}
+		if existing == "" {
+			if info.Name == "status" {
+				m.reply(ctx, lc, target, m.statusText(ctx, ch, msg, key))
+			} else {
+				m.reply(ctx, lc, target, "No conversation yet.")
+			}
+			return
+		}
+		sessionID = existing
+	} else {
+		id, err := m.resolveSession(ctx, ch, msg, lc.platform, key)
+		if err != nil {
+			m.reply(ctx, lc, target, "Sorry, something went wrong: "+err.Error())
+			return
+		}
+		sessionID = id
+	}
+	text := "/" + info.Name
+	if cmd.Args != "" {
+		text += " " + cmd.Args
+	}
+	result := cmds.Run(ctx, text, command.Invocation{
+		SessionID:    sessionID,
+		Client:       "channel",
+		Confirmed:    true,
+		SessionScope: scopeOf("agentId", m.d.agentID, "source", "channel", "channelId", ch.ID, "chatKey", chatKeyOf(msg)),
+	})
+	reply := result.Text
+	if info.Name == "status" && result.Error == "" {
+		var extra []string
+		if isHome(ch.Home, msg) {
+			extra = append(extra, "This is the home chat: job results are sent here.")
+		}
+		m.mu.Lock()
+		_, running := m.chatRuns[key]
+		m.mu.Unlock()
+		if running {
+			extra = append(extra, "A reply is in progress (/stop to stop it).")
+		}
+		if len(extra) > 0 {
+			reply += "\n" + strings.Join(extra, "\n")
+		}
+	}
+	m.reply(ctx, lc, target, reply)
+	if result.Action == nil {
+		return
+	}
+	switch result.Action.Type {
+	case command.ActionOpenSession:
+		m.mu.Lock()
+		m.chatSessions[key] = result.Action.SessionID
+		m.mu.Unlock()
+	case command.ActionSendPrompt:
+		m.runTurn(ch.ID, msg, target, key, &channelPrompt{text: result.Action.Prompt, readOnly: result.Action.ReadOnly})
+	case command.ActionCopy, command.ActionExit, command.ActionConfirm:
+		// Nothing for a chat to do: /copy and /exit are unavailable there, and a chat's
+		// command is confirmed already (an owner typed it).
+	}
 }
 
 // onButton handles a button press: an approval or a question's choice.
@@ -1804,6 +2011,47 @@ func (m *channelManager) modelCommand(ctx context.Context, lc *liveChannel, ch c
 	return "This conversation now uses the agent's model."
 }
 
+// yoloCommand (A-135) is /yolo [on|off]: show or switch the conversation's approval
+// mode. In YOLO mode the agent runs tools that need approval without asking here. Only
+// the bot's owners (AllowFrom) may switch it: in an open DM or group anyone can talk.
+func (m *channelManager) yoloCommand(ctx context.Context, lc *liveChannel, ch channel.Channel, msg channel.InboundMessage, key, args string) string {
+	if m.d.approvalMode == nil || m.d.setApprovalMode == nil {
+		return "YOLO mode is not available for this agent."
+	}
+	sessionID, err := m.resolveSession(ctx, ch, msg, lc.platform, key)
+	if err != nil {
+		return "Sorry, something went wrong: " + err.Error()
+	}
+	wanted := strings.ToLower(jsstr.Trim(args))
+	if wanted == "" {
+		mode, err := m.d.approvalMode(ctx, sessionID)
+		if err != nil {
+			return "Sorry, something went wrong: " + err.Error()
+		}
+		if mode == kernel.ApprovalModeYolo {
+			return "YOLO mode is on: tools run without asking. Send /yolo off to ask again."
+		}
+		return "YOLO mode is off: tools that need approval ask here first. Send /yolo on to run them without asking."
+	}
+	if wanted != "on" && wanted != "off" {
+		return "Send /yolo on or /yolo off."
+	}
+	if !slices.Contains(ch.Access.AllowFrom, msg.Sender.ID) {
+		return "Only the bot's owners (the senders on its allow list) can switch YOLO mode."
+	}
+	mode := kernel.ApprovalModeAsk
+	if wanted == "on" {
+		mode = kernel.ApprovalModeYolo
+	}
+	if err := m.d.setApprovalMode(ctx, sessionID, mode); err != nil {
+		return "Sorry, something went wrong: " + err.Error()
+	}
+	if wanted == "on" {
+		return "YOLO mode is on: tools in this conversation run without asking, until /yolo off."
+	}
+	return "YOLO mode is off: tools that need approval ask here first."
+}
+
 func (m *channelManager) statusText(ctx context.Context, ch channel.Channel, msg channel.InboundMessage, key string) string {
 	m.mu.Lock()
 	sessionID := m.chatSessions[key]
@@ -1833,6 +2081,11 @@ func (m *channelManager) statusText(ctx context.Context, ch channel.Channel, msg
 	}
 	if model != "" {
 		lines = append(lines, "Model: "+model)
+	}
+	if session != nil && m.d.approvalMode != nil {
+		if mode, err := m.d.approvalMode(ctx, session.ID); err == nil && mode == kernel.ApprovalModeYolo {
+			lines = append(lines, "YOLO mode: tools run without asking (/yolo off to stop).")
+		}
 	}
 	if isHome(ch.Home, msg) {
 		lines = append(lines, "This is the home chat: job results are sent here.")

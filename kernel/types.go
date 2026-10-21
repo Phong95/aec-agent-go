@@ -311,7 +311,30 @@ type Session struct {
 	// predate it).
 	// Update (A-126): the job (job.Job.ID, of any kind) - was ScheduledJobID.
 	JobID string `json:"jobId,omitempty"`
+	// ApprovalMode (A-135) is how the session's tool calls that need approval are
+	// handled. Empty = ApprovalModeAsk. Set with Agent.SetApprovalMode - never written
+	// back from a cached copy, since the ConversationManager updates the running turn's
+	// copy too.
+	ApprovalMode ApprovalMode `json:"approvalMode,omitempty"`
 }
+
+// ApprovalMode (A-135): ApprovalModeAsk (the default) pauses every call that needs
+// approval for the user; ApprovalModeYolo runs them without asking. Only the approval
+// prompt is skipped - tool scope, ToolPolicy and secret allowlists still apply,
+// questions (clarify) still go to the user, and job runs never use it.
+// A-136: ApprovalModePlan is read-only planning - only read-only tool calls run (like a
+// read-only subagent); the rest are refused, so the agent can look around and plan but
+// change nothing. Unlike YOLO it is allowed in a job's session (it only takes
+// permissions away).
+type ApprovalMode string
+
+// The approval modes. The string values are stable wire values.
+const (
+	ApprovalModeAsk  ApprovalMode = "ask"
+	ApprovalModeYolo ApprovalMode = "yolo"
+	// ApprovalModePlan (A-136): read-only planning.
+	ApprovalModePlan ApprovalMode = "plan"
+)
 
 // Created returns CreatedAt (epoch ms) as a time.Time in the local zone; a zero
 // CreatedAt is the Unix epoch.

@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/kernel"
 	"github.com/Phong95/aec-agent-go/kernel/ordered"
@@ -106,6 +108,22 @@ type ConversationManager struct {
 	// ends it too.
 	runsCtx    context.Context
 	cancelRuns context.CancelFunc
+
+	// openMu guards openTurns.
+	// (A-136: and readOnlyTurns.)
+	openMu sync.Mutex
+	// openTurns (A-135) is the Conversation of each session a turn is running in (at
+	// most one per session, the turn gate sees to that). SetApprovalMode changes its
+	// Session too, so the turn's own session writes never put the old mode back.
+	openTurns map[string]*Conversation
+	// readOnlyTurns (A-136) is the sessions whose running turn is read-only
+	// (WithChatReadOnly, e.g. /review): that turn runs in plan mode whatever the session's
+	// own approval mode. Cleared when the turn ends.
+	readOnlyTurns map[string]bool
+	// bus and agentID (A-135) are where SessionApprovalModeChanged is emitted (nil bus =
+	// no event).
+	bus     events.Bus
+	agentID string
 }
 
 // ConversationOption configures a ConversationManager.
@@ -132,6 +150,15 @@ func withTurns(lifetime context.Context, maxConcurrent func() int) ConversationO
 	}
 }
 
+// withApprovalEvents (A-135) makes the manager emit SessionApprovalModeChanged on bus,
+// for the agent agentID, when SetApprovalMode sets a session's approval mode.
+// (A-136: and SessionUpdated, when UpdateSession or EmitUpdated reports a change.)
+func withApprovalEvents(bus events.Bus, agentID string) ConversationOption {
+	return func(c *ConversationManager) {
+		c.bus, c.agentID = bus, agentID
+	}
+}
+
 // -> Superseded (A-97): runSessionKey ("the context key of the session a run is bound
 // to"), withRunSession ("returns ctx bound to the session of a run (see
 // ConversationManager)") and checkRunSession ("the guard of every write: it fails when
@@ -144,7 +171,7 @@ func withTurns(lifetime context.Context, maxConcurrent func() int) ConversationO
 // (A-97: "active session" is the default session; the clock option stamps the messages
 // of the Conversations Open loads.)
 func NewConversationManager(hub *persistence.PersistenceHub, opts ...ConversationOption) *ConversationManager {
-	c := &ConversationManager{hub: hub, now: kernel.NowISO, closing: make(chan struct{})}
+	c := &ConversationManager{hub: hub, now: kernel.NowISO, closing: make(chan struct{}), openTurns: map[string]*Conversation{}, readOnlyTurns: map[string]bool{}}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(c)
@@ -265,13 +292,22 @@ type conversationTurn struct {
 	release      func()
 }
 
+// turnOptions (A-136) are the options of one turn (beginTurn).
+type turnOptions struct {
+	// readOnly runs the turn in plan mode (only read-only tool calls), whatever the
+	// session's approval mode (WithChatReadOnly, /review).
+	readOnly bool
+}
+
 // beginTurn starts one turn: it resolves the session (sessionID, else the default
 // session of StartSession and LoadSession), waits for its turn (beginRun) and loads its
 // Conversation (openConversation). On success the caller must call release once the
 // turn ends. The errors are those of beginRun and openConversation; when the load fails
 // the turn is released before the error is returned. The returned ctx is the run's
 // ctx (derived from ctx): the turn's work runs under it.
-func (c *ConversationManager) beginTurn(ctx context.Context, sessionID string) (context.Context, *conversationTurn, error) {
+// A-136: opts.readOnly runs the turn in plan mode (ApprovalMode reports ApprovalModePlan
+// for the session until the turn ends).
+func (c *ConversationManager) beginTurn(ctx context.Context, sessionID string, opts turnOptions) (context.Context, *conversationTurn, error) {
 	id := c.resolveSession(sessionID)
 	runCtx, release, err := c.beginRun(ctx, id)
 	if err != nil {
@@ -282,7 +318,234 @@ func (c *ConversationManager) beginTurn(ctx context.Context, sessionID string) (
 		release()
 		return nil, nil, err
 	}
-	return runCtx, &conversationTurn{conversation: conv, release: release}, nil
+	// A-135: the turn's Conversation is the session's newest copy until the turn ends.
+	c.openMu.Lock()
+	c.openTurns[id] = conv
+	if opts.readOnly {
+		c.readOnlyTurns[id] = true
+	}
+	c.openMu.Unlock()
+	end := func() {
+		c.openMu.Lock()
+		if c.openTurns[id] == conv {
+			delete(c.openTurns, id)
+			delete(c.readOnlyTurns, id)
+		}
+		c.openMu.Unlock()
+		release()
+	}
+	return runCtx, &conversationTurn{conversation: conv, release: end}, nil
+}
+
+// openTurn returns the Conversation of the turn running in a session (A-135), or nil.
+func (c *ConversationManager) openTurn(sessionID string) *Conversation {
+	c.openMu.Lock()
+	defer c.openMu.Unlock()
+	return c.openTurns[sessionID]
+}
+
+// IsBusy (A-136) reports whether a turn is running in the session now.
+func (c *ConversationManager) IsBusy(sessionID string) bool {
+	return c.openTurn(sessionID) != nil
+}
+
+// isReadOnlyTurn (A-136) reports whether the turn running in the session is read-only.
+func (c *ConversationManager) isReadOnlyTurn(sessionID string) bool {
+	c.openMu.Lock()
+	defer c.openMu.Unlock()
+	return c.readOnlyTurns[sessionID]
+}
+
+// GetSession (A-136) returns a session - the running turn's copy when there is one (it is
+// the newest), else as stored. The bool is false, with a nil error, when there is none.
+func (c *ConversationManager) GetSession(ctx context.Context, sessionID string) (kernel.Session, bool, error) {
+	if conv := c.openTurn(sessionID); conv != nil {
+		s, ok := conv.Session()
+		return s, ok, nil
+	}
+	stored, err := c.hub.Sessions.Get(ctx, sessionID)
+	if err != nil || stored == nil {
+		return kernel.Session{}, false, err
+	}
+	return stored.Clone(), true, nil
+}
+
+// ApprovalMode (A-135) is a session's approval mode - from the running turn's session
+// when there is one (it holds the latest value), else from the store.
+// kernel.ApprovalModeAsk when unset, for an unknown session, and always for a job's
+// session (nobody is there to have chosen YOLO).
+// A-136: kernel.ApprovalModePlan when the session's mode is plan, and while a read-only
+// turn runs in it (/review), whatever its own mode.
+func (c *ConversationManager) ApprovalMode(ctx context.Context, sessionID string) (kernel.ApprovalMode, error) {
+	if c.isReadOnlyTurn(sessionID) {
+		return kernel.ApprovalModePlan, nil
+	}
+	var session kernel.Session
+	if conv := c.openTurn(sessionID); conv != nil {
+		session, _ = conv.Session()
+	} else {
+		stored, err := c.hub.Sessions.Get(ctx, sessionID)
+		if err != nil {
+			return kernel.ApprovalModeAsk, err
+		}
+		if stored == nil {
+			return kernel.ApprovalModeAsk, nil
+		}
+		session = *stored
+	}
+	if session.ApprovalMode == kernel.ApprovalModePlan {
+		return kernel.ApprovalModePlan, nil
+	}
+	if session.ApprovalMode == kernel.ApprovalModeYolo && session.JobID == "" {
+		return kernel.ApprovalModeYolo, nil
+	}
+	return kernel.ApprovalModeAsk, nil
+}
+
+// SetApprovalMode (A-135) sets a session's approval mode. It does not wait for a running
+// turn of the session: that turn's next call that needs approval already uses the new
+// mode. It returns the session as saved; the bool is false, with a nil error, when the
+// session does not exist. YOLO in a job's session is a kernel.SessionError with
+// SessionCodeNotAllowed. On success it emits SessionApprovalModeChanged.
+func (c *ConversationManager) SetApprovalMode(ctx context.Context, sessionID string, mode kernel.ApprovalMode) (kernel.Session, bool, error) {
+	var saved kernel.Session
+	// The running turn's copy is the newest (token usage, timestamps): change and save that one.
+	if conv := c.openTurn(sessionID); conv != nil {
+		s, err := conv.setApprovalMode(ctx, mode)
+		if err != nil {
+			return kernel.Session{}, true, err
+		}
+		saved = s
+	} else {
+		stored, err := c.hub.Sessions.Get(ctx, sessionID)
+		if err != nil {
+			return kernel.Session{}, false, err
+		}
+		if stored == nil {
+			return kernel.Session{}, false, nil
+		}
+		s := stored.Clone()
+		if err := applyApprovalMode(&s, mode); err != nil {
+			return kernel.Session{}, true, err
+		}
+		if err := c.hub.Sessions.Update(ctx, s.Clone()); err != nil {
+			return kernel.Session{}, true, err
+		}
+		saved = s
+	}
+	if c.bus != nil {
+		events.Emit(c.bus, events.SessionApprovalModeChanged, sessionID, events.SessionApprovalModeChangedPayload{
+			AgentID: c.agentID, SessionID: sessionID, Mode: approvalModeOf(saved),
+		})
+	}
+	return saved, true, nil
+}
+
+// applyApprovalMode (A-135) sets mode on s (ApprovalModeAsk clears the field) and bumps
+// UpdatedAt. YOLO in a job's session is refused (SessionCodeNotAllowed): its runs have
+// nobody to switch it off.
+func applyApprovalMode(s *kernel.Session, mode kernel.ApprovalMode) error {
+	yolo := mode == kernel.ApprovalModeYolo
+	if yolo && s.JobID != "" {
+		return kernel.NewSessionError("a job's session can't use YOLO mode: its runs have nobody to switch it off", kernel.SessionCodeNotAllowed, false)
+	}
+	// A-136: "plan" is stored like "yolo" (and allowed in a job's session); "ask" (the
+	// default) - or any other value - clears the field.
+	switch mode {
+	case kernel.ApprovalModeYolo, kernel.ApprovalModePlan:
+		s.ApprovalMode = mode
+	default:
+		s.ApprovalMode = ""
+	}
+	s.UpdatedAt = kernel.NowMillis()
+	return nil
+}
+
+// approvalModeOf is the mode a saved session reports (empty = ApprovalModeAsk).
+// (A-136: plan too.)
+func approvalModeOf(s kernel.Session) kernel.ApprovalMode {
+	switch s.ApprovalMode {
+	case kernel.ApprovalModeYolo, kernel.ApprovalModePlan:
+		return s.ApprovalMode
+	default:
+		return kernel.ApprovalModeAsk
+	}
+}
+
+// UpdateSession (A-136) changes a session's settings outside a turn (/rename, /model).
+// Like SetApprovalMode it does not wait for a running turn: it changes that turn's copy of
+// the session (so the turn's own writes keep the change) and saves it; otherwise it
+// changes and saves the stored session. change must not keep the pointer. fields names
+// what changed, for the SessionUpdated event. It returns the session as saved; the bool
+// is false, with a nil error, when the session does not exist.
+func (c *ConversationManager) UpdateSession(ctx context.Context, sessionID string, fields []string, change func(*kernel.Session)) (kernel.Session, bool, error) {
+	var saved kernel.Session
+	if conv := c.openTurn(sessionID); conv != nil {
+		s, err := conv.changeSession(ctx, change)
+		if err != nil {
+			return kernel.Session{}, true, err
+		}
+		saved = s
+	} else {
+		stored, err := c.hub.Sessions.Get(ctx, sessionID)
+		if err != nil {
+			return kernel.Session{}, false, err
+		}
+		if stored == nil {
+			return kernel.Session{}, false, nil
+		}
+		s := stored.Clone()
+		change(&s)
+		s.UpdatedAt = kernel.NowMillis()
+		if err := c.hub.Sessions.Update(ctx, s.Clone()); err != nil {
+			return kernel.Session{}, true, err
+		}
+		saved = s
+	}
+	c.EmitUpdated(sessionID, fields)
+	return saved, true, nil
+}
+
+// StartSessionFrom (A-136) starts a fresh session next to fromSessionID (/clear): the same
+// metadata (so a host or chat app finds it where it found the old one) without the
+// title, and the same model and context window. The old session stays as it was,
+// resumable. The new one becomes the default session when the old one was. The bool is
+// false, with a nil error, when fromSessionID does not exist.
+func (c *ConversationManager) StartSessionFrom(ctx context.Context, fromSessionID string) (kernel.Session, bool, error) {
+	from, err := c.hub.Sessions.Get(ctx, fromSessionID)
+	if err != nil || from == nil {
+		return kernel.Session{}, false, err
+	}
+	metadata := from.Metadata.Clone()
+	metadata.Delete("title")
+	s, err := c.hub.Sessions.Create(ctx, metadata)
+	if err != nil {
+		return kernel.Session{}, true, err
+	}
+	if from.LLMModel != "" || from.ContextWindowTokens != 0 {
+		s.LLMModel = from.LLMModel
+		s.ContextWindowTokens = from.ContextWindowTokens
+		if err := c.hub.Sessions.Update(ctx, s.Clone()); err != nil {
+			return kernel.Session{}, true, err
+		}
+	}
+	c.mu.Lock()
+	if c.defaultID == fromSessionID {
+		c.defaultID = s.ID
+	}
+	c.mu.Unlock()
+	return s, true, nil
+}
+
+// EmitUpdated (A-136) emits SessionUpdated for a change made outside a turn (no bus =
+// nothing). fields is copied.
+func (c *ConversationManager) EmitUpdated(sessionID string, fields []string) {
+	if c.bus == nil {
+		return
+	}
+	events.Emit(c.bus, events.SessionUpdated, sessionID, events.SessionUpdatedPayload{
+		AgentID: c.agentID, SessionID: sessionID, Fields: slices.Clone(fields),
+	})
 }
 
 // AppendMessage adds a message to a session outside a model turn (A-100 phase 3: a
@@ -293,7 +556,7 @@ func (c *ConversationManager) AppendMessage(ctx context.Context, sessionID strin
 	if sessionID == "" {
 		return errors.New("AppendMessage: no session id")
 	}
-	runCtx, turn, err := c.beginTurn(ctx, sessionID)
+	runCtx, turn, err := c.beginTurn(ctx, sessionID, turnOptions{})
 	if err != nil {
 		return err
 	}

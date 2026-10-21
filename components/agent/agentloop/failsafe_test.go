@@ -357,7 +357,9 @@ func TestCompactor_StoppedSummaryIsNotWarnedAbout(t *testing.T) {
 		{Role: kernel.RoleUser, Content: "tail"},
 	}
 	usage := kernel.TokenUsage{InputTokens: 100, OutputTokens: 50}
-	fail := func(ctx context.Context, _ []kernel.Message, _ int, _ string) (string, error) { return "", ctx.Err() }
+	fail := func(ctx context.Context, _ []kernel.Message, _ int, _, _ string) (string, error) {
+		return "", ctx.Err()
+	}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -368,7 +370,7 @@ func TestCompactor_StoppedSummaryIsNotWarnedAbout(t *testing.T) {
 		t.Fatalf("a stop was logged as a failure:\n%s", logged.String())
 	}
 
-	boom := func(context.Context, []kernel.Message, int, string) (string, error) {
+	boom := func(context.Context, []kernel.Message, int, string, string) (string, error) {
 		return "", errors.New("model down")
 	}
 	if res := c.CompactIfNeeded(t.Context(), msgs, usage, nil, boom); res.Compacted {

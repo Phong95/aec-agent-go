@@ -313,6 +313,12 @@ const (
 	SessionCodeAlreadyExists    SessionErrorCode = "already_exists"
 	SessionCodeStoreUnavailable SessionErrorCode = "store_unavailable"
 	SessionCodeCorrupted        SessionErrorCode = "corrupted"
+	// SessionCodeNotAllowed (A-135): the session can't take that setting (YOLO mode in
+	// a job's session).
+	SessionCodeNotAllowed SessionErrorCode = "not_allowed"
+	// SessionCodeBusy (A-136): the session is busy with a running turn and the action
+	// can't wait for it (/compact).
+	SessionCodeBusy SessionErrorCode = "busy"
 )
 
 // SessionError is a failure of a session or its store.

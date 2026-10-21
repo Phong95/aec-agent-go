@@ -11,7 +11,7 @@
 //
 // AgentCore is the API; there is no Kernel interface. Its lifecycle (Initialize,
 // Dispose), Use* (UseLLMProvider, UseTool, UsePersistence, UseSkill,
-// UseSandboxProvider) and agent methods (SpawnAgent, Agent, ListAgents,
+// UseSandboxProvider, UseCommand) and agent methods (SpawnAgent, Agent, ListAgents,
 // DisposeAgent, RemoveAgent) cover what an application needs. Lookups go through
 // the hub accessors: LLM().Get and Primary, ToolHub().Get and List (definitions,
 // never handlers, so a tool runs only through toolhub.ToolHub.Authorize and
