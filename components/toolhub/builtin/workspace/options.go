@@ -2,7 +2,9 @@ package workspace
 
 // The defaults of Options.
 const (
-	defaultMaxReadBytes          = 100_000
+	// A-129 item 4: was 100 000 (~25k tokens); now within the loop's 50 000-character
+	// tool-result limit with the line-number prefixes, so read_file's own paging applies.
+	defaultMaxReadBytes          = 32_000
 	defaultMaxDisplayOutputBytes = 30_000
 	defaultTimeoutMs             = 120_000
 	defaultMaxTimeoutMs          = 10 * 60_000

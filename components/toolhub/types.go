@@ -216,6 +216,16 @@ const (
 	RiskConsequential Risk = "consequential"
 )
 
+// SubagentUse (A-137) is Definition.Subagent: whether a subagent may use a tool.
+type SubagentUse string
+
+// The values of Definition.Subagent.
+const (
+	SubagentNever     SubagentUse = "never"
+	SubagentAllowed   SubagentUse = "allowed"
+	SubagentPreferred SubagentUse = "preferred"
+)
+
 // Definition describes a tool to the model and to the policy.
 //
 // SandboxOperation is declared after Risk, matching the recorded wire key order.
@@ -236,6 +246,18 @@ type Definition struct {
 	// safe to repeat unattended (terminal, run_code, web_search, web_extract); never on
 	// clarify, the job tools, skill_manage or file writes.
 	Schedulable bool `json:"schedulable,omitempty"`
+	// Subagent (A-137) says whether a subagent may use the tool. Empty means
+	// SubagentAllowed.
+	//   - SubagentNever: a child never gets it (no nesting, no questions to the user,
+	//     no lasting self-changes).
+	//   - SubagentAllowed: a child may get it, still scoped by its access (a read-only
+	//     child gets read-only tools).
+	//   - SubagentPreferred: the work is meant to run in a subagent, so its large
+	//     output stays out of the parent's context: the parent does not see the tool
+	//     while an enabled subagent type of its own has it (the subagent manager's
+	//     DelegatedTools); without one the parent keeps it.
+	// It is declared last, the key order of core/ts.
+	Subagent SubagentUse `json:"subagent,omitempty"`
 }
 
 // Clone returns a deep copy of the definition: the schema (including its
@@ -355,6 +377,12 @@ type Output struct {
 	// results only), so the UI can link to and open it. Ask the model to cite it with
 	// CiteLinkNote.
 	Link *kernel.ToolResultLink `json:"link,omitempty"`
+	// CompactArguments (A-129) are the call's arguments as later model requests should
+	// carry them - e.g. a large "content" replaced by a reference to the file it was
+	// written to (WithContentReference). The harness copies them onto the
+	// kernel.ToolResult (successful results only); the agent loop swaps them in for the
+	// call's arguments, and the UI keeps the original. Empty means none.
+	CompactArguments kernel.Arguments `json:"compactArguments,omitempty"`
 	// Metadata keeps the key order of the object at every nesting level
 	// (ordered.Object). An absent object is omitted; an explicit {} survives.
 	Metadata ordered.Object `json:"metadata,omitzero"`
@@ -376,6 +404,7 @@ func (o Output) Clone() Output {
 		l := *o.Link
 		o.Link = &l
 	}
+	o.CompactArguments = slices.Clone(o.CompactArguments)
 	o.Metadata = o.Metadata.Clone()
 	return o
 }

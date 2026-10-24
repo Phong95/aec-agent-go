@@ -48,7 +48,7 @@ func TestMessageCloneIsDeep(t *testing.T) {
 			{ID: "call_1", Name: "read_file", Arguments: kernel.Arguments(`{"b":1,"a":2}`), ArgumentsError: "the arguments must be one JSON object: []"},
 		},
 		ToolResults: []kernel.ToolResult{
-			{ToolCallID: "call_1", Content: "boom", IsError: &isErr, Link: &kernel.ToolResultLink{URI: "artifact://art-1", Name: "a.md", Type: "text/markdown", Version: 2}},
+			{ToolCallID: "call_1", Content: "boom", IsError: &isErr, Link: &kernel.ToolResultLink{URI: "artifact://art-1", Name: "a.md", Type: "text/markdown", Version: 2}, CompactArguments: kernel.Arguments(`{"content":"[ref]"}`)},
 		},
 		Usage:   &kernel.TokenUsage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: &cacheRead, CacheWriteTokens: &cacheWrite},
 		Summary: true,

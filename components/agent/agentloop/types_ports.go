@@ -232,6 +232,11 @@ type Deps struct {
 	// spawn_subagent. Resolved per model call and per dispatch; nil, or a nil result,
 	// means every tool of the agent.
 	ToolScope func(sessionID string) func(def toolhub.Definition) bool
+	// DelegatedTools (A-137) is the tools the agent hands to its subagents in a session
+	// (the subagent manager's delegatedTools), left out of the tool list the model is
+	// offered - hidden, not refused, so a call already in the history still runs.
+	// Resolved per model call; nil means none.
+	DelegatedTools func(ctx context.Context, session kernel.Session) []string
 	// PreApproved (A-106) says whether a call runs without asking even though it needs
 	// approval - the user already agreed to it for this session (a group lead handing work
 	// to the group's members through spawn_subagent). The callee's own approval-gated

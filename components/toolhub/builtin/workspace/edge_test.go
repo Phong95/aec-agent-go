@@ -16,7 +16,7 @@ import (
 // kept.
 func TestOptionsDefaults(t *testing.T) {
 	want := resolved{
-		maxReadBytes: 100_000, maxDisplayOutputBytes: 30_000, defaultTimeoutMs: 120_000,
+		maxReadBytes: 32_000, maxDisplayOutputBytes: 30_000, defaultTimeoutMs: 120_000,
 		maxTimeoutMs: 600_000, maxListEntries: 500, maxSearchMatches: 100,
 	}
 	if got := resolve(Options{}); got != want {

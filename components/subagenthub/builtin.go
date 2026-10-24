@@ -19,7 +19,10 @@ func BuiltInTypes() []subagenttype.Definition {
 				"Use it when no more specific subagent fits, or to keep a long search out of your own context.",
 			SystemPrompt: "You are a focused assistant doing one self-contained task for another agent. Use your tools to get the facts; " +
 				"don't guess. Be thorough but stop when the task is done. Your final reply is your report: lead with the answer, " +
-				"then the evidence (file paths, sources, values), then anything you could not confirm.",
+				"then the evidence (file paths, sources, values), then anything you could not confirm. " +
+				// A-129 item 5: a deliverable is saved, not pasted - the parent would otherwise write it out again.
+				"When the task produces a deliverable (a page, a document, a table), save it with save_artifact and report its " +
+				"name and a short summary instead of pasting its content.",
 			Access: subagent.AccessReadOnly,
 		},
 		{

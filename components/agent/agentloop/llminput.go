@@ -27,6 +27,48 @@ func recalledContent(recalled *memory.RecalledMemories) string {
 	return *recalled.Content
 }
 
+// withCompactArguments (A-129) returns msgs with each tool call's arguments replaced
+// by the compact ones its successful result carries (ToolResult.CompactArguments -
+// e.g. a written file's content replaced by a reference to the file). The stored
+// conversation keeps the originals for the UI. The same input always gives the same
+// output, so a call once replaced reads the same in every later request and the
+// prompt cache keeps it. It returns msgs itself when nothing is replaced and never
+// changes msgs or the messages in it; call ids are kept, so calls and results stay
+// paired.
+func withCompactArguments(msgs []kernel.Message) []kernel.Message {
+	compact := map[string]kernel.Arguments{}
+	for _, m := range msgs {
+		for _, r := range m.ToolResults {
+			if len(r.CompactArguments) > 0 && (r.IsError == nil || !*r.IsError) {
+				compact[r.ToolCallID] = r.CompactArguments
+			}
+		}
+	}
+	if len(compact) == 0 {
+		return msgs
+	}
+	var out []kernel.Message
+	for i, m := range msgs {
+		if !slices.ContainsFunc(m.ToolCalls, func(c kernel.ToolCall) bool { _, ok := compact[c.ID]; return ok }) {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(msgs)
+		}
+		replaced := m.Clone()
+		for j, c := range replaced.ToolCalls {
+			if args, ok := compact[c.ID]; ok {
+				replaced.ToolCalls[j].Arguments = slices.Clone(args)
+			}
+		}
+		out[i] = replaced
+	}
+	if out == nil {
+		return msgs
+	}
+	return out
+}
+
 // withRecalledMemories adds the recalled memories to the model input: a blank line and
 // the content are appended to the LAST system message, or, when there is none, a new
 // system message holding the content is put in front. It returns msgs itself, the same

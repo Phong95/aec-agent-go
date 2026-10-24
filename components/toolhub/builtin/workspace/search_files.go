@@ -57,6 +57,8 @@ func (t *SearchFilesTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSSearch,
+		// A-137: broad searches return many matches; a subagent returns the conclusion.
+		Subagent: toolhub.SubagentPreferred,
 	}
 }
 

@@ -13,7 +13,7 @@ import (
 
 // fullProfile fills every field of an AgentProfile and of every sub-config.
 func fullProfile() profile.AgentProfile {
-	lean, maxTokens, maxIter, retries, backoff, maxResults, concurrent := 30000, 4096, 25, 0, 500, 8, 4
+	lean, maxTokens, maxIter, retries, backoff, maxResults, concurrent, keep := 30000, 4096, 25, 0, 500, 8, 4, 2
 	temperature, topP, cpus, interval := 0.0, 0.9, 0.5, 60.0
 	mem, pids := 512, 128
 	return profile.AgentProfile{
@@ -32,14 +32,14 @@ func fullProfile() profile.AgentProfile {
 		},
 		Compactor: profile.CompactorConfig{
 			ContextWindowTokens: 200000, Threshold: 0.75, MinTailUserMessages: 2, ProtectFirstN: 3,
-			ProactivePruneTokens: 20000, OldToolResultMinTokens: 200, TailTargetRatio: 0.2,
+			ProactivePruneTokens: 20000, OldToolResultMinTokens: 200, KeepToolResults: &keep, TailTargetRatio: 0.2,
 			LeanTailTokenBudget: &lean, ProtectLastN: 20, SummarizeMaxOutputTokens: 4000,
 			SummarizationModel: "claude-haiku",
 		},
 		InferenceConfig: &profile.InferenceConfig{
 			MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, StopSequences: []string{"END", "STOP"},
 		},
-		LoopConfig: &profile.LoopConfig{MaxIterations: &maxIter, MaxToolRetries: &retries, RetryBackoffMs: &backoff, MaxConcurrentTurns: &concurrent},
+		LoopConfig: &profile.LoopConfig{MaxIterations: &maxIter, MaxToolRetries: &retries, RetryBackoffMs: &backoff, MaxConcurrentTurns: &concurrent, MaxToolResultChars: &keep},
 		Memory: memory.Config{
 			Enabled: true, UpdateSoul: true, UpdateUser: true,
 			Consolidation: &memory.ConsolidationTrigger{IntervalMinutes: &interval},

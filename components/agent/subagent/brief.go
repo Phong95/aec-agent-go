@@ -43,15 +43,23 @@ func ChildExcludedTools() []string { return slices.Clone(childExcludedTools) }
 // IsChildExcludedTool reports whether a child never gets the tool name.
 func IsChildExcludedTool(name string) bool { return slices.Contains(childExcludedTools, name) }
 
+// readOnlyChildWrites (A-129 item 5) are the writing tools a read-only child gets too
+// (READ_ONLY_CHILD_WRITES of core/ts). save_artifact only creates new artifacts (a name
+// already used is refused) at their own paths, so children running side by side never
+// overwrite each other's files or the parent's - and a child can save a deliverable and
+// report its name instead of pasting it into its report, which the parent would re-emit.
+var readOnlyChildWrites = []string{"save_artifact"}
+
 // ChildMayUse reports whether a child with access may use a tool with this name and risk
 // ("read-only", "draft", "consequential"): every tool but the excluded ones for
 // AccessWrite, only the read-only ones for AccessReadOnly (childToolScope of core/ts,
 // without the toolhub types this leaf cannot import).
+// (Update (A-129 item 5): save_artifact for AccessReadOnly too.)
 func ChildMayUse(access Access, name, risk string) bool {
 	if IsChildExcludedTool(name) {
 		return false
 	}
-	return access == AccessWrite || risk == "read-only"
+	return access == AccessWrite || risk == "read-only" || slices.Contains(readOnlyChildWrites, name)
 }
 
 // ValidateRequest returns the request checked and trimmed, or an *Error with

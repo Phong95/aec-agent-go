@@ -531,6 +531,10 @@ func (l *Loop) executeToolCalls(ctx context.Context, r *runState, calls []kernel
 	run := &toolRun{r: r, tc: l.buildToolContext(r), iterSpanID: r.iterSpan.Span().SpanID, trunc: trunc}
 	ex := &executor{deps: l.deps, maxParallel: l.maxParallel}
 	results := ex.executeAll(ctx, run, calls)
+	// A-129 item 4: a result the model is given is capped (a tool job keeps its whole).
+	for i := range results {
+		results[i] = l.limitOutput(ctx, run, calls[i], results[i])
+	}
 	if err := r.addMessage(ctx, kernel.Message{Role: kernel.RoleAssistant, Content: "", ToolResults: results}); err != nil {
 		return nil, err
 	}

@@ -138,12 +138,14 @@ type typeTool struct {
 	name    string
 	risk    toolhub.Risk
 	execute func() toolhub.Output
+	// subagent (A-137) is the definition's Subagent; empty = allowed.
+	subagent toolhub.SubagentUse
 }
 
 func (t typeTool) Name() string    { return "tool:" + t.name }
 func (t typeTool) Version() string { return "1.0.0" }
 func (t typeTool) Definition() toolhub.Definition {
-	return toolhub.Definition{Name: t.name, Description: t.name, Parameters: toolhub.JSONSchema{Type: "object"}, Risk: t.risk}
+	return toolhub.Definition{Name: t.name, Description: t.name, Parameters: toolhub.JSONSchema{Type: "object"}, Risk: t.risk, Subagent: t.subagent}
 }
 
 func (t typeTool) Execute(context.Context, kernel.Arguments, toolhub.Context) (toolhub.Output, error) {

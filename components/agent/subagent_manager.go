@@ -60,8 +60,12 @@ type subagentManagerDeps struct {
 	// scope (A-106) is the spawn scope of one of this agent's sessions (a group lead's
 	// session while it leads a group turn), read on every call. Nil, or a nil result, means
 	// the profile's config.
-	scope  func(sessionID string) *subagent.SpawnScope
-	logger *slog.Logger
+	scope func(sessionID string) *subagent.SpawnScope
+	// toolDefinitions (A-137) is this agent's tool definitions in one of its sessions
+	// (session grants included) - delegatedTools reads which of them are preferred for
+	// subagents. Nil means none.
+	toolDefinitions func(sessionID string) []toolhub.Definition
+	logger          *slog.Logger
 }
 
 // spawnToolName is the spawn_subagent tool's name (A-106: the tool a spawn scope grants
@@ -1166,8 +1170,96 @@ func (m *subagentManager) toolScope(sessionID string) func(toolhub.Definition) b
 }
 
 // childToolScope is the tools a child with access may use.
+// (Update (A-137): never one whose definition says Subagent: SubagentNever either.)
 func childToolScope(access subagent.Access) func(toolhub.Definition) bool {
-	return func(d toolhub.Definition) bool { return subagent.ChildMayUse(access, d.Name, string(d.Risk)) }
+	return func(d toolhub.Definition) bool {
+		return d.Subagent != toolhub.SubagentNever && subagent.ChildMayUse(access, d.Name, string(d.Risk))
+	}
+}
+
+// delegatedTool (A-137) is one tool this agent hands to its subagents, with the names
+// of the enabled types that have it.
+type delegatedTool struct {
+	name  string
+	types []string
+}
+
+// delegatedTools (A-137) is the tools this agent hands to its subagents in session:
+// each of its tools whose definition says Subagent: SubagentPreferred and that one of
+// its enabled subagent types has (the type's tools, within its access), with the names
+// of those types, in the order core/ts lists them. The agent loop leaves them out of
+// this agent's tool list, so their large output stays in a child's context; buildIndex
+// names them. Nil in a child run's session, without spawn_subagent, or when no enabled
+// type has such a tool - the agent then keeps them.
+func (m *subagentManager) delegatedTools(ctx context.Context, session kernel.Session) []delegatedTool {
+	m.mu.Lock()
+	_, bound := m.bindings[session.ID]
+	m.mu.Unlock()
+	scope := m.scopeOf(session.ID)
+	hasSpawn := m.d.hasSpawnTool != nil && m.d.hasSpawnTool()
+	if bound || subagent.IsSession(&session) || (!hasSpawn && (scope == nil || !scope.GrantSpawnTool)) {
+		return nil
+	}
+	hub := m.typeHub()
+	if hub == nil || m.d.toolDefinitions == nil {
+		return nil
+	}
+	var preferred []toolhub.Definition
+	for _, d := range m.d.toolDefinitions(session.ID) {
+		if d.Subagent == toolhub.SubagentPreferred {
+			preferred = append(preferred, d)
+		}
+	}
+	if len(preferred) == 0 {
+		return nil
+	}
+	parentTools := m.d.profile().Tools
+	var out []delegatedTool
+	for _, name := range m.configFor(scope).Types {
+		t, ok, err := hub.Get(ctx, name)
+		if err != nil || !ok {
+			continue
+		}
+		tools := typeTools(t, parentTools)
+		inScope := childToolScope(t.Access)
+		for _, d := range preferred {
+			if !slices.Contains(tools, d.Name) || !inScope(d) {
+				continue
+			}
+			i := slices.IndexFunc(out, func(x delegatedTool) bool { return x.name == d.Name })
+			if i < 0 {
+				out = append(out, delegatedTool{name: d.Name})
+				i = len(out) - 1
+			}
+			out[i].types = append(out[i].types, t.Name)
+		}
+	}
+	return out
+}
+
+// delegatedToolNames (A-137) is the names of delegatedTools, for the agent loop's
+// DelegatedTools.
+func (m *subagentManager) delegatedToolNames(ctx context.Context, session kernel.Session) []string {
+	var names []string
+	for _, d := range m.delegatedTools(ctx, session) {
+		names = append(names, d.name)
+	}
+	return names
+}
+
+// delegatedHint (A-137) is the line of <available_subagents> that names the tools this
+// agent hands to subagents ("" for none).
+func (m *subagentManager) delegatedHint(ctx context.Context, session kernel.Session) string {
+	delegated := m.delegatedTools(ctx, session)
+	if len(delegated) == 0 {
+		return ""
+	}
+	items := make([]string, 0, len(delegated))
+	for _, d := range delegated {
+		items = append(items, d.name+" ("+strings.Join(d.types, ", ")+")")
+	}
+	return "Work that needs these tools goes to a subagent " + emDash + " they are not in your own tool list, so their large output " +
+		"stays out of your context: " + strings.Join(items, "; ") + ".\n"
 }
 
 // buildIndex is <available_subagents> for the system prompt: the agents this one may
@@ -1211,7 +1303,7 @@ func (m *subagentManager) buildIndex(ctx context.Context, session kernel.Session
 		intro + " " +
 		"Delegate only independent work that benefits from a separate specialist or context " + emDash + " call spawn_subagent several times " +
 		"in one response for independent tasks (they run in parallel), and one after another when a task needs an earlier result.\n" +
-		strings.Join(lines, "\n") + "\n</available_subagents>", true
+		strings.Join(lines, "\n") + "\n" + m.delegatedHint(ctx, session) + "</available_subagents>", true
 }
 
 // ---------------------------------------------------------------------------

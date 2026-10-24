@@ -64,6 +64,8 @@ func (*Tool) Definition() toolhub.Definition {
 			Required: []string{"question"},
 		},
 		Risk: toolhub.RiskReadOnly,
+		// A-137: a subagent cannot ask the user.
+		Subagent: toolhub.SubagentNever,
 	}
 }
 

@@ -98,9 +98,14 @@ func (*WriteFileTool) Execute(ctx context.Context, args kernel.Arguments, tc too
 		meta.Set("sha256", written.SHA256)
 		meta.Set("created", written.Created)
 		meta.Set("verified", true)
-		return toolkit.Result(
+		out := toolkit.Result(
 			verb+" "+written.Path+" ("+toolkit.FormatBytes(int64(written.Bytes))+", "+strconv.Itoa(lines)+" lines) "+emDash+
-				" verified by read-back (sha256 "+short(written.SHA256)+")", meta), nil
+				" verified by read-back (sha256 "+short(written.SHA256)+")", meta)
+		// A-129: later requests carry a reference to the file instead of its whole content
+		out.CompactArguments = toolhub.WithContentReference(args, toolhub.ContentWritten{
+			Size: toolkit.FormatBytes(int64(written.Bytes)), Path: written.Path, ReadWith: "read_file",
+		})
+		return out, nil
 	}), nil
 }
 

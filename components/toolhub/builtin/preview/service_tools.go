@@ -358,6 +358,8 @@ func (*ServiceLogsTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-137: logs are long and mostly noise; a subagent returns the lines that matter.
+		Subagent: toolhub.SubagentPreferred,
 	}
 }
 

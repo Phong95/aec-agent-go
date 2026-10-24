@@ -166,6 +166,8 @@ func (*ManageTool) Definition() toolhub.Definition {
 			Required: []string{"action"},
 		},
 		Risk: toolhub.RiskConsequential,
+		// A-137: no lasting changes from a subagent.
+		Subagent: toolhub.SubagentNever,
 	}
 }
 

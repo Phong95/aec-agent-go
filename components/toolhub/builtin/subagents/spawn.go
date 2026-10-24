@@ -77,6 +77,8 @@ func (*SpawnSubagentTool) Definition() toolhub.Definition {
 			Required: []string{"task"},
 		},
 		Risk: toolhub.RiskConsequential,
+		// A-137: no nesting - subagents are one level deep.
+		Subagent: toolhub.SubagentNever,
 	}
 }
 

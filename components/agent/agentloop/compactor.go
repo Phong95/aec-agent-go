@@ -3,6 +3,7 @@ package agentloop
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
@@ -219,6 +220,124 @@ func (c *Compactor) tailBudget() float64 {
 		return float64(*b)
 	}
 	return float64(c.config.ContextWindowTokens) * c.config.Threshold * c.config.TailTargetRatio
+}
+
+// proactivePruneTargetRatio (A-129): the proactive clearing clears down to this share
+// of ProactivePruneTokens (the low mark).
+const proactivePruneTargetRatio = 0.5
+
+// defaultKeepToolResults (A-129) is the default of CompactorConfig.KeepToolResults.
+const defaultKeepToolResults = 3
+
+// ToolResultClearing (A-129) is what ClearOldToolResults did.
+type ToolResultClearing struct {
+	// Messages are the messages with the cleared results; the input itself when
+	// nothing was cleared.
+	Messages []kernel.Message
+	// Cleared is how many tool results were cleared.
+	Cleared int
+	// ClearedTokens is their estimated size before clearing.
+	ClearedTokens int
+}
+
+// clearedToolResultNote (A-129) is what a proactively cleared tool result reads.
+func clearedToolResultNote(toolName string, tokens int) string {
+	return "[Old " + toolName + " output cleared to save context space (~" + strconv.Itoa(tokens) +
+		" tokens) — run it again if you need it]"
+}
+
+// ClearOldToolResults (A-129) clears old large tool results before compaction is
+// needed. The current turn (from the last user message on) and the latest
+// KeepToolResults results before it are never cleared; of the rest, the results of
+// at least OldToolResultMinTokens are clearable. Once those add up to more than
+// ProactivePruneTokens (the high mark), the oldest are replaced by a short note until
+// they are down to half of it (the low mark). Clearing in batches like this changes
+// the messages rarely, so the prompt cache mostly holds; the caller stores the
+// result. Off when ProactivePruneTokens is not positive. msgs is never changed.
+func (c *Compactor) ClearOldToolResults(msgs []kernel.Message, count CountFunc) ToolResultClearing {
+	unchanged := ToolResultClearing{Messages: msgs}
+	high := c.config.ProactivePruneTokens
+	if high <= 0 {
+		return unchanged
+	}
+
+	turnStart := len(msgs)
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == kernel.RoleUser && !carriesToolResults(msgs[i]) {
+			turnStart = i
+			break
+		}
+	}
+
+	names := map[string]string{}
+	for _, m := range msgs {
+		for _, call := range m.ToolCalls {
+			names[call.ID] = call.Name
+		}
+	}
+
+	// Every result before the current turn, oldest first: the message index and the
+	// result index, or -1 for a legacy tool message.
+	type found struct{ at, index, tokens int }
+	var results []found
+	for at := range turnStart {
+		m := msgs[at]
+		switch {
+		case len(m.ToolResults) > 0:
+			for index, r := range m.ToolResults {
+				one := kernel.Message{Role: m.Role, ToolResults: []kernel.ToolResult{r}}
+				results = append(results, found{at, index, count(one)})
+			}
+		case m.Role == kernel.RoleTool:
+			results = append(results, found{at, -1, count(m)})
+		}
+	}
+	keep := defaultKeepToolResults
+	// A negative value falls back to the default (it would otherwise slice past the end).
+	if c.config.KeepToolResults != nil && *c.config.KeepToolResults >= 0 {
+		keep = *c.config.KeepToolResults
+	}
+	minimum := c.config.OldToolResultMinTokens
+	// A cleared result is a short note, far below the minimum, so it is never cleared again.
+	var clearable []found
+	for _, r := range results[:max(0, len(results)-keep)] {
+		if r.tokens >= minimum {
+			clearable = append(clearable, r)
+		}
+	}
+
+	total := 0
+	for _, r := range clearable {
+		total += r.tokens
+	}
+	if total <= high {
+		return unchanged
+	}
+
+	low := float64(high) * proactivePruneTargetRatio
+	out := make([]kernel.Message, len(msgs))
+	copy(out, msgs)
+	cleared, clearedTokens := 0, 0
+	for _, r := range clearable {
+		if float64(total) <= low {
+			break
+		}
+		m := out[r.at].Clone()
+		if r.index == -1 {
+			m.Content = clearedToolResultNote("tool", r.tokens)
+		} else {
+			name, ok := names[m.ToolResults[r.index].ToolCallID]
+			if !ok {
+				name = "tool"
+			}
+			m.ToolResults[r.index].Content = clearedToolResultNote(name, r.tokens)
+		}
+		out[r.at] = m
+		total -= r.tokens
+		cleared++
+		clearedTokens += r.tokens
+	}
+	return ToolResultClearing{Messages: out, Cleared: cleared, ClearedTokens: clearedTokens}
 }
 
 // pruneOldToolResults clears the content of the messages that carry large tool

@@ -124,6 +124,10 @@ func (*SaveTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhub.
 				" ("+toolkit.FormatBytes(int64(got.Bytes))+"), id "+got.ID+". Refer to it by name from now on; use update_artifact to change it."+
 				toolhub.CiteLinkNote(*link)+ignoredFromPathNote(src.IgnoredFromPath), meta)
 		out.Link = link
+		// A-129: later requests carry a reference to the artifact instead of its whole content
+		out.CompactArguments = toolhub.WithContentReference(args, toolhub.ContentWritten{
+			Size: toolkit.FormatBytes(int64(got.Bytes)), Path: got.SandboxPath, ReadWith: `read_artifact "` + got.Name + `"`,
+		})
 		return out, nil
 	}), nil
 }

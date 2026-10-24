@@ -15,6 +15,10 @@ func (p AgentProfile) Clone() AgentProfile {
 		p.InitialContext = &c
 	}
 	p.Sandbox = p.Sandbox.Clone()
+	if p.Compactor.KeepToolResults != nil {
+		v := *p.Compactor.KeepToolResults
+		p.Compactor.KeepToolResults = &v
+	}
 	if p.Compactor.LeanTailTokenBudget != nil {
 		v := *p.Compactor.LeanTailTokenBudget
 		p.Compactor.LeanTailTokenBudget = &v
@@ -53,6 +57,10 @@ func (p AgentProfile) Clone() AgentProfile {
 		if c.MaxConcurrentTurns != nil {
 			v := *c.MaxConcurrentTurns
 			c.MaxConcurrentTurns = &v
+		}
+		if c.MaxToolResultChars != nil {
+			v := *c.MaxToolResultChars
+			c.MaxToolResultChars = &v
 		}
 		p.LoopConfig = &c
 	}

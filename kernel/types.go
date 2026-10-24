@@ -102,6 +102,7 @@ func (m Message) Clone() Message {
 				l := *results[i].Link
 				results[i].Link = &l
 			}
+			results[i].CompactArguments = slices.Clone(results[i].CompactArguments)
 		}
 		m.ToolResults = results
 	}
@@ -140,6 +141,11 @@ type ToolResult struct {
 	// it. Kept with the conversation; providers never send it to the model (the model
 	// reads Content).
 	Link *ToolResultLink `json:"link,omitempty"`
+	// CompactArguments (A-129) are the arguments of this result's call as the model
+	// reads them from now on (e.g. a written file's content replaced by a reference to
+	// it). Kept with the conversation; the agent loop swaps them in for the call's
+	// arguments, and providers never send this field. Empty means none.
+	CompactArguments Arguments `json:"compactArguments,omitempty"`
 }
 
 // ToolResultLink (A-132) is a link to something a tool call produced that the user

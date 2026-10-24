@@ -11,7 +11,7 @@ func intp(v int) *int { return &v }
 // fractions (L6) cannot be a *int.
 
 func TestResolveLoopConfigDefaults(t *testing.T) {
-	want := ResolvedLoopConfig{MaxIterations: 100, MaxToolRetries: 2, RetryBackoffMs: 500}
+	want := ResolvedLoopConfig{MaxIterations: 100, MaxToolRetries: 2, RetryBackoffMs: 500, MaxToolResultChars: 50_000}
 	if got := ResolveLoopConfig(nil); got != want {
 		t.Fatalf("ResolveLoopConfig(nil) = %+v, want %+v", got, want)
 	}
@@ -25,7 +25,7 @@ func TestResolveLoopConfigDefaults(t *testing.T) {
 
 func TestResolveLoopConfigValidValuesPassThrough(t *testing.T) {
 	got := ResolveLoopConfig(&LoopConfig{MaxIterations: intp(3), MaxToolRetries: intp(0), RetryBackoffMs: intp(0)})
-	want := ResolvedLoopConfig{MaxIterations: 3, MaxToolRetries: 0, RetryBackoffMs: 0}
+	want := ResolvedLoopConfig{MaxIterations: 3, MaxToolRetries: 0, RetryBackoffMs: 0, MaxToolResultChars: DefaultMaxToolResultChars}
 	if got != want {
 		t.Fatalf("got %+v, want %+v (0 retries and 0 backoff are valid)", got, want)
 	}
@@ -37,12 +37,16 @@ func TestResolveLoopConfigFallsBackPerField(t *testing.T) {
 		in   LoopConfig
 		want ResolvedLoopConfig
 	}{
-		{"maxIterations 0", LoopConfig{MaxIterations: intp(0), MaxToolRetries: intp(7)}, ResolvedLoopConfig{100, 7, 500, 0}},
-		{"maxIterations -1", LoopConfig{MaxIterations: intp(-1), RetryBackoffMs: intp(40)}, ResolvedLoopConfig{100, 2, 40, 0}},
-		{"maxToolRetries -1", LoopConfig{MaxToolRetries: intp(-1), MaxIterations: intp(4)}, ResolvedLoopConfig{4, 2, 500, 0}},
-		{"retryBackoffMs -5", LoopConfig{RetryBackoffMs: intp(-5), MaxToolRetries: intp(1)}, ResolvedLoopConfig{100, 1, 500, 0}},
-		{"all invalid", LoopConfig{MaxIterations: intp(-9), MaxToolRetries: intp(-9), RetryBackoffMs: intp(-9)}, ResolvedLoopConfig{100, 2, 500, 0}},
-		{"minimums", LoopConfig{MaxIterations: intp(1), MaxToolRetries: intp(0), RetryBackoffMs: intp(0)}, ResolvedLoopConfig{1, 0, 0, 0}},
+		{"maxIterations 0", LoopConfig{MaxIterations: intp(0), MaxToolRetries: intp(7)}, ResolvedLoopConfig{100, 7, 500, 0, 50_000}},
+		{"maxIterations -1", LoopConfig{MaxIterations: intp(-1), RetryBackoffMs: intp(40)}, ResolvedLoopConfig{100, 2, 40, 0, 50_000}},
+		{"maxToolRetries -1", LoopConfig{MaxToolRetries: intp(-1), MaxIterations: intp(4)}, ResolvedLoopConfig{4, 2, 500, 0, 50_000}},
+		{"retryBackoffMs -5", LoopConfig{RetryBackoffMs: intp(-5), MaxToolRetries: intp(1)}, ResolvedLoopConfig{100, 1, 500, 0, 50_000}},
+		{"all invalid", LoopConfig{MaxIterations: intp(-9), MaxToolRetries: intp(-9), RetryBackoffMs: intp(-9)}, ResolvedLoopConfig{100, 2, 500, 0, 50_000}},
+		{"minimums", LoopConfig{MaxIterations: intp(1), MaxToolRetries: intp(0), RetryBackoffMs: intp(0)}, ResolvedLoopConfig{1, 0, 0, 0, 50_000}},
+		// A-129: 0 is valid (no limit); below it falls back to the default.
+		{"maxToolResultChars 0", LoopConfig{MaxToolResultChars: intp(0)}, ResolvedLoopConfig{100, 2, 500, 0, 0}},
+		{"maxToolResultChars 8000", LoopConfig{MaxToolResultChars: intp(8_000)}, ResolvedLoopConfig{100, 2, 500, 0, 8_000}},
+		{"maxToolResultChars -1", LoopConfig{MaxToolResultChars: intp(-1)}, ResolvedLoopConfig{100, 2, 500, 0, 50_000}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

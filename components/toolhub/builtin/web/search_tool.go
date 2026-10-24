@@ -77,6 +77,8 @@ func NewSearchTool(o SearchToolOptions) *SearchTool {
 		Risk: toolhub.RiskReadOnly,
 		// A-103: a tool job may run it on a schedule (its exact arguments approved up front).
 		Schedulable: true,
+		// A-137: web research runs in a subagent, so search results stay out of the parent's context.
+		Subagent: toolhub.SubagentPreferred,
 	}
 	return t
 }

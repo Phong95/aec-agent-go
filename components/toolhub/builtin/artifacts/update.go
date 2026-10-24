@@ -134,6 +134,10 @@ func (*UpdateTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhu
 			`Updated "`+got.Name+`" to v`+strconv.Itoa(got.Version)+" "+emDash+" tracks "+got.SandboxPath+
 				" ("+toolkit.FormatBytes(int64(got.Bytes))+")."+toolhub.CiteLinkNote(*link)+ignoredFromPathNote(src.IgnoredFromPath), meta)
 		out.Link = link
+		// A-129: later requests carry a reference to the artifact instead of its whole content
+		out.CompactArguments = toolhub.WithContentReference(args, toolhub.ContentWritten{
+			Size: toolkit.FormatBytes(int64(got.Bytes)), Path: got.SandboxPath, ReadWith: `read_artifact "` + got.Name + `"`,
+		})
 		return out, nil
 	}), nil
 }

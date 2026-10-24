@@ -55,3 +55,19 @@ func SetCompactorLogger(c *Compactor, lg *slog.Logger) { c.logger = lg }
 func WithRecalledMemories(msgs []kernel.Message, recalled *memory.RecalledMemories) []kernel.Message {
 	return withRecalledMemories(msgs, recalled)
 }
+
+// WithCompactArguments exposes withCompactArguments (A-129).
+func WithCompactArguments(msgs []kernel.Message) []kernel.Message { return withCompactArguments(msgs) }
+
+// ClearedToolResultNote exposes clearedToolResultNote (A-129).
+func ClearedToolResultNote(toolName string, tokens int) string {
+	return clearedToolResultNote(toolName, tokens)
+}
+
+// CutToolOutput exposes cutToolOutput (A-129 item 4).
+func CutToolOutput(content string, limit int, savedPath string) string {
+	return cutToolOutput(content, limit, savedPath)
+}
+
+// ToolOutputPath exposes toolOutputPath (A-129 item 4).
+func ToolOutputPath(toolCallID string) string { return toolOutputPath(toolCallID) }

@@ -272,6 +272,8 @@ func (*OpenInAppTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-137: it acts on the user's screen, which the parent decides.
+		Subagent: toolhub.SubagentNever,
 	}
 }
 

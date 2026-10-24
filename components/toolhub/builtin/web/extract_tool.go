@@ -130,6 +130,8 @@ func NewExtractTool(o ExtractToolOptions) *ExtractTool {
 		Risk: toolhub.RiskReadOnly,
 		// A-103: a tool job may run it on a schedule (its exact arguments approved up front).
 		Schedulable: true,
+		// A-137: whole pages are the largest tool outputs; a subagent reads them and reports the facts.
+		Subagent: toolhub.SubagentPreferred,
 	}
 	return t
 }

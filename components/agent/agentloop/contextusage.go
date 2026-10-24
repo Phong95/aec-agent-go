@@ -150,7 +150,9 @@ func (l *Loop) prepareContext(ctx context.Context, history []kernel.Message, mc 
 // toolDefinitions returns the agent's tools, plus skill_view when it has skills.
 // A-105: a subagent's session sees only the tools its scope allows.
 // A-136: a session in plan mode sees only the read-only ones.
-func (l *Loop) toolDefinitions(ctx context.Context, sessionID string) ([]toolhub.Definition, error) {
+// A-137: the tools handed to subagents (DelegatedTools) are left out.
+func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session) ([]toolhub.Definition, error) {
+	sessionID := session.ID
 	// A-106: plus the tools the session is granted (SessionTools).
 	toolDefs := slices.Clone(listTools(l.deps.Tools, sessionID))
 	if inScope := l.toolScope(sessionID); inScope != nil {
@@ -160,6 +162,13 @@ func (l *Loop) toolDefinitions(ctx context.Context, sessionID string) ([]toolhub
 	// the rest).
 	if l.planning(ctx, sessionID) {
 		toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return d.Risk != toolhub.RiskReadOnly })
+	}
+	// A-137: tools handed to subagents are left out, so their large output stays in a
+	// child's context.
+	if l.deps.DelegatedTools != nil {
+		if delegated := l.deps.DelegatedTools(ctx, session); len(delegated) > 0 {
+			toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return slices.Contains(delegated, d.Name) })
+		}
 	}
 	if toolDefs == nil {
 		toolDefs = []toolhub.Definition{}
@@ -255,11 +264,11 @@ func (l *Loop) MeasureContext(ctx context.Context, conv Conversation) (ContextUs
 		usage = session.CurrentTokenUsage.Clone()
 	}
 	mc := MiddlewareContext{Session: session.Clone(), TokenBudget: TokenBudget, Usage: usage}
-	prepared, sections, err := l.prepareContext(ctx, withoutLeadingSystem(conv.LLMMessages()), mc)
+	prepared, sections, err := l.prepareContext(ctx, withCompactArguments(withoutLeadingSystem(conv.LLMMessages())), mc)
 	if err != nil {
 		return ContextUsage{}, err
 	}
-	tools, err := l.toolDefinitions(ctx, session.ID)
+	tools, err := l.toolDefinitions(ctx, session)
 	if err != nil {
 		return ContextUsage{}, err
 	}

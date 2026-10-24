@@ -333,7 +333,9 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 			}
 			return deps.SubagentScopes.Get(sessionID)
 		},
-		logger: deps.Logger,
+		// A-137: which of this agent's tools are preferred for subagents.
+		toolDefinitions: a.tools.ListFor,
+		logger:          deps.Logger,
 	})
 	defer func() {
 		if !built {
@@ -444,6 +446,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		// (read-only by default).
 		Subagents: a.subagents,
 		ToolScope: a.subagents.toolScope,
+		// A-137: the tools handed to subagents are left out of the agent's own tool list.
+		DelegatedTools: a.subagents.delegatedToolNames,
 		// A-106: a group lead's hand-offs to the group's members need no extra approval.
 		PreApproved: a.subagents.preApproved,
 		// A-101: for the tools that use secrets; tool results and errors are redacted

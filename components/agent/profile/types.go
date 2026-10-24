@@ -34,6 +34,10 @@ type CompactorConfig struct {
 	ProactivePruneTokens int `json:"proactivePruneTokens"`
 	// OldToolResultMinTokens is how many tokens are kept for an old tool result.
 	OldToolResultMinTokens int `json:"oldToolResultMinTokens"`
+	// KeepToolResults (A-129) is how many of the latest tool results before the current
+	// turn the proactive clearing (ProactivePruneTokens) never clears. Nil means 3. A
+	// pointer because zero is meaningful.
+	KeepToolResults *int `json:"keepToolResults,omitempty"`
 	// TailTargetRatio is the ratio of the tail kept for the current conversation.
 	// For example, if the conversation took 500k tokens and this value is 0.2
 	// (20%), the tail takes 500k * 0.2 = 100k tokens. ProtectLastN and
@@ -79,6 +83,11 @@ type LoopConfig struct {
 	// sessions (integer >= 0; 0 or omitted = no cap). Turns of one session always run
 	// one at a time.
 	MaxConcurrentTurns *int `json:"maxConcurrentTurns,omitempty"`
+	// MaxToolResultChars (A-129) is the most characters of one tool result the model is
+	// given (integer >= 0; 0 = no limit; default 50 000). A longer result keeps its head
+	// and tail, and in an isolated sandbox the full output is saved to a file the model
+	// can read.
+	MaxToolResultChars *int `json:"maxToolResultChars,omitempty"`
 }
 
 // AgentProfile is the configuration for a spawnable agent instance.
@@ -134,4 +143,7 @@ type ResolvedLoopConfig struct {
 	// MaxConcurrentTurns (A-97) is the most turns one agent runs at once across its
 	// sessions; 0 means no cap.
 	MaxConcurrentTurns int
+	// MaxToolResultChars (A-129) is the most characters of one tool result the model is
+	// given; 0 means no limit.
+	MaxToolResultChars int
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
@@ -102,6 +103,9 @@ type attemptOutcome struct {
 	empty bool
 	// link is toolhub.Output.Link (A-132): what the call produced for the user to open.
 	link *kernel.ToolResultLink
+	// compactArguments is toolhub.Output.CompactArguments (A-129): the call's arguments
+	// as later model requests carry them.
+	compactArguments kernel.Arguments
 }
 
 // failing reports whether the attempt is an error the harness may retry: an error
@@ -267,6 +271,10 @@ func resultOf(call kernel.ToolCall, o attemptOutcome) kernel.ToolResult {
 		l := *o.link
 		res.Link = &l
 	}
+	// A-129: the call's arguments as later model requests carry them, on a successful result only
+	if len(o.compactArguments) > 0 && (o.isError == nil || !*o.isError) {
+		res.CompactArguments = slices.Clone(o.compactArguments)
+	}
 	return res
 }
 
@@ -427,6 +435,7 @@ func outcomeOf(o toolhub.Output) attemptOutcome {
 		l := *o.Link
 		out.link = &l
 	}
+	out.compactArguments = slices.Clone(o.CompactArguments)
 	return out
 }
 

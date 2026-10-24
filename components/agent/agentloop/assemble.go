@@ -59,6 +59,19 @@ func (l *Loop) assembleModelInput(ctx context.Context, r *runState, overrides ll
 	// in front (by an older version) is read without it, since the
 	// context port adds its own.
 	history := withoutLeadingSystem(r.conv.LLMMessages())
+	// A-129: clear old large tool results once they pass ProactivePruneTokens, below the
+	// compaction threshold too. Stored, so later requests read the same messages.
+	clearing := r.compactor.ClearOldToolResults(history, r.counter.Count)
+	if clearing.Cleared > 0 {
+		if err := r.persist(ctx, func(pctx context.Context) error {
+			return r.conv.SetCompactedMessages(pctx, clearing.Messages)
+		}); err != nil {
+			return modelInput{}, err
+		}
+		history = clearing.Messages
+	}
+	// A-129: calls whose content was written to a file carry a reference to it instead.
+	history = withCompactArguments(history)
 	mc := l.middlewareContext(r)
 	// A-104: with the system message's labelled sections when the Context gives them.
 	var sections []ContextSection
@@ -97,12 +110,18 @@ func (l *Loop) assembleModelInput(ctx context.Context, r *runState, overrides ll
 			return modelInput{}, err
 		}
 	}
-	compactSpan.End(obj(
+	compactAttrs := obj(
 		"triggered", result.Compacted,
 		"messageCountAfter", len(result.Messages),
 		"summarySourceLength", kernel.UTF16Len(result.SummarySource),
 		"tailTokens", result.TailTokens,
-	))
+	)
+	// A-129: only when old tool results were cleared this iteration
+	if clearing.Cleared > 0 {
+		compactAttrs.Set("toolResultsCleared", clearing.Cleared)
+		compactAttrs.Set("toolResultTokensCleared", clearing.ClearedTokens)
+	}
+	compactSpan.End(compactAttrs)
 
 	// The model input is built once: the same slice is sent to the model and
 	// described in the trace. The recalled memories join the last system message,
@@ -114,7 +133,7 @@ func (l *Loop) assembleModelInput(ctx context.Context, r *runState, overrides ll
 
 	// The agent's tools, plus skill_view when it has skills.
 	// A-105: a subagent's session sees only the tools its scope allows.
-	toolDefs, err := l.toolDefinitions(ctx, r.session.ID)
+	toolDefs, err := l.toolDefinitions(ctx, r.session)
 	if err != nil {
 		return modelInput{}, err
 	}
