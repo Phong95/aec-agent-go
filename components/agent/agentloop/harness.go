@@ -192,6 +192,8 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 	// the tool, then wrapped so its operations are traced as sandbox-op spans under
 	// this call's dispatch span.
 	base := run.tc
+	// A-153: a workspace tool works in the session's runner folder when the user attached one.
+	base.GetSandbox = e.sessionWorkspace(run, call.Name, base.GetSandbox)
 	base.GetSandbox = resolveOnce(base.GetSandbox)
 	// A-105: the call's id, so a tool can tie what it starts to this call
 	// (spawn_subagent's run record).

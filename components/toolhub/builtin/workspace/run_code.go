@@ -76,6 +76,8 @@ func (t *RunCodeTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskDraft,
 		SandboxOperation: sandboxhub.OperationExec,
+		// A-153: works in the session's runner folder when the user attached one.
+		SessionWorkspace: true,
 		// A-103: a tool job may run it on a schedule (its exact arguments approved up front).
 		Schedulable: true,
 	}

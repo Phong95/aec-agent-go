@@ -96,7 +96,14 @@ func (l *Loop) limitOutput(ctx context.Context, run *toolRun, call kernel.ToolCa
 	}
 	savedPath := ""
 	if run.tc.GetSandbox != nil {
-		if view, err := run.tc.GetSandbox(ctx); err == nil && !nilcheck.IsNil(view) && view.Traits().Isolated {
+		// A-153: the file is read back with read_file, which works in the session's
+		// workspace (a runner folder is not isolated, so nothing is saved there).
+		get := run.tc.GetSandbox
+		if ss, ok := l.deps.Sandbox.(SessionSandboxes); ok {
+			sessionID := run.tc.SessionID
+			get = func(ctx context.Context) (sandboxhub.View, error) { return ss.GetSessionSandbox(ctx, sessionID) }
+		}
+		if view, err := get(ctx); err == nil && !nilcheck.IsNil(view) && view.Traits().Isolated {
 			if written, err := view.WriteFile(ctx, toolOutputPath(call.ID), result.Content, sandboxhub.WriteOptions{}); err == nil {
 				savedPath = written.Path
 			}

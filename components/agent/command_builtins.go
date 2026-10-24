@@ -59,9 +59,11 @@ type builtInCommandDeps struct {
 	// compact compacts the session's working set now, holding its turn slot.
 	compact func(ctx context.Context, sessionID, focus string) (agentloop.CompactNowResult, bool, error)
 	// describeWorkspace is "the shared sandbox", "its own sandbox" or "none" - without
-	// starting a sandbox.
-	describeWorkspace func() string
-	sandbox           func(ctx context.Context) (commandWorkspace, error)
+	// starting a sandbox. A-153: or the session's runner folder.
+	describeWorkspace func(sessionID string) string
+	// sandbox is the session's workspace (A-153: its runner folder when the user
+	// attached one).
+	sandbox func(ctx context.Context, sessionID string) (commandWorkspace, error)
 	// listCommands is every command, for /help (the command manager's List, in the asking
 	// client).
 	listCommands func(ac command.AvailabilityContext) []command.Info
@@ -443,7 +445,7 @@ func (d builtInCommandDeps) status(ctx context.Context, rc command.RunContext) (
 	if hasUsage {
 		lines = append(lines, "Context: "+contextLine(usage))
 	}
-	lines = append(lines, "Permissions: "+modeText(mode), "Workspace: "+d.describeWorkspace())
+	lines = append(lines, "Permissions: "+modeText(mode), "Workspace: "+d.describeWorkspace(rc.SessionID))
 	if d.isBusy(rc.SessionID) {
 		lines = append(lines, "A reply is running in this conversation.")
 	}
@@ -703,8 +705,8 @@ func (d builtInCommandDeps) plan(ctx context.Context, rc command.RunContext) (co
 
 // --- Developer workflow --------------------------------------------------------------
 
-func (d builtInCommandDeps) initCmd(ctx context.Context, _ command.RunContext) (command.Result, error) {
-	ws, err := d.sandbox(ctx)
+func (d builtInCommandDeps) initCmd(ctx context.Context, rc command.RunContext) (command.Result, error) {
+	ws, err := d.sandbox(ctx, rc.SessionID)
 	if err != nil {
 		return noWorkspaceResult(err), nil
 	}
@@ -724,8 +726,8 @@ func (d builtInCommandDeps) initCmd(ctx context.Context, _ command.RunContext) (
 	}, nil
 }
 
-func (d builtInCommandDeps) diff(ctx context.Context, _ command.RunContext) (command.Result, error) {
-	changes, problem, err := d.gitChanges(ctx)
+func (d builtInCommandDeps) diff(ctx context.Context, rc command.RunContext) (command.Result, error) {
+	changes, problem, err := d.gitChanges(ctx, rc.SessionID)
 	if err != nil {
 		return command.Result{}, err
 	}
@@ -743,7 +745,7 @@ func (d builtInCommandDeps) diff(ctx context.Context, _ command.RunContext) (com
 }
 
 func (d builtInCommandDeps) review(ctx context.Context, rc command.RunContext) (command.Result, error) {
-	changes, problem, err := d.gitChanges(ctx)
+	changes, problem, err := d.gitChanges(ctx, rc.SessionID)
 	if err != nil {
 		return command.Result{}, err
 	}
@@ -783,8 +785,8 @@ var notARepository = regexp.MustCompile(`(?i)not a git repository`)
 // run directly in the sandbox - fixed, read-only commands, so no approval is asked.
 // problem says why they could not run (a user-facing text); err is a failure of the diff
 // commands.
-func (d builtInCommandDeps) gitChanges(ctx context.Context) (gitStatus, string, error) {
-	ws, err := d.sandbox(ctx)
+func (d builtInCommandDeps) gitChanges(ctx context.Context, sessionID string) (gitStatus, string, error) {
+	ws, err := d.sandbox(ctx, sessionID)
 	if err != nil {
 		return gitStatus{}, noWorkspaceResult(err).Text, nil
 	}

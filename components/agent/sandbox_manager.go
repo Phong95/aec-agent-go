@@ -48,9 +48,15 @@ type SandboxManager struct {
 	// closed when that is done. A creator that finds it waits, so two sandboxes with
 	// the same id never exist at once (WR-A06).
 	reconfig chan struct{}
+	// followed maps child sessions (a subagent's run) to the parent session whose
+	// runner they use (A-153). Guarded by mu.
+	followed map[string]string
 }
 
-var _ agentloop.Sandboxes = (*SandboxManager)(nil)
+var (
+	_ agentloop.Sandboxes        = (*SandboxManager)(nil)
+	_ agentloop.SessionSandboxes = (*SandboxManager)(nil)
+)
 
 // ownFuture is the in-flight (or finished) creation of the own sandbox. sb and err
 // are written once, under the manager lock, before done is closed, so a reader that
@@ -101,7 +107,58 @@ func NewSandboxManager(hub *sandboxhub.SandboxHub, agentID string, selection fun
 	if selection == nil {
 		selection = func() sandboxhub.Selection { return sandboxhub.Selection{} }
 	}
-	return &SandboxManager{hub: hub, agentID: agentID, selection: selection}
+	return &SandboxManager{hub: hub, agentID: agentID, selection: selection, followed: map[string]string{}}
+}
+
+// GetSessionSandbox (A-153) is GetSandbox for one session: a session the user attached
+// a runner to (a folder on their machine) gets that folder - also while the runner is
+// offline, so its calls fail rather than land in another sandbox. Every other session
+// gets GetSandbox. Only workspace tools ask per session.
+func (m *SandboxManager) GetSessionSandbox(ctx context.Context, sessionID string) (sandboxhub.View, error) {
+	if sb, ok := m.hub.Runner(m.agentID, m.sessionOf(sessionID)); ok {
+		return sb.ForAgent(ctx, m.agentID)
+	}
+	return m.GetSandbox(ctx)
+}
+
+// FollowSession (A-153): a subagent's run (child session) works where its parent
+// session does - in the parent's runner folder when it has one. It returns the
+// function that ends it (run over).
+func (m *SandboxManager) FollowSession(childSessionID, parentSessionID string) func() {
+	m.mu.Lock()
+	m.followed[childSessionID] = parentSessionID
+	m.mu.Unlock()
+	return func() {
+		m.mu.Lock()
+		if m.followed[childSessionID] == parentSessionID {
+			delete(m.followed, childSessionID)
+		}
+		m.mu.Unlock()
+	}
+}
+
+// DescribeRunner (A-153) is the session's runner folder for /status; "" = the session
+// has none.
+func (m *SandboxManager) DescribeRunner(sessionID string) string {
+	info, ok := m.hub.RunnerInfo(m.agentID, m.sessionOf(sessionID))
+	if !ok {
+		return ""
+	}
+	offline := ""
+	if !info.Connected {
+		offline = " (offline)"
+	}
+	return `the folder "` + info.FolderName + `" on the user's computer` + offline
+}
+
+// sessionOf is the session whose runner sessionID uses: its parent's while it follows one.
+func (m *SandboxManager) sessionOf(sessionID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if parent, ok := m.followed[sessionID]; ok {
+		return parent
+	}
+	return sessionID
 }
 
 // GetSandbox returns the agent's sandbox view, creating the sandbox on first use.

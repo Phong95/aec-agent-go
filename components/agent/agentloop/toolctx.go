@@ -94,6 +94,30 @@ func resolveOnce(inner func(context.Context) (sandboxhub.View, error)) func(cont
 // errSandboxPanicked is what a resolver that panicked leaves for its later callers.
 var errSandboxPanicked = errors.New("agentloop: the sandbox resolver panicked")
 
+// sessionWorkspace (A-153) is the sandbox resolver of one call: a tool marked
+// SessionWorkspace gets the session's workspace - the runner folder the user attached
+// to it (or to the parent session, for a subagent's run), else the agent's sandbox.
+// Other tools, and a Sandboxes port without the session side, keep get.
+func (e *executor) sessionWorkspace(run *toolRun, name string, get func(context.Context) (sandboxhub.View, error)) func(context.Context) (sandboxhub.View, error) {
+	if get == nil || nilcheck.IsNil(e.deps.Sandbox) {
+		return get
+	}
+	ss, ok := e.deps.Sandbox.(SessionSandboxes)
+	if !ok {
+		return get
+	}
+	sessionID := run.tc.SessionID
+	for _, def := range listTools(e.deps.Tools, sessionID) {
+		if def.Name == name {
+			if !def.SessionWorkspace {
+				return get
+			}
+			return func(ctx context.Context) (sandboxhub.View, error) { return ss.GetSessionSandbox(ctx, sessionID) }
+		}
+	}
+	return get
+}
+
 // withTracedSandbox returns tc with GetSandbox wrapped, so the sandbox operations
 // a call makes are recorded as sandbox-op spans under the call's dispatch span. The
 // parent is explicit: calls that run in parallel share one

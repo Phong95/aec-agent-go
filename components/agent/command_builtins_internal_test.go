@@ -43,8 +43,8 @@ func builtInsOver(git func(args []string) gitAnswer) func(text string) command.R
 	m = newCommandManager(commandManagerDeps{
 		agentID: "a1",
 		builtIns: builtInCommands(builtInCommandDeps{
-			sandbox:           func(context.Context) (commandWorkspace, error) { return stubWorkspace{git: git}, nil },
-			describeWorkspace: func() string { return "its own sandbox" },
+			sandbox:           func(context.Context, string) (commandWorkspace, error) { return stubWorkspace{git: git}, nil },
+			describeWorkspace: func(string) string { return "its own sandbox" },
 			listCommands:      func(ac command.AvailabilityContext) []command.Info { return m.List(ac) },
 		}),
 		isBusy: func(string) bool { return false },

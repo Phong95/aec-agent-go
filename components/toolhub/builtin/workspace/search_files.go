@@ -57,6 +57,8 @@ func (t *SearchFilesTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSSearch,
+		// A-153: works in the session's runner folder when the user attached one.
+		SessionWorkspace: true,
 		// A-137: broad searches return many matches; a subagent returns the conclusion.
 		Subagent: toolhub.SubagentPreferred,
 	}

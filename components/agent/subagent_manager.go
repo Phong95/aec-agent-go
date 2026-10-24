@@ -593,6 +593,14 @@ func (m *subagentManager) runChild(
 			return chatTurn(ctx, target.agent, sessionID, prompt, traceAttributes)
 		},
 	}
+	// A-153: a subagent type runs as this agent, so it works where the parent session does -
+	// in the folder on the user's machine when one is attached to it.
+	stopFollowing := func() {}
+	if target.kind == subagent.KindType {
+		if f, ok := m.d.childLoop.sandboxes.(sessionFollower); ok {
+			stopFollowing = f.FollowSession(sessionID, parent.SessionID)
+		}
+	}
 	var result *subagent.TurnResult
 	var failure error
 	if briefErr != nil {
@@ -602,6 +610,7 @@ func (m *subagentManager) runChild(
 	}
 
 	timer.Stop()
+	stopFollowing()
 	stopParent()
 	if target.kind == subagent.KindAgent {
 		target.agent.subagents.unbind(session.ID)
@@ -1373,4 +1382,10 @@ func cloneTokenUsage(u kernel.TokenUsage) kernel.TokenUsage {
 		u.CacheWriteTokens = &v
 	}
 	return u
+}
+
+// sessionFollower is the part of the sandbox manager a subagent type's run uses (A-153):
+// the child session works in the parent session's runner folder while it runs.
+type sessionFollower interface {
+	FollowSession(childSessionID, parentSessionID string) func()
 }

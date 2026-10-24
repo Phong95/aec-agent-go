@@ -48,6 +48,8 @@ func (t *ReadFileTool) Definition() toolhub.Definition {
 		).Require("path"),
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-153: works in the session's runner folder when the user attached one.
+		SessionWorkspace: true,
 	}
 }
 

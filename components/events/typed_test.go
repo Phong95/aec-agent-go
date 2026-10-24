@@ -135,6 +135,10 @@ func lifecycleSamples() []sample {
 		mk("SessionApprovalModeChanged", events.SessionApprovalModeChanged, events.SessionApprovalModeChangedPayload{AgentID: agentID, SessionID: "s-1", Mode: kernel.ApprovalModeYolo}),
 		// A-136: a session's settings changed, and a slash command ran.
 		mk("SessionUpdated", events.SessionUpdated, events.SessionUpdatedPayload{AgentID: agentID, SessionID: "s-1", Fields: []string{"title"}}),
+		// A-153: a session's runner.
+		mk("SandboxRunnerChanged", events.SandboxRunnerChanged, events.SandboxRunnerChangedPayload{AgentID: agentID, SessionID: "s-1", Runner: &events.RunnerInfo{
+			AgentID: agentID, SessionID: "s-1", SandboxID: "remote:runner:s-1", FolderName: "my-app", OS: "windows", AllowExec: true, Connected: true, ConnectedAt: 1,
+		}}),
 		mk("CommandExecuted", events.CommandExecuted, events.CommandExecutedPayload{AgentID: agentID, SessionID: "s-1", Name: "rename", Client: "web", OK: false, Error: "invalid_arguments"}),
 		// A-106: the group kinds.
 		mk("GroupChanged", events.GroupChanged, events.GroupChangedPayload{GroupID: "g1", Change: group.ChangeUpdated}),
@@ -269,8 +273,8 @@ func sdkEventTypeValues(t *testing.T) []string {
 
 func TestKindNames(t *testing.T) {
 	got := events.KindNames()
-	if len(got) != 54 {
-		t.Fatalf("KindNames has %d entries, want 54", len(got))
+	if len(got) != 55 {
+		t.Fatalf("KindNames has %d entries, want 55", len(got))
 	}
 	seen := map[string]bool{}
 	for _, n := range got {

@@ -119,6 +119,10 @@ var (
 	// from /model, its working set from /compact), emitted by the conversation manager with
 	// that session's id. No built-in subscribers (hosts).
 	SessionUpdated = Kind[SessionUpdatedPayload]{Name: "session:updated"}
+	// A-153: a runner (a folder on the user's machine) was attached to a session, went
+	// offline or was detached (the sandbox hub's AttachRunner / DetachRunner), with that
+	// session's id. No built-in subscribers (hosts).
+	SandboxRunnerChanged = Kind[SandboxRunnerChangedPayload]{Name: "sandbox:runner-changed"}
 	// A-136: a slash command ran (the agent's command manager, Agent.Commands().Run),
 	// whatever its outcome, with the session it ran in. No built-in subscribers (hosts).
 	CommandExecuted = Kind[CommandExecutedPayload]{Name: "command:executed"}
@@ -198,6 +202,7 @@ func KindNames() []string {
 		SecretUsed.Name,
 		SessionApprovalModeChanged.Name,
 		SessionUpdated.Name,
+		SandboxRunnerChanged.Name,
 		CommandExecuted.Name,
 		GroupChanged.Name,
 		GroupMessageAdded.Name,

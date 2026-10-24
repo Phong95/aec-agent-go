@@ -169,6 +169,14 @@ type Sandboxes interface {
 	RequiresApproval(traits sandboxhub.Traits, op sandboxhub.Operation) bool
 }
 
+// SessionSandboxes is the optional session side of Sandboxes (A-153), found by type
+// assertion: GetSessionSandbox is the session's workspace - the folder on the user's
+// machine when the user attached a runner to the session, else GetSandbox. Workspace
+// tools (toolhub.Definition.SessionWorkspace) use it; without it they use GetSandbox.
+type SessionSandboxes interface {
+	GetSessionSandbox(ctx context.Context, sessionID string) (sandboxhub.View, error)
+}
+
 // Deps is everything a Loop needs.
 type Deps struct {
 	// Models, Tools, Context and Conversation are required.

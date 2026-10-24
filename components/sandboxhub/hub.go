@@ -61,7 +61,10 @@ func (f *sharedFuture) wait(ctx context.Context) (Sandbox, error) {
 // Own sandboxes (one per agent) are managed by each agent's SandboxManager.
 // Sandboxes that several agents share but that are NOT the shared one (a host
 // folder, a user's own machine over a remote runner) are deferred: they need an
-// instance registry keyed by target - see the note on Selection in types.go. The
+// instance registry keyed by target - see the note on Selection in types.go.
+// A-153: a user's own machine is now reached per session - a client app's runner is
+// attached to one session of one agent (AttachRunner), and that session's workspace
+// tools work in the folder the user chose (SandboxManager.GetSessionSandbox). The
 // hub provides BuildOwnSpec to validate own configs against policy, and
 // ReleaseAgentData to clean up an agent's data in the shared sandbox when it is
 // deleted (its own sandbox's data is deleted by SandboxManager's release with
@@ -93,6 +96,23 @@ type SandboxHub struct {
 	logger *slog.Logger
 	// unsubscribe ends the agent:removed subscription of WithEvents; nil without one.
 	unsubscribe events.Unsubscribe
+	// bus is the bus of WithEvents (A-153: SandboxRunnerChanged); nil without one.
+	bus events.Bus
+	// runners are the runners attached to sessions (A-153), keyed by agent and
+	// session. An entry stays after its connection drops (Connected false), so the
+	// session's workspace tools fail instead of falling back to another sandbox;
+	// DetachRunner removes it.
+	runners map[runnerKey]*runnerEntry
+}
+
+// runnerKey identifies one session of one agent.
+type runnerKey struct{ agentID, sessionID string }
+
+// runnerEntry is one attached runner.
+type runnerEntry struct {
+	sb           *RunnerSandbox
+	connectedAt  int64
+	stopWatching func()
 }
 
 // Option configures a SandboxHub built by NewSandboxHub.
@@ -107,7 +127,12 @@ func WithEvents(b events.Bus) Option {
 		if b == nil {
 			return
 		}
+		h.bus = b
 		h.unsubscribe = events.SubscribeCtx(b, events.AgentRemoved, func(ctx context.Context, _ kernel.Event, p events.AgentRemovedPayload) {
+			// A-153: a removed agent's sessions lose their runners.
+			for _, sessionID := range h.runnerSessions(p.AgentID) {
+				h.DetachRunner(p.AgentID, sessionID, nil)
+			}
 			// ...and its folder in the shared sandbox by the hub.
 			if err := h.ReleaseAgentData(ctx, p.AgentID); err != nil {
 				h.log().Warn("sandbox: could not delete the agent's sandbox files", "agent", p.AgentID, "error", err)
@@ -153,6 +178,7 @@ func (h *SandboxHub) disposeLogged(ctx context.Context, sb Sandbox, reason strin
 func NewSandboxHub(opts ...Option) *SandboxHub {
 	h := &SandboxHub{
 		providers: map[Kind]Provider{},
+		runners:   map[runnerKey]*runnerEntry{},
 		policy:    DefaultHubPolicy(),
 		approval:  DefaultApprovalPolicy,
 	}
@@ -277,6 +303,125 @@ func (h *SandboxHub) Resolve(ctx context.Context, agentID string, sel Selection)
 	return view, nil
 }
 
+// --- Runners (A-153) -------------------------------------------------------------
+
+// AttachRunner makes sb (a runner on the user's machine) the workspace of one session
+// of one agent. The host calls it once the runner's hello checked out - and only for a
+// session the connection is allowed to use: the address comes from the connection,
+// never from a profile. A runner already attached to the session is replaced (closed).
+// When the connection drops the entry stays, marked offline, until it is detached or
+// replaced by a reconnect.
+func (h *SandboxHub) AttachRunner(agentID, sessionID string, sb *RunnerSandbox) (RunnerInfo, error) {
+	if err := AssertSafeAgentID(agentID); err != nil {
+		return RunnerInfo{}, err
+	}
+	key := runnerKey{agentID, sessionID}
+	entry := &runnerEntry{sb: sb, connectedAt: time.Now().UnixMilli(), stopWatching: func() {}}
+	h.mu.Lock()
+	previous := h.runners[key]
+	h.runners[key] = entry
+	h.mu.Unlock()
+	if previous != nil {
+		previous.stopWatching()
+		if previous.sb != sb {
+			previous.sb.Close("Another app attached its folder to this session")
+		}
+	}
+	stop := sb.OnClose(func() {
+		h.mu.Lock()
+		current := h.runners[key] == entry
+		h.mu.Unlock()
+		if current {
+			h.emitRunnerChanged(agentID, sessionID)
+		}
+	})
+	h.mu.Lock()
+	entry.stopWatching = stop
+	h.mu.Unlock()
+	h.emitRunnerChanged(agentID, sessionID)
+	info, _ := h.RunnerInfo(agentID, sessionID)
+	return info, nil
+}
+
+// DetachRunner stops using the runner for this session: its workspace tools go back
+// to the agent's own sandbox. A non-nil sb detaches only when that runner is still the
+// attached one. It reports whether a runner was detached.
+func (h *SandboxHub) DetachRunner(agentID, sessionID string, sb *RunnerSandbox) bool {
+	key := runnerKey{agentID, sessionID}
+	h.mu.Lock()
+	entry := h.runners[key]
+	if entry == nil || (sb != nil && entry.sb != sb) {
+		h.mu.Unlock()
+		return false
+	}
+	delete(h.runners, key)
+	stop := entry.stopWatching
+	h.mu.Unlock()
+	stop()
+	entry.sb.Close("The folder on the user's machine was detached from this session")
+	h.emitRunnerChanged(agentID, sessionID)
+	return true
+}
+
+// Runner returns the runner attached to the session, connected or not.
+func (h *SandboxHub) Runner(agentID, sessionID string) (*RunnerSandbox, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	e := h.runners[runnerKey{agentID, sessionID}]
+	if e == nil {
+		return nil, false
+	}
+	return e.sb, true
+}
+
+// RunnerInfo describes the runner attached to the session.
+func (h *SandboxHub) RunnerInfo(agentID, sessionID string) (RunnerInfo, bool) {
+	h.mu.Lock()
+	e := h.runners[runnerKey{agentID, sessionID}]
+	h.mu.Unlock()
+	if e == nil {
+		return RunnerInfo{}, false
+	}
+	hello := e.sb.Hello()
+	return RunnerInfo{
+		AgentID:     agentID,
+		SessionID:   sessionID,
+		SandboxID:   e.sb.ID(),
+		FolderName:  hello.FolderName,
+		OS:          string(hello.OS),
+		AllowExec:   hello.AllowExec,
+		Connected:   e.sb.Connected(),
+		ConnectedAt: e.connectedAt,
+	}, true
+}
+
+// runnerSessions lists the sessions of agentID that have a runner.
+func (h *SandboxHub) runnerSessions(agentID string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for k := range h.runners {
+		if k.agentID == agentID {
+			out = append(out, k.sessionID)
+		}
+	}
+	return out
+}
+
+func (h *SandboxHub) emitRunnerChanged(agentID, sessionID string) {
+	h.mu.Lock()
+	b := h.bus
+	h.mu.Unlock()
+	if b == nil {
+		return
+	}
+	var runner *RunnerInfo
+	if info, ok := h.RunnerInfo(agentID, sessionID); ok {
+		runner = &info
+	}
+	events.Emit(b, events.SandboxRunnerChanged, sessionID, events.SandboxRunnerChangedPayload{AgentID: agentID, SessionID: sessionID, Runner: runner})
+}
+
 // --- Lifecycle -------------------------------------------------------------------
 
 // ReleaseAgentData cleans up an agent's data when it is deleted: the agent's
@@ -335,9 +480,15 @@ func (h *SandboxHub) Dispose(ctx context.Context) error {
 	h.shared = nil
 	unsubscribe := h.unsubscribe
 	h.unsubscribe = nil
+	runners := h.runners
+	h.runners = map[runnerKey]*runnerEntry{}
 	h.mu.Unlock()
 	if unsubscribe != nil {
 		unsubscribe()
+	}
+	for _, e := range runners {
+		e.stopWatching()
+		e.sb.Close("The server is shutting down")
 	}
 	if fut == nil {
 		return nil

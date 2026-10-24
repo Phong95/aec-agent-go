@@ -483,9 +483,12 @@ func (a *Agent) builtInCommandDeps() builtInCommandDeps {
 		setApprovalMode:  a.conv.SetApprovalMode,
 		contextUsage:     a.ContextUsage,
 		compact:          a.Compact,
-		describeWorkspace: func() string {
+		describeWorkspace: func(sessionID string) string {
 			if a.sandboxes == nil {
 				return "none"
+			}
+			if runner := a.sandboxes.DescribeRunner(sessionID); runner != "" {
+				return runner
 			}
 			switch a.sandboxSelection().Mode {
 			case sandboxhub.SelectionNone:
@@ -496,8 +499,8 @@ func (a *Agent) builtInCommandDeps() builtInCommandDeps {
 				return "the shared sandbox"
 			}
 		},
-		sandbox: func(ctx context.Context) (commandWorkspace, error) {
-			v, err := a.Sandbox(ctx)
+		sandbox: func(ctx context.Context, sessionID string) (commandWorkspace, error) {
+			v, err := a.SessionSandbox(ctx, sessionID)
 			if err != nil {
 				return nil, err
 			}
@@ -1025,6 +1028,16 @@ func (a *Agent) Sandbox(ctx context.Context) (sandboxhub.View, error) {
 		return nil, errNoSandboxHub()
 	}
 	return a.sandboxes.GetSandbox(ctx)
+}
+
+// SessionSandbox (A-153) is Sandbox for one session: the folder on the user's machine
+// when the user attached a runner to the session (sandboxhub.SandboxHub.AttachRunner),
+// else the agent's sandbox. The session's workspace tools get the same view.
+func (a *Agent) SessionSandbox(ctx context.Context, sessionID string) (sandboxhub.View, error) {
+	if a.sandboxes == nil {
+		return nil, errNoSandboxHub()
+	}
+	return a.sandboxes.GetSessionSandbox(ctx, sessionID)
 }
 
 // UpdateSandbox changes where the agent's file and terminal tools run.

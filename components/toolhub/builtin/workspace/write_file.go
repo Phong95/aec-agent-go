@@ -50,6 +50,8 @@ func (*WriteFileTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskDraft,
 		SandboxOperation: sandboxhub.OperationFSWrite,
+		// A-153: works in the session's runner folder when the user attached one.
+		SessionWorkspace: true,
 	}
 }
 

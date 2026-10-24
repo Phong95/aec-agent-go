@@ -241,6 +241,12 @@ type Definition struct {
 	// THERE - for example auto in an isolated Docker sandbox, approval for writes
 	// and commands on a host folder.
 	SandboxOperation sandboxhub.Operation `json:"sandboxOperation,omitempty"`
+	// SessionWorkspace (A-153): the tool works in the session's workspace - the folder
+	// on the user's machine when the user attached a runner to the session
+	// (sandboxhub.SandboxHub.AttachRunner), else the agent's sandbox. Set on the file and
+	// terminal tools; tools whose files the server reads back (artifacts, previews,
+	// skills) leave it out and stay in the agent's sandbox.
+	SessionWorkspace bool `json:"sessionWorkspace,omitempty"`
 	// Schedulable (A-103): a tool job may run this tool on a schedule, without the model
 	// - its exact arguments are approved when the job is created. Set on tools that are
 	// safe to repeat unattended (terminal, run_code, web_search, web_extract); never on

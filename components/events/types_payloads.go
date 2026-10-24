@@ -182,6 +182,33 @@ type SessionUpdatedPayload struct {
 	Fields    []string `json:"fields"`
 }
 
+// RunnerInfo is what a host shows about a session's runner (A-153): the folder on the
+// user's machine its workspace tools work in. The sandbox hub uses this type too
+// (sandboxhub.RunnerInfo).
+type RunnerInfo struct {
+	AgentID   string `json:"agentId"`
+	SessionID string `json:"sessionId"`
+	SandboxID string `json:"sandboxId"`
+	// FolderName is the display name of the chosen folder, never used to find files.
+	FolderName string `json:"folderName"`
+	OS         string `json:"os"`
+	AllowExec  bool   `json:"allowExec"`
+	// Connected false = the app disconnected: the session's workspace tools fail until
+	// it reconnects.
+	Connected bool `json:"connected"`
+	// ConnectedAt is epoch milliseconds.
+	ConnectedAt int64 `json:"connectedAt"`
+}
+
+// SandboxRunnerChangedPayload is the payload of the SandboxRunnerChanged kind (A-153):
+// the session's runner now; a nil Runner (null) = none, the session uses the agent's
+// own sandbox.
+type SandboxRunnerChangedPayload struct {
+	AgentID   string      `json:"agentId"`
+	SessionID string      `json:"sessionId"`
+	Runner    *RunnerInfo `json:"runner"`
+}
+
 // CommandExecutedPayload is the payload of the CommandExecuted kind (A-136): one slash
 // command that ran. Error is the command result's error code when it failed ("" when
 // it did not).
