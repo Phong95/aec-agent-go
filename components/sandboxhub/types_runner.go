@@ -24,14 +24,43 @@ import (
 // RunnerSandbox.Receive on the server and to ServeRunner's handle on the client.
 // Paths are logical POSIX paths, as in every sandbox: /workspace is the chosen folder.
 // The JSON is the same as core/ts's, so either side may be either SDK.
+// Update (A-159, protocol 2): a runner offers several folders, each one at
+// /workspace/<name>; the first is the working directory (relative paths, commands).
+// The runner sends a "folders" message when the user adds or removes one. A protocol 1
+// runner (one folder, /workspace is the folder itself) is still accepted.
+// Update (A-160): a runner may offer byte streams and services (dev servers) too - it
+// lists them in hello.features, so an older runner or server simply goes without. Those
+// operations carry bytes on a channel with the request's id after its response:
+//
+//	readStream   server <--- response {path, size, ...}, data*, end   --- runner
+//	writeStream  server ---> data*, end; <--- response {WriteResult}     --- runner
+//	connect      server <--> response null, then data* both ways, end   --- runner
+//
+// Data is base64 in "data" frames; the receiver answers each frame with an "ack" and a
+// sender keeps at most RunnerStreamWindow frames unanswered (flow control). "end"
+// finishes the channel ("connect": closes the connection), "cancel" (server) aborts it,
+// and an "error" from the runner fails it.
 // ---------------------------------------------------------------------------
 
 // RunnerProtocolVersion is bumped when a message changes incompatibly; the server
 // refuses a runner of another version.
-const RunnerProtocolVersion = 1
+const RunnerProtocolVersion = 2
+
+// RunnerProtocolVersions (A-159) are the protocol versions a server accepts (1 = one
+// folder at /workspace).
+var RunnerProtocolVersions = []int{1, 2}
+
+// RunnerMaxFolders (A-159) is how many folders one runner may offer.
+const RunnerMaxFolders = 20
+
+// RunnerFolder (A-159) is one folder a runner offers, at /workspace/<Name>; the event
+// payload type, so RunnerInfo carries it as it is.
+type RunnerFolder = events.RunnerFolder
 
 // RunnerOperation is a View operation a runner serves. Byte streams and services
 // are not offered.
+// Update (A-160): byte streams and services too, when the runner lists them in
+// hello.features.
 type RunnerOperation string
 
 // The operations a runner serves.
@@ -42,7 +71,34 @@ const (
 	RunnerList      RunnerOperation = "list"
 	RunnerSearch    RunnerOperation = "search"
 	RunnerExec      RunnerOperation = "exec"
+	// A-160 (feature "fs.stream").
+	RunnerReadStream  RunnerOperation = "readStream"
+	RunnerWriteStream RunnerOperation = "writeStream"
+	// A-160 (feature "services").
+	RunnerStartService RunnerOperation = "startService"
+	RunnerStopService  RunnerOperation = "stopService"
+	RunnerListServices RunnerOperation = "listServices"
+	RunnerServiceLogs  RunnerOperation = "serviceLogs"
+	RunnerConnect      RunnerOperation = "connect"
 )
+
+// RunnerFeature (A-160) is an optional part of the protocol a runner offers:
+// RunnerFeatureStream = readStream and writeStream (previews, uploads);
+// RunnerFeatureServices = startService ... connect (dev servers).
+type RunnerFeature string
+
+// The optional parts of the protocol (A-160).
+const (
+	RunnerFeatureStream   RunnerFeature = "fs.stream"
+	RunnerFeatureServices RunnerFeature = "services"
+)
+
+// RunnerStreamWindow (A-160) is how many frames of a channel a sender keeps unanswered
+// (each one RunnerStreamChunkBytes at most).
+const RunnerStreamWindow = 8
+
+// RunnerStreamChunkBytes (A-160) is the most bytes one "data" frame carries (before base64).
+const RunnerStreamChunkBytes = 256 * 1024
 
 // The types of the runner messages.
 const (
@@ -52,6 +108,18 @@ const (
 	RunnerMessageOutput   = "output"
 	RunnerMessageResponse = "response"
 	RunnerMessageError    = "error"
+	// RunnerMessageFolders (A-159): runner -> server, the user added or removed a
+	// folder (or changed its commands).
+	RunnerMessageFolders = "folders"
+	// RunnerMessageData (A-160): bytes on the channel of a request (either direction),
+	// base64 in Data.
+	RunnerMessageData = "data"
+	// RunnerMessageAck (A-160): the receiver took one "data" frame of the channel
+	// (either direction).
+	RunnerMessageAck = "ack"
+	// RunnerMessageEnd (A-160): no more bytes on the channel (either direction); for
+	// "connect" the connection closed.
+	RunnerMessageEnd = "end"
 )
 
 // RunnerHello is the first message of a runner: who it is and what it offers.
@@ -61,12 +129,20 @@ type RunnerHello struct {
 	OS       OS     `json:"os"`
 	// FolderName is the display name of the chosen folder (its last segment), never
 	// used to find files.
+	// A-159: the first folder's name (protocol 2 runners send it too, for older readers).
 	FolderName string `json:"folderName"`
 	// AllowExec false = the user turned commands off for this folder: exec is not offered.
+	// A-159: true when any folder allows commands.
 	AllowExec bool `json:"allowExec"`
+	// Folders (A-159, protocol 2) are the folders, the working one first. Absent in
+	// protocol 1.
+	Folders []RunnerFolder `json:"folders,omitempty"`
 	// Limits are the runner's own ceilings; the server keeps the lower of these and
 	// its defaults. A zero field is unset.
 	Limits *Limits `json:"limits,omitempty"`
+	// Features (A-160) are the optional operations it serves. Absent = none (an older
+	// runner).
+	Features []RunnerFeature `json:"features,omitempty"`
 }
 
 // RunnerMessage is one runner message after the hello; Type says which fields are set:
@@ -76,6 +152,11 @@ type RunnerHello struct {
 //	output   (runner -> server) ID, Stream, Data - live output of a running exec
 //	response (runner -> server) ID, Result
 //	error    (runner -> server) ID, Message, Code
+//	folders  (runner -> server) Folders - A-159: the whole new list, the working one
+//	         first; never empty (the app detaches instead). It has no ID.
+//	data     (either way) ID, Data - A-160: bytes on the request's channel, base64
+//	ack      (either way) ID - A-160: one "data" frame was taken
+//	end      (either way) ID - A-160: no more bytes; "connect": the connection closed
 type RunnerMessage struct {
 	Type    string                  `json:"type"`
 	ID      string                  `json:"id"`
@@ -86,6 +167,7 @@ type RunnerMessage struct {
 	Result  json.RawMessage         `json:"result,omitempty"`
 	Message string                  `json:"message,omitempty"`
 	Code    kernel.SandboxErrorCode `json:"code,omitempty"`
+	Folders []RunnerFolder          `json:"folders,omitempty"`
 }
 
 // RunnerInfo is what a host shows about a session's runner; the event payload type,

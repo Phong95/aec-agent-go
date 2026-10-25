@@ -111,7 +111,8 @@ func TestPreviewImageAsksToEmbedIt(t *testing.T) {
 	r := setup(t)
 	r.write(t, "out/thumb grid.PNG", "png")
 	out := r.run(t, "preview", `{"path":"out/thumb grid.PNG"}`)
-	if isErr(out) || out.Link == nil || out.Link.URI != "preview://out/thumb%20grid.PNG" {
+	// A-133: typed as an image, for the thumbnail on the tool call.
+	if isErr(out) || out.Link == nil || out.Link.URI != "preview://out/thumb%20grid.PNG" || out.Link.Type != "image" {
 		t.Fatalf("out = %+v", out)
 	}
 	if !strings.Contains(out.Content, "![thumb grid.PNG](preview://out/thumb%20grid.PNG) on its own line") {

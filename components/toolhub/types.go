@@ -246,6 +246,8 @@ type Definition struct {
 	// (sandboxhub.SandboxHub.AttachRunner), else the agent's sandbox. Set on the file and
 	// terminal tools; tools whose files the server reads back (artifacts, previews,
 	// skills) leave it out and stay in the agent's sandbox.
+	// Update (A-160): the preview, app and service tools set it too - the host resolves
+	// their links in the session's workspace (a preview link carries the session).
 	SessionWorkspace bool `json:"sessionWorkspace,omitempty"`
 	// Schedulable (A-103): a tool job may run this tool on a schedule, without the model
 	// - its exact arguments are approved when the job is created. Set on tools that are

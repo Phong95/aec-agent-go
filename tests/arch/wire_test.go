@@ -131,6 +131,8 @@ var nonWireTypes = map[string]bool{
 	// durations), never sent; the runner messages themselves are tagged.
 	"sandboxhub.RunnerSandboxOptions": true,
 	"sandboxhub.ServeRunnerOptions":   true,
+	// A-159: a folder the user chose, on the client side only (its path is never sent).
+	"sandboxhub.RunnerFolderSpec":     true,
 	"toolhub.Context":                 true,
 	"toolhub.ToolHub":                 true,
 	"toolhub.Authorized":              true,

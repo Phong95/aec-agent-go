@@ -190,14 +190,32 @@ type RunnerInfo struct {
 	SessionID string `json:"sessionId"`
 	SandboxID string `json:"sandboxId"`
 	// FolderName is the display name of the chosen folder, never used to find files.
+	// A-159: the first (working) folder's name.
 	FolderName string `json:"folderName"`
-	OS         string `json:"os"`
-	AllowExec  bool   `json:"allowExec"`
+	// Folders (A-159) are the runner's folders, the working one first (one entry for a
+	// protocol 1 runner).
+	Folders []RunnerFolder `json:"folders"`
+	OS      string         `json:"os"`
+	// AllowExec (A-159) is true when any folder allows commands.
+	AllowExec bool `json:"allowExec"`
+	// Features (A-160) are the optional operations the runner serves ("fs.stream",
+	// "services"); never nil, so the JSON is a list as in core/ts.
+	Features []string `json:"features"`
 	// Connected false = the app disconnected: the session's workspace tools fail until
 	// it reconnects.
 	Connected bool `json:"connected"`
 	// ConnectedAt is epoch milliseconds.
 	ConnectedAt int64 `json:"connectedAt"`
+}
+
+// RunnerFolder (A-159) is one folder a runner offers, at /workspace/<Name>. The sandbox
+// hub uses this type too (sandboxhub.RunnerFolder).
+type RunnerFolder struct {
+	// Name is its segment under /workspace: the folder's own name, made unique among the
+	// runner's folders.
+	Name string `json:"name"`
+	// AllowExec false = the user turned commands off for this folder.
+	AllowExec bool `json:"allowExec"`
 }
 
 // SandboxRunnerChangedPayload is the payload of the SandboxRunnerChanged kind (A-153):

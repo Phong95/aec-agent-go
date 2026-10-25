@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
@@ -148,7 +149,62 @@ func (m *SandboxManager) DescribeRunner(sessionID string) string {
 	if !info.Connected {
 		offline = " (offline)"
 	}
+	// A-159: several folders.
+	if len(info.Folders) > 1 {
+		names := make([]string, len(info.Folders))
+		for i, f := range info.Folders {
+			names[i] = `"` + f.Name + `"`
+		}
+		return "the folders " + strings.Join(names, ", ") + " on the user's computer" + offline
+	}
 	return `the folder "` + info.FolderName + `" on the user's computer` + offline
+}
+
+// RunnerFoldersIndex (A-159) is the session's runner folders for the system message
+// (<workspace_folders>), so the model knows where each one is; false = the session has
+// no runner.
+func (m *SandboxManager) RunnerFoldersIndex(sessionID string) (string, bool) {
+	sb, ok := m.hub.Runner(m.agentID, m.sessionOf(sessionID))
+	if !ok {
+		return "", false
+	}
+	folders := sb.Folders()
+	lines := []string{"<workspace_folders>"}
+	if sb.Layout() == sandboxhub.RunnerLayoutFlat {
+		var folder sandboxhub.RunnerFolder
+		if len(folders) > 0 {
+			folder = folders[0]
+		}
+		off := ""
+		if !folder.AllowExec {
+			off = " (commands are off)"
+		}
+		lines = append(lines, `The workspace tools work in the folder "`+folder.Name+`" on the user's computer, at /workspace`+off+".")
+	} else {
+		lines = append(lines, "The workspace tools work in these folders on the user's computer:")
+		for i, f := range folders {
+			var notes []string
+			if i == 0 {
+				notes = append(notes, "the working directory: relative paths and commands start here")
+			}
+			if !f.AllowExec {
+				notes = append(notes, "commands are off")
+			}
+			line := "- /workspace/" + f.Name
+			if len(notes) > 0 {
+				line += " (" + strings.Join(notes, "; ") + ")"
+			}
+			lines = append(lines, line)
+		}
+		if len(folders) > 1 {
+			lines = append(lines, "Use the full path (/workspace/<folder>/...) for files in the other folders, and the terminal's cwd to run a command in one.")
+		}
+	}
+	if !sb.Connected() {
+		lines = append(lines, "The app is offline: these tools fail until it reconnects.")
+	}
+	lines = append(lines, "</workspace_folders>")
+	return strings.Join(lines, "\n"), true
 }
 
 // sessionOf is the session whose runner sessionID uses: its parent's while it follows one.

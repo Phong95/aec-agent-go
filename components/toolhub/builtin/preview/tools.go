@@ -70,6 +70,8 @@ func (*PreviewTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 	}
 }
 
@@ -155,6 +157,8 @@ func (*ListAppsTool) Definition() toolhub.Definition {
 		Parameters:       toolhub.JSONSchema{Type: "object", Properties: toolhub.NewProperties(), Required: []string{}},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 	}
 }
 
@@ -272,6 +276,8 @@ func (*OpenInAppTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 		// A-137: it acts on the user's screen, which the parent decides.
 		Subagent: toolhub.SubagentNever,
 	}

@@ -51,6 +51,9 @@ type ContextManager struct {
 	// they are for, where they may be used - never values) on every PrepareMessages. Nil
 	// means none.
 	secretIndex func(ctx context.Context) (string, bool)
+	// workspaceIndex (A-159) resolves the folders on the user's computer the turn's
+	// session works in (<workspace_folders>) on every PrepareMessages. Nil means none.
+	workspaceIndex func(ctx context.Context, session kernel.Session) (string, bool)
 
 	mu          sync.RWMutex
 	middlewares []agentloop.Middleware
@@ -94,6 +97,19 @@ func WithSecretIndex(f func(ctx context.Context) (string, bool)) ContextOption {
 	return func(c *ContextManager) {
 		if f != nil {
 			c.secretIndex = f
+		}
+	}
+}
+
+// WithWorkspaceIndex sets the source of the workspace index (A-159): the folders on the
+// user's computer the turn's session works in, appended after the secret index and
+// counted as part of the system prompt in the context breakdown. It is called on every
+// PrepareMessages with the ctx of the model call and the turn's session; the bool is
+// false (or the text empty) when the session has no runner. A nil function is ignored.
+func WithWorkspaceIndex(f func(ctx context.Context, session kernel.Session) (string, bool)) ContextOption {
+	return func(c *ContextManager) {
+		if f != nil {
+			c.workspaceIndex = f
 		}
 	}
 }
@@ -196,6 +212,12 @@ func (c *ContextManager) Prepare(ctx context.Context, msgs []kernel.Message, mc 
 		if index, ok := c.secretIndex(ctx); ok && index != "" {
 			system = withIndex(system, index)
 			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSecrets, Text: index})
+		}
+	}
+	if c.workspaceIndex != nil {
+		if index, ok := c.workspaceIndex(ctx, mc.Session); ok && index != "" {
+			system = withIndex(system, index)
+			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSystemPrompt, Text: index})
 		}
 	}
 	prepared = append(prepared, system)

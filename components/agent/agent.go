@@ -364,6 +364,12 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	ctxOpts = append(ctxOpts, WithSecretIndex(func(ctx context.Context) (string, bool) {
 		return a.secrets.buildIndex(ctx, a.secrets.d.canManage())
 	}))
+	// A-159: the folders on the user's computer the session works in, when it has a runner.
+	if a.sandboxes != nil {
+		ctxOpts = append(ctxOpts, WithWorkspaceIndex(func(_ context.Context, session kernel.Session) (string, bool) {
+			return a.sandboxes.RunnerFoldersIndex(session.ID)
+		}))
+	}
 	a.ctxMgr = NewContextManager(own, ctxOpts...)
 	// A-97: the cap is read on every turn, so UpdateLoopConfig applies to the next one.
 	// The runs' context ends with the lifetime one, so the cancel of a failed New (above)

@@ -3,6 +3,7 @@ package host_test
 import (
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -32,6 +33,8 @@ const helperLifetime = 60 * time.Second
 //	write-n          writes AEC_HOST_N bytes of "x" in one write
 //	stdin-echo       copies stdin to stdout
 //	pidfile          writes its own pid to AEC_HOST_PIDFILE (proves it was started)
+//	http-echo        A-160: an HTTP server on 127.0.0.1:$PORT answering "hi <path>"
+//	                 (at most helperLifetime)
 func runHelper(mode string) int {
 	switch mode {
 	case "sleep-forever":
@@ -82,6 +85,20 @@ func runHelper(mode string) int {
 		return 0
 	case "stdin-echo":
 		_, _ = io.Copy(os.Stdout, os.Stdin)
+		return 0
+	case "http-echo":
+		srv := &http.Server{
+			Addr:              "127.0.0.1:" + os.Getenv("PORT"),
+			ReadHeaderTimeout: 5 * time.Second,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, "hi "+r.URL.Path)
+			}),
+		}
+		go func() {
+			time.Sleep(helperLifetime)
+			_ = srv.Close()
+		}()
+		_ = srv.ListenAndServe()
 		return 0
 	case "pidfile":
 		if err := os.WriteFile(os.Getenv("AEC_HOST_PIDFILE"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {

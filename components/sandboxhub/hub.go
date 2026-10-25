@@ -327,16 +327,22 @@ func (h *SandboxHub) AttachRunner(agentID, sessionID string, sb *RunnerSandbox) 
 			previous.sb.Close("Another app attached its folder to this session")
 		}
 	}
-	stop := sb.OnClose(func() {
+	changed := func() {
 		h.mu.Lock()
 		current := h.runners[key] == entry
 		h.mu.Unlock()
 		if current {
 			h.emitRunnerChanged(agentID, sessionID)
 		}
-	})
+	}
+	stopClose := sb.OnClose(changed)
+	// A-159: the user added or removed a folder in the app.
+	stopFolders := sb.OnFoldersChange(func([]RunnerFolder) { changed() })
 	h.mu.Lock()
-	entry.stopWatching = stop
+	entry.stopWatching = func() {
+		stopClose()
+		stopFolders()
+	}
 	h.mu.Unlock()
 	h.emitRunnerChanged(agentID, sessionID)
 	info, _ := h.RunnerInfo(agentID, sessionID)
@@ -383,16 +389,30 @@ func (h *SandboxHub) RunnerInfo(agentID, sessionID string) (RunnerInfo, bool) {
 		return RunnerInfo{}, false
 	}
 	hello := e.sb.Hello()
-	return RunnerInfo{
+	folders := e.sb.Folders()
+	info := RunnerInfo{
 		AgentID:     agentID,
 		SessionID:   sessionID,
 		SandboxID:   e.sb.ID(),
 		FolderName:  hello.FolderName,
+		Folders:     folders,
 		OS:          string(hello.OS),
-		AllowExec:   hello.AllowExec,
 		Connected:   e.sb.Connected(),
 		ConnectedAt: e.connectedAt,
-	}, true
+	}
+	// A-159: the first (working) folder's name, and commands when any folder allows them.
+	if len(folders) > 0 {
+		info.FolderName = folders[0].Name
+	}
+	for _, f := range folders {
+		info.AllowExec = info.AllowExec || f.AllowExec
+	}
+	// A-160: the optional operations the runner serves.
+	info.Features = []string{}
+	for _, f := range e.sb.Features() {
+		info.Features = append(info.Features, string(f))
+	}
+	return info, true
 }
 
 // runnerSessions lists the sessions of agentID that have a runner.

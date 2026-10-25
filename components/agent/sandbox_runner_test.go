@@ -51,7 +51,7 @@ func (idProbeTool) Execute(ctx context.Context, _ kernel.Arguments, tc toolhub.C
 func silentRunner(id string) *sandboxhub.RunnerSandbox {
 	return sandboxhub.NewRunnerSandbox(sandboxhub.RunnerSandboxOptions{
 		ID:    id,
-		Hello: sandboxhub.RunnerHello{Type: "hello", Protocol: sandboxhub.RunnerProtocolVersion, OS: sandboxhub.OSWindows, FolderName: "my-app", AllowExec: true},
+		Hello: sandboxhub.RunnerHello{Type: "hello", Protocol: 1, OS: sandboxhub.OSWindows, FolderName: "my-app", AllowExec: true},
 		Send:  func(sandboxhub.RunnerMessage) error { return nil },
 	})
 }
@@ -227,5 +227,76 @@ func TestSandboxHubRunnerEvents(t *testing.T) {
 	want := []string{"connected", "connected", "offline", "none"}
 	if strings.Join(seen, ",") != strings.Join(want, ",") {
 		t.Fatalf("events = %v, want %v", seen, want)
+	}
+}
+
+// A-159: a silent runner with several folders (protocol 2).
+func silentFoldersRunner(id string, folders ...sandboxhub.RunnerFolder) *sandboxhub.RunnerSandbox {
+	return sandboxhub.NewRunnerSandbox(sandboxhub.RunnerSandboxOptions{
+		ID: id,
+		Hello: sandboxhub.RunnerHello{
+			Type: "hello", Protocol: sandboxhub.RunnerProtocolVersion, OS: sandboxhub.OSWindows,
+			FolderName: folders[0].Name, AllowExec: true, Folders: folders,
+		},
+		Send: func(sandboxhub.RunnerMessage) error { return nil },
+	})
+}
+
+func TestSandboxManagerRunnerFoldersIndex(t *testing.T) {
+	hub := sandboxhub.NewSandboxHub()
+	m := agent.NewSandboxManager(hub, "agent-1", nil)
+	if _, ok := m.RunnerFoldersIndex("s1"); ok {
+		t.Fatal("an index without a runner")
+	}
+	runner := silentFoldersRunner("remote:runner:s1", sandboxhub.RunnerFolder{Name: "app", AllowExec: true}, sandboxhub.RunnerFolder{Name: "docs"})
+	if _, err := hub.AttachRunner("agent-1", "s1", runner); err != nil {
+		t.Fatal(err)
+	}
+	index, ok := m.RunnerFoldersIndex("s1")
+	want := strings.Join([]string{
+		"<workspace_folders>",
+		"The workspace tools work in these folders on the user's computer:",
+		"- /workspace/app (the working directory: relative paths and commands start here)",
+		"- /workspace/docs (commands are off)",
+		"Use the full path (/workspace/<folder>/...) for files in the other folders, and the terminal's cwd to run a command in one.",
+		"</workspace_folders>",
+	}, "\n")
+	if !ok || index != want {
+		t.Fatalf("index = %q", index)
+	}
+	if got := m.DescribeRunner("s1"); got != `the folders "app", "docs" on the user's computer` {
+		t.Fatalf("DescribeRunner = %q", got)
+	}
+	runner.Close("")
+	if index, _ := m.RunnerFoldersIndex("s1"); !strings.Contains(index, "The app is offline: these tools fail until it reconnects.") {
+		t.Fatalf("offline index = %q", index)
+	}
+
+	flat := silentRunner("remote:runner:s2")
+	if _, err := hub.AttachRunner("agent-1", "s2", flat); err != nil {
+		t.Fatal(err)
+	}
+	if index, _ := m.RunnerFoldersIndex("s2"); index != "<workspace_folders>\nThe workspace tools work in the folder \"my-app\" on the user's computer, at /workspace.\n</workspace_folders>" {
+		t.Fatalf("flat index = %q", index)
+	}
+}
+
+func TestSandboxHubAnnouncesFolderChanges(t *testing.T) {
+	bus := events.New()
+	hub := sandboxhub.NewSandboxHub(sandboxhub.WithEvents(bus))
+	t.Cleanup(func() { _ = hub.Dispose(context.Background()) })
+	var seen []int
+	events.Subscribe(bus, events.SandboxRunnerChanged, func(_ kernel.Event, p events.SandboxRunnerChangedPayload) {
+		if p.Runner != nil {
+			seen = append(seen, len(p.Runner.Folders))
+		}
+	})
+	runner := silentFoldersRunner("remote:runner:s1", sandboxhub.RunnerFolder{Name: "app", AllowExec: true})
+	if _, err := hub.AttachRunner("agent-1", "s1", runner); err != nil {
+		t.Fatal(err)
+	}
+	runner.Receive([]byte(`{"type":"folders","folders":[{"name":"app","allowExec":true},{"name":"docs","allowExec":false}]}`))
+	if len(seen) != 2 || seen[0] != 1 || seen[1] != 2 {
+		t.Fatalf("events = %v", seen)
 	}
 }

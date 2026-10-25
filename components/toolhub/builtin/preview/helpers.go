@@ -135,12 +135,17 @@ func embedImageNote(link kernel.ToolResultLink) string {
 }
 
 // previewLink is the preview link of a workspace-relative path, with an optional query.
+// A-133: an image file (no query) is type "image", so the chat can show a thumbnail of it
+// on the tool call; anything else is "preview".
 func previewLink(rel, name, query string) *kernel.ToolResultLink {
 	uri := "preview://" + encodePath(rel)
+	linkType := "preview"
 	if query != "" {
 		uri += "?" + query
+	} else if isImageFile(rel) {
+		linkType = "image"
 	}
-	return &kernel.ToolResultLink{URI: uri, Name: name, Type: "preview"}
+	return &kernel.ToolResultLink{URI: uri, Name: name, Type: linkType}
 }
 
 var appNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)

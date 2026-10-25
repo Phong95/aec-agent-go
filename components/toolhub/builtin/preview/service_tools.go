@@ -133,6 +133,8 @@ func (*StartServiceTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskDraft,
 		SandboxOperation: sandboxhub.OperationExec,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 	}
 }
 
@@ -229,6 +231,8 @@ func (*StopServiceTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskDraft,
 		SandboxOperation: sandboxhub.OperationExec,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 	}
 }
 
@@ -287,6 +291,8 @@ func (*ListServicesTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 	}
 }
 
@@ -358,6 +364,8 @@ func (*ServiceLogsTool) Definition() toolhub.Definition {
 		},
 		Risk:             toolhub.RiskReadOnly,
 		SandboxOperation: sandboxhub.OperationFSRead,
+		// A-160: in the session's runner folder when the user attached one (the link carries the session).
+		SessionWorkspace: true,
 		// A-137: logs are long and mostly noise; a subagent returns the lines that matter.
 		Subagent: toolhub.SubagentPreferred,
 	}
