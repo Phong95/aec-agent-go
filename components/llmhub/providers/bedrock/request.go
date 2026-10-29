@@ -1,8 +1,10 @@
 package bedrock
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
@@ -192,11 +194,23 @@ func mapMessages(msgs []kernel.Message, opts llmhub.ModelOptions) ([]types.Syste
 		}
 
 		// User and other messages.
+		// A-165: attached images before the text, as raw bytes in the format Converse names.
+		var content []types.ContentBlock
+		for _, img := range msg.Images() {
+			data, err := base64.StdEncoding.DecodeString(img.Data)
+			if err != nil {
+				return nil, nil, kernel.NewModelError("an attached image is not valid base64", kernel.ModelCodeInvalidRequest, false)
+			}
+			content = append(content, &types.ContentBlockMemberImage{Value: types.ImageBlock{
+				Format: types.ImageFormat(strings.TrimPrefix(img.MIMEType, "image/")),
+				Source: &types.ImageSourceMemberBytes{Value: data},
+			}})
+		}
 		if msg.Content != "" {
-			mapped = append(mapped, types.Message{
-				Role:    types.ConversationRoleUser,
-				Content: []types.ContentBlock{&types.ContentBlockMemberText{Value: msg.Content}},
-			})
+			content = append(content, &types.ContentBlockMemberText{Value: msg.Content})
+		}
+		if len(content) > 0 {
+			mapped = append(mapped, types.Message{Role: types.ConversationRoleUser, Content: content})
 		}
 	}
 	return system, mapped, nil

@@ -30,5 +30,10 @@ func EstimateTokens(msgs []kernel.Message) int {
 			}
 		}
 	}
-	return (total + 3) / 4
+	// A-165: an image is counted as kernel.ImageTokenEstimate, never by its base64 size.
+	images := 0
+	for _, m := range msgs {
+		images += len(m.Images())
+	}
+	return (total+3)/4 + images*kernel.ImageTokenEstimate
 }

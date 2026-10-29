@@ -18,7 +18,7 @@ import (
 // exact packages it uses today and nothing else, so llm, kernel, tool, persistence,
 // the root package and every other leaf stay free of third-party code. A leaf that
 // needs one more package adds it here with a stated reason. llm/openaisub is stdlib
-// only (raw net/http, CONTEXT A1) and so has no entry.
+// only (raw net/http, CONTEXT A1) and so has no entry, and so is llm/gemini (A-162).
 var vendorAllowed = map[string][]string{
 	"components/llmhub/providers/anthropic": {
 		"github.com/anthropics/anthropic-sdk-go",
@@ -96,7 +96,7 @@ func TestLayersCatchVendorImport(t *testing.T) {
 		openaiSDK    = "github.com/openai/openai-go/v3"
 		awsSDK       = "github.com/aws/aws-sdk-go-v2"
 	)
-	for _, pkg := range []string{"components/llmhub", "kernel", "components/toolhub", "components/persistence", "aecmock", "components/llmhub/providers/openaisub", "components/llmhub/providers/all", "."} {
+	for _, pkg := range []string{"components/llmhub", "kernel", "components/toolhub", "components/persistence", "aecmock", "components/llmhub/providers/openaisub", "components/llmhub/providers/gemini", "components/llmhub/providers/all", "."} {
 		for _, imp := range []string{anthropicSDK, openaiSDK + "/option", awsSDK + "/service/bedrockruntime", "github.com/aws/smithy-go"} {
 			path := archModule + "/" + pkg
 			if pkg == "." {

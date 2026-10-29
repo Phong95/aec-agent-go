@@ -27,6 +27,7 @@ const (
 	ProviderOpenAICompatible   ProviderType = "openai-compatible"
 	ProviderBedrock            ProviderType = "bedrock"
 	ProviderOpenAISubscription ProviderType = "openai-subscription"
+	ProviderGemini             ProviderType = "gemini"
 )
 
 // ProviderRecord is a stored provider configuration.

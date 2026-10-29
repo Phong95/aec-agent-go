@@ -384,6 +384,12 @@ func (l *Loop) beginRun(ctx context.Context, userMessage, sessionID string, ro R
 	if sessionID != session.ID {
 		return nil, &sessionNotActiveError{given: sessionID, active: session.ID}
 	}
+	// A-165: images attached to the user's message, checked before anything is written.
+	if len(ro.Attachments) > 0 {
+		if err := kernel.CheckAttachments(ro.Attachments); err != nil {
+			return nil, kernel.NewModelError(err.Error(), kernel.ModelCodeInvalidRequest, false)
+		}
+	}
 
 	// The profile is read once per run: a profile updated between two runs
 	// applies to the next one.
@@ -412,7 +418,7 @@ func (l *Loop) beginRun(ctx context.Context, userMessage, sessionID string, ro R
 	// not leak the trace context either; Run and Stream guard the rest of the run.
 	defer r.cleanupOnPanic()
 
-	if err := r.addMessage(ctx, kernel.Message{Role: kernel.RoleUser, Content: userMessage}); err != nil {
+	if err := r.addMessage(ctx, kernel.Message{Role: kernel.RoleUser, Content: userMessage, Attachments: slices.Clone(ro.Attachments)}); err != nil {
 		r.fail(err)
 		return nil, err
 	}

@@ -40,6 +40,22 @@ type requestBody struct {
 	// StopSequences keeps an empty non-nil list as [] and omits nil.
 	StopSequences []string    `json:"stop_sequences,omitzero"`
 	Tools         []toolParam `json:"tools,omitempty"`
+	// OutputConfig (A-164) carries the reasoning effort; absent when it is not set.
+	OutputConfig *outputConfig `json:"output_config,omitempty"`
+}
+
+// outputConfig (A-164) is output_config: the effort level, passed as given (the API
+// rejects one the model does not accept).
+type outputConfig struct {
+	Effort string `json:"effort"`
+}
+
+// mapOutputConfig (A-164) is output_config for opts: nil when no reasoning effort is set.
+func mapOutputConfig(opts llmhub.ModelOptions) *outputConfig {
+	if opts.ReasoningEffort == "" {
+		return nil
+	}
+	return &outputConfig{Effort: opts.ReasoningEffort}
 }
 
 // messageParam is one entry of messages. Content is a string for a plain message
@@ -53,6 +69,36 @@ type messageParam struct {
 type textBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// imageBlock (A-165) is {type:"image", source:{type:"base64", media_type, data}}.
+type imageBlock struct {
+	Type   string      `json:"type"`
+	Source imageSource `json:"source"`
+}
+
+// imageSource is the base64 source of an imageBlock.
+type imageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+// userContent (A-165) is a user message's content: the text alone, or with images the
+// blocks of its images before its text, as Anthropic recommends.
+func userContent(msg kernel.Message) any {
+	images := msg.Images()
+	if len(images) == 0 {
+		return msg.Content
+	}
+	blocks := make([]any, 0, len(images)+1)
+	for _, img := range images {
+		blocks = append(blocks, imageBlock{Type: "image", Source: imageSource{Type: "base64", MediaType: img.MIMEType, Data: img.Data}})
+	}
+	if msg.Content != "" {
+		blocks = append(blocks, textBlock{Type: "text", Text: msg.Content})
+	}
+	return blocks
 }
 
 // toolUseBlock is {type:"tool_use", id, name, input}.
@@ -138,7 +184,7 @@ func mapMessages(msgs []kernel.Message, opts llmhub.ModelOptions) (system string
 			mapped = append(mapped, messageParam{Role: "user", Content: resultBlocks(msg.ToolResults, text)})
 			continue
 		}
-		mapped = append(mapped, messageParam{Role: "user", Content: msg.Content})
+		mapped = append(mapped, messageParam{Role: "user", Content: userContent(msg)})
 	}
 	return strings.Join(systemParts, "\n"), mapped
 }
@@ -198,6 +244,7 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions)
 		TopP:          opts.TopP,
 		StopSequences: opts.StopSequences,
 		Tools:         mapTools(opts.Tools),
+		OutputConfig:  mapOutputConfig(opts),
 	})
 	if err != nil {
 		return nil, sdk.MessageNewParams{}, err

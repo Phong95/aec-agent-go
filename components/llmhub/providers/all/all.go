@@ -1,6 +1,6 @@
 // Package all links every built-in provider of the SDK. Import it for its side
-// effect to register anthropic, novita, openai, bedrock and openai-subscription in
-// the default llm registry:
+// effect to register anthropic, novita, openai, bedrock, openai-subscription and
+// gemini in the default llm registry:
 //
 //	import _ "github.com/Phong95/aec-agent-go/components/llmhub/providers/all"
 //
@@ -14,6 +14,8 @@ import (
 	_ "github.com/Phong95/aec-agent-go/components/llmhub/providers/anthropic"
 	// Registers the factory "bedrock".
 	_ "github.com/Phong95/aec-agent-go/components/llmhub/providers/bedrock"
+	// Registers the factory "gemini".
+	_ "github.com/Phong95/aec-agent-go/components/llmhub/providers/gemini"
 	// Registers the factories "novita" and "openai".
 	_ "github.com/Phong95/aec-agent-go/components/llmhub/providers/openaicompat"
 	// Registers the factory "openai-subscription".

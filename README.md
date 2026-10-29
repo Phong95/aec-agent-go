@@ -65,7 +65,7 @@ func main() {
 }
 ```
 
-- **Providers:** `anthropic`, `openai`, `novita`, `bedrock` and `openai-subscription`.
+- **Providers:** `anthropic`, `openai`, `novita`, `bedrock`, `openai-subscription` and `gemini`.
   - Blank-import `components/llmhub/providers/all`, or a single provider package.
   - For `bedrock`, also set `SecretKey` and `Region`.
   - `AgentConfig.LLM` takes a provider you built in code.
@@ -157,7 +157,7 @@ core/go/
 │   ├── events/                          the typed event bus
 │   ├── trace/                           trace spans and sinks
 │   ├── llmhub/                          provider contract, hub and registry
-│   │   └── providers/                   opt-in: anthropic, openaicompat, bedrock, openaisub, all
+│   │   └── providers/                   opt-in: anthropic, openaicompat, bedrock, openaisub, gemini, all
 │   ├── toolhub/                         tool contracts, hub, policy, approval
 │   │   └── builtin/                     workspace, artifacts, skills, web, clarify
 │   ├── skillhub/                        the skill library

@@ -91,7 +91,11 @@ func (c *Counter) Calibration() kernel.CounterCalibration {
 // without them the ratio collapsed to the floor (2) and every estimate came out about
 // 2x too high in a chat with 22 tools.
 func (c *Counter) Calibrate(msgs []kernel.Message, usage kernel.TokenUsage, tools ...toolhub.Definition) {
+	// A-165: the images' estimated tokens are taken out first, so they do not skew the text ratio.
 	actual := usage.InputTokens
+	for _, m := range msgs {
+		actual -= len(m.Images()) * kernel.ImageTokenEstimate
+	}
 	if actual <= 0 || len(msgs) == 0 {
 		return
 	}
@@ -129,7 +133,7 @@ func (c *Counter) Count(m kernel.Message) int {
 	if n, ok := c.cache[digest]; ok {
 		return n
 	}
-	n := estimateTokens(length, c.charsPerToken)
+	n := estimateTokens(length, c.charsPerToken) + len(m.Images())*kernel.ImageTokenEstimate // A-165
 	if len(c.cache) >= maxCounterCacheEntries {
 		clear(c.cache)
 	}
@@ -147,7 +151,7 @@ func (c *Counter) countFresh(m kernel.Message) int {
 	_, _, length := measure(m)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return estimateTokens(length, c.charsPerToken)
+	return estimateTokens(length, c.charsPerToken) + len(m.Images())*kernel.ImageTokenEstimate // A-165
 }
 
 // estimateTokens is max(1, ceil(length / charsPerToken)).
@@ -187,6 +191,11 @@ func measureDigest(m kernel.Message) (digest [sha256.Size]byte, length int) {
 	h := sha256.New()
 	for _, part := range []string{string(m.Role), m.Content, calls, results} {
 		h.Write([]byte(part))
+		h.Write([]byte{0})
+	}
+	// A-165: the images count too (their number changes the estimate).
+	for _, img := range m.Images() {
+		h.Write([]byte(img.Data))
 		h.Write([]byte{0})
 	}
 	h.Sum(digest[:0])

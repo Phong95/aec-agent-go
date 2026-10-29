@@ -468,10 +468,32 @@ func MapAnthropicModel(raw json.RawMessage, provider string) ModelInfo {
 			ContextWindowTokens: positiveInt(obj["max_input_tokens"]),
 			MaxOutputTokens:     positiveInt(obj["max_tokens"]),
 			InputModalities:     inputModalities,
+			ReasoningEfforts:    anthropicReasoningEfforts(capabilitiesObj),
 			Capabilities:        capabilities,
 		},
 		Raw: rawOrNil(raw),
 	}
+}
+
+// anthropicEfforts (A-164) are the Anthropic effort levels, lowest first (the order the
+// Models API capabilities use).
+var anthropicEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// anthropicReasoningEfforts (A-164) is each level of capabilities.effort whose supported
+// is true, in anthropicEfforts order; nil when the model does not report effort support
+// or accepts none.
+func anthropicReasoningEfforts(capabilities jsObject) []string {
+	if v := supported(capabilities, "effort"); v == nil || !*v {
+		return nil
+	}
+	effort, _ := capabilities["effort"].(map[string]any)
+	var efforts []string
+	for _, level := range anthropicEfforts {
+		if v := supported(effort, level); v != nil && *v {
+			efforts = append(efforts, level)
+		}
+	}
+	return efforts
 }
 
 // ---------------------------------------------------------------------------
@@ -679,4 +701,38 @@ func codexReasoningEfforts(v any) []string {
 		}
 	}
 	return efforts
+}
+
+// ---------------------------------------------------------------------------
+// Google Gemini (models.list)
+// ---------------------------------------------------------------------------
+
+// MapGeminiModel maps one entry of the Gemini API models list (GET /v1beta/models)
+// to a ModelInfo whose Provider is provider. The ID is the entry's name without its
+// "models/" prefix, the form ModelOptions.Model takes. Raw is the input bytes,
+// untouched.
+func MapGeminiModel(raw json.RawMessage, provider string) ModelInfo {
+	obj := decodeObject(raw)
+
+	var c ModelCapabilities
+	if b, ok := obj["thinking"].(bool); ok {
+		c.Reasoning = &b
+	}
+	if methods, ok := stringArray(obj["supportedGenerationMethods"]); ok {
+		c.Streaming = boolPtr(includes(methods, "streamGenerateContent"))
+	}
+
+	return ModelInfo{
+		ModelRecord: ModelRecord{
+			ID:                  strings.TrimPrefix(stringOf(obj["name"]), "models/"),
+			Provider:            provider,
+			DisplayName:         stringOf(obj["displayName"]),
+			Description:         stringOf(obj["description"]),
+			OwnedBy:             "google",
+			ContextWindowTokens: positiveInt(obj["inputTokenLimit"]),
+			MaxOutputTokens:     positiveInt(obj["outputTokenLimit"]),
+			Capabilities:        compactCapabilities(c),
+		},
+		Raw: rawOrNil(raw),
+	}
 }

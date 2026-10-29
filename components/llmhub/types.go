@@ -5,6 +5,7 @@ package llmhub
 import (
 	"context"
 	"iter"
+	"slices"
 
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/kernel"
@@ -78,8 +79,8 @@ const DefaultMaxOutputTokens = 16384
 //
 // MaxTokens is the output token limit of one response. When it is nil, the
 // Anthropic and Bedrock providers send DefaultMaxOutputTokens and the
-// OpenAI-compatible provider leaves it out, so the server's default applies
-// (A-88). A model whose output cap is lower than that default (the Claude 3 and
+// OpenAI-compatible and Gemini providers leave it out, so the server's default
+// applies (A-88; Gemini counts thinking tokens against the limit, A-162). A model whose output cap is lower than that default (the Claude 3 and
 // 3.5 families, for example) needs it set, or the provider rejects the request.
 type ModelOptions struct {
 	Provider      string               `json:"provider,omitempty"`
@@ -90,6 +91,30 @@ type ModelOptions struct {
 	StopSequences []string             `json:"stopSequences,omitzero"`
 	Tools         []toolhub.Definition `json:"tools,omitzero"`
 	SystemPrompt  string               `json:"systemPrompt,omitempty"`
+	// ReasoningEffort (A-164) is how much the model reasons, as an effort level name,
+	// lowercase ("low", "high"; ModelInfo.ReasoningEfforts lists what a model accepts).
+	// Empty = the provider's default. Anthropic sends it as output_config.effort,
+	// OpenAI-compatible as reasoning_effort, the ChatGPT subscription (Responses API) as
+	// reasoning.effort, and Gemini as thinkingConfig.thinkingLevel. Bedrock ignores it.
+	// The provider rejects a level the model does not accept.
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+}
+
+// ModelAcceptsImages (A-165) says whether a listed model takes images: accepts is true when
+// it reports vision support or image input; known is false when it reports neither
+// capabilities.vision nor input modalities (a host should allow images then, with a
+// warning). The same rules as core/ts modelAcceptsImages.
+func ModelAcceptsImages(m ModelRecord) (accepts, known bool) {
+	if m.Capabilities != nil && m.Capabilities.Vision != nil && *m.Capabilities.Vision {
+		return true, true
+	}
+	if slices.Contains(m.InputModalities, "image") {
+		return true, true
+	}
+	if (m.Capabilities != nil && m.Capabilities.Vision != nil) || m.InputModalities != nil {
+		return false, true
+	}
+	return false, false
 }
 
 // Float returns a pointer to v, for the optional number fields of ModelOptions:

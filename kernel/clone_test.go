@@ -31,6 +31,7 @@ func TestSessionCloneIsDeep(t *testing.T) {
 		ConsolidatedMessageCount: &three,
 		JobID:                    "job-1",
 		ApprovalMode:             kernel.ApprovalModeYolo,
+		ReasoningEffort:          "high",
 	}
 	clonecheck.AssertDeep(t, sample, kernel.Session.Clone)
 }
@@ -41,11 +42,12 @@ func TestMessageCloneIsDeep(t *testing.T) {
 	isErr := true
 	cacheRead, cacheWrite := 3, 4
 	sample := kernel.Message{
-		Role:      kernel.RoleAssistant,
-		Content:   "c",
-		Timestamp: "2026-10-01T08:00:00.000Z",
+		Role:        kernel.RoleAssistant,
+		Content:     "c",
+		Attachments: []kernel.MessageAttachment{{Type: kernel.AttachmentTypeImage, MIMEType: "image/png", Data: "AAAA", Name: "a.png"}},
+		Timestamp:   "2026-10-01T08:00:00.000Z",
 		ToolCalls: []kernel.ToolCall{
-			{ID: "call_1", Name: "read_file", Arguments: kernel.Arguments(`{"b":1,"a":2}`), ArgumentsError: "the arguments must be one JSON object: []"},
+			{ID: "call_1", Name: "read_file", Arguments: kernel.Arguments(`{"b":1,"a":2}`), ArgumentsError: "the arguments must be one JSON object: []", Signature: "sig-1"},
 		},
 		ToolResults: []kernel.ToolResult{
 			{ToolCallID: "call_1", Content: "boom", IsError: &isErr, Link: &kernel.ToolResultLink{URI: "artifact://art-1", Name: "a.md", Type: "text/markdown", Version: 2}, CompactArguments: kernel.Arguments(`{"content":"[ref]"}`)},

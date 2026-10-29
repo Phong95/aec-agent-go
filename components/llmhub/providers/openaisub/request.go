@@ -68,6 +68,25 @@ type requestBody struct {
 	Store  bool        `json:"store"`
 	Stream bool        `json:"stream"`
 	Tools  []toolParam `json:"tools,omitempty"`
+	// Reasoning (A-164) carries ModelOptions.ReasoningEffort; absent when it is not set.
+	Reasoning *reasoningParam `json:"reasoning,omitempty"`
+}
+
+// reasoningParam (A-164) is the request's reasoning: {effort}.
+type reasoningParam struct {
+	Effort string `json:"effort"`
+}
+
+// imagePart (A-165) is {type:"input_image", image_url}: an image as a data: URL.
+type imagePart struct {
+	Type     string `json:"type"`
+	ImageURL string `json:"image_url"`
+}
+
+// userPartsItem (A-165) is a user message whose content holds text and images.
+type userPartsItem struct {
+	Role    string `json:"role"`
+	Content []any  `json:"content"`
 }
 
 // inputItems maps the conversation onto Responses input items. The toolResults of
@@ -106,6 +125,15 @@ func inputItems(msgs []kernel.Message, opts llmhub.ModelOptions) []any {
 				input = append(input, messageItem{Role: "user", Content: []textPart{{Type: "input_text", Text: msg.Content}}})
 			}
 		default:
+			// A-165: attached images after the text.
+			if images := msg.Images(); len(images) > 0 {
+				parts := []any{textPart{Type: "input_text", Text: msg.Content}}
+				for _, img := range images {
+					parts = append(parts, imagePart{Type: "input_image", ImageURL: img.DataURL()})
+				}
+				input = append(input, userPartsItem{Role: "user", Content: parts})
+				continue
+			}
 			input = append(input, messageItem{Role: "user", Content: []textPart{{Type: "input_text", Text: msg.Content}}})
 		}
 	}
@@ -149,13 +177,17 @@ func (p *Provider) buildBody(msgs []kernel.Message, opts llmhub.ModelOptions) ([
 	if model == "" {
 		model = p.model
 	}
-	return jsonx.Marshal(requestBody{
+	body := requestBody{
 		Model:  model,
 		Input:  inputItems(msgs, opts),
 		Store:  false,
 		Stream: true,
 		Tools:  mapTools(opts.Tools),
-	})
+	}
+	if opts.ReasoningEffort != "" {
+		body.Reasoning = &reasoningParam{Effort: opts.ReasoningEffort}
+	}
+	return jsonx.Marshal(body)
 }
 
 // buildHeaders are the headers of a Responses request, from one snapshot of the

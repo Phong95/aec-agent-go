@@ -147,7 +147,8 @@ var layerTable = map[string][]string{
 	"components/llmhub/providers/openaicompat": {"kernel", "components/llmhub", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/llmtransport"},
 	"components/llmhub/providers/bedrock":      {"kernel", "components/llmhub", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/llmtransport"},
 	"components/llmhub/providers/openaisub":    {"kernel", "components/llmhub", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/llmtransport"},
-	"components/llmhub/providers/all":          {"components/llmhub/providers/anthropic", "components/llmhub/providers/openaicompat", "components/llmhub/providers/bedrock", "components/llmhub/providers/openaisub"},
+	"components/llmhub/providers/gemini":       {"kernel", "components/llmhub", "components/toolhub", "internal/jsonx", "internal/jsstr", "internal/llmtransport"},
+	"components/llmhub/providers/all":          {"components/llmhub/providers/anthropic", "components/llmhub/providers/openaicompat", "components/llmhub/providers/bedrock", "components/llmhub/providers/openaisub", "components/llmhub/providers/gemini"},
 	"internal/llmtest":                         {"kernel", "internal/jsonx"},
 	// Phase 10: agent is the Agent and its managers (L7) and
 	// orchestration is the registry of agents (L8). agent is the first package that

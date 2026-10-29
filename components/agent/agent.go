@@ -641,6 +641,13 @@ func (a *Agent) SetApprovalMode(ctx context.Context, sessionID string, mode kern
 	return a.conv.SetApprovalMode(ctx, sessionID, mode)
 }
 
+// SetReasoningEffort (A-164) sets a session's reasoning effort ("" clears it), used from
+// its next turn. The bool is false, with a nil error, when there is no such session; a
+// malformed level is a kernel.SessionError with SessionCodeInvalid.
+func (a *Agent) SetReasoningEffort(ctx context.Context, sessionID, effort string) (kernel.Session, bool, error) {
+	return a.conv.SetReasoningEffort(ctx, sessionID, effort)
+}
+
 // approvalModeFor (A-135) is the approval mode a session's calls use - a child run's
 // session uses its parent's.
 func (a *Agent) approvalModeFor(ctx context.Context, sessionID string) (kernel.ApprovalMode, error) {
@@ -765,7 +772,7 @@ func (a *Agent) Chat(ctx context.Context, message string, opts ...ChatOption) (a
 	session, _ := turn.conversation.Session()
 	// The run is bound to the session it starts on (see ConversationManager).
 	// (A-97: it works in the Conversation of its session, loaded for this turn.)
-	return a.loop.Run(runCtx, message, session.ID, a.mergeSessionModel(session, o.model), agentloop.RunOptions{Conversation: turn.conversation, TraceAttributes: o.traceAttributes})
+	return a.loop.Run(runCtx, message, session.ID, a.mergeSessionModel(session, o.model), agentloop.RunOptions{Conversation: turn.conversation, TraceAttributes: o.traceAttributes, Attachments: o.attachments})
 }
 
 // ChatStream is Chat that yields the model's output as it arrives.
@@ -802,7 +809,7 @@ func (a *Agent) ChatStream(ctx context.Context, message string, opts ...ChatOpti
 		}
 		defer turn.release()
 		session, _ := turn.conversation.Session()
-		a.loop.Stream(runCtx, message, session.ID, a.mergeSessionModel(session, o.model), agentloop.RunOptions{Conversation: turn.conversation, TraceAttributes: o.traceAttributes})(errorChunkYield(yield))
+		a.loop.Stream(runCtx, message, session.ID, a.mergeSessionModel(session, o.model), agentloop.RunOptions{Conversation: turn.conversation, TraceAttributes: o.traceAttributes, Attachments: o.attachments})(errorChunkYield(yield))
 	}
 }
 
@@ -868,6 +875,10 @@ func (a *Agent) mergeSessionModel(session kernel.Session, opts llmhub.ModelOptio
 	a.mu.RUnlock()
 	if merged.Model == "" && session.LLMModel != "" {
 		merged.Model = session.LLMModel
+	}
+	// A-164: the session's reasoning effort, unless the call set one.
+	if merged.ReasoningEffort == "" {
+		merged.ReasoningEffort = session.ReasoningEffort
 	}
 	return merged
 }

@@ -27,6 +27,12 @@ type RunOptions struct {
 	// order; agentId and sessionId always name this run's own agent and session. Nil means
 	// none.
 	TraceAttributes map[string]any
+	// Attachments (A-165) are images the user attached to this turn's message
+	// (kernel.Message.Attachments). Checked with kernel.CheckAttachments before the run
+	// writes anything; invalid ones fail the run with a ModelError "invalid_request". The
+	// loop does not check that the model takes images: the provider rejects them then (a
+	// host checks llmhub.ModelAcceptsImages first).
+	Attachments []kernel.MessageAttachment
 }
 
 // RunResult is the outcome of Loop.Run.

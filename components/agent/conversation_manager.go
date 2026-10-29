@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
 	"slices"
 	"sync"
 	"time"
@@ -472,6 +474,26 @@ func approvalModeOf(s kernel.Session) kernel.ApprovalMode {
 	}
 }
 
+// reasoningEffortForm (A-164) is the form of a reasoning effort level: a short lowercase
+// name ("low", "xhigh").
+var reasoningEffortForm = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
+// SetReasoningEffort (A-164) sets a session's reasoning effort ("" clears it). Like the
+// model, it is taken when a turn starts, so a running turn keeps the effort it started
+// with. The level is not checked against the model (a model change can make it one the
+// model rejects): only its form, a lowercase name. It returns the session as saved; the
+// bool is false, with a nil error, when the session does not exist. A malformed level is
+// a kernel.SessionError with SessionCodeInvalid. On success it emits SessionUpdated
+// (["reasoningEffort"]).
+func (c *ConversationManager) SetReasoningEffort(ctx context.Context, sessionID, effort string) (kernel.Session, bool, error) {
+	if effort != "" && !reasoningEffortForm.MatchString(effort) {
+		return kernel.Session{}, false, kernel.NewSessionError(fmt.Sprintf("%q is not a reasoning effort level", effort), kernel.SessionCodeInvalid, false)
+	}
+	return c.UpdateSession(ctx, sessionID, []string{"reasoningEffort"}, func(s *kernel.Session) {
+		s.ReasoningEffort = effort
+	})
+}
+
 // UpdateSession (A-136) changes a session's settings outside a turn (/rename, /model).
 // Like SetApprovalMode it does not wait for a running turn: it changes that turn's copy of
 // the session (so the turn's own writes keep the change) and saves it; otherwise it
@@ -522,9 +544,11 @@ func (c *ConversationManager) StartSessionFrom(ctx context.Context, fromSessionI
 	if err != nil {
 		return kernel.Session{}, true, err
 	}
-	if from.LLMModel != "" || from.ContextWindowTokens != 0 {
+	if from.LLMModel != "" || from.ContextWindowTokens != 0 || from.ReasoningEffort != "" {
 		s.LLMModel = from.LLMModel
 		s.ContextWindowTokens = from.ContextWindowTokens
+		// A-164: the reasoning effort goes with the model.
+		s.ReasoningEffort = from.ReasoningEffort
 		if err := c.hub.Sessions.Update(ctx, s.Clone()); err != nil {
 			return kernel.Session{}, true, err
 		}

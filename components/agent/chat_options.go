@@ -22,6 +22,8 @@ type callOptions struct {
 	traceAttributes map[string]any
 	// readOnly runs the turn in plan mode (A-136, WithChatReadOnly).
 	readOnly bool
+	// attachments are the images attached to the turn's message (A-165, WithChatAttachments).
+	attachments []kernel.MessageAttachment
 }
 
 // ChatOption is a per-call option of Agent.Chat and Agent.ChatStream. Every
@@ -79,6 +81,12 @@ func WithMaxTokens(n int) ModelOption {
 // WithTopP sets the nucleus sampling value of the call. An explicit 0 is kept.
 func WithTopP(p float64) ModelOption {
 	return func(o *llmhub.ModelOptions) { o.TopP = llmhub.Float(p) }
+}
+
+// WithReasoningEffort (A-164) sets the reasoning effort level of the call, over the
+// session's.
+func WithReasoningEffort(effort string) ModelOption {
+	return func(o *llmhub.ModelOptions) { o.ReasoningEffort = effort }
 }
 
 // WithStopSequences sets the stop sequences of the call; the slice is copied. An
@@ -152,6 +160,20 @@ func (chatReadOnlyOption) applyChat(o *callOptions) { o.readOnly = true }
 // whatever the session's approval mode - /review reviews without changing anything. Only
 // this turn; the session's mode stays as it was. (core/ts: RunOptions.readOnly.)
 func WithChatReadOnly() ChatOption { return chatReadOnlyOption{} }
+
+// chatAttachmentsOption is the ChatOption of WithChatAttachments (A-165).
+type chatAttachmentsOption struct{ attachments []kernel.MessageAttachment }
+
+func (a chatAttachmentsOption) applyChat(o *callOptions) {
+	o.attachments = slices.Clone(a.attachments)
+}
+
+// WithChatAttachments (A-165) attaches images to the turn's user message; the slice is
+// copied. They are checked with kernel.CheckAttachments when the turn starts. (core/ts:
+// RunOptions.attachments.)
+func WithChatAttachments(attachments ...kernel.MessageAttachment) ChatOption {
+	return chatAttachmentsOption{attachments: slices.Clone(attachments)}
+}
 
 // chatOptions applies opts in order. A nil option is skipped.
 func chatOptions(opts []ChatOption) callOptions {

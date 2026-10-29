@@ -62,6 +62,10 @@ type Message struct {
 	// Summary (A-104) is set on the message a compaction wrote in place of the middle
 	// of the conversation (its summary), so a context breakdown can tell it apart.
 	Summary bool `json:"summary,omitempty"`
+	// Attachments (A-165) are images the user attached to this message, sent to the model
+	// with Content (which stays the text). Only user messages carry them; providers send
+	// them as image parts, and CheckAttachments says what is accepted. Nil is omitted.
+	Attachments []MessageAttachment `json:"attachments,omitzero"`
 }
 
 // Time parses Timestamp (an ISO string, see NowISO) as a time.Time in UTC. The
@@ -110,6 +114,7 @@ func (m Message) Clone() Message {
 		u := m.Usage.Clone()
 		m.Usage = &u
 	}
+	m.Attachments = slices.Clone(m.Attachments) // A-165
 	return m
 }
 
@@ -128,6 +133,11 @@ type ToolCall struct {
 	// builds both fields; empty means the arguments are usable and the field is
 	// omitted on the wire.
 	ArgumentsError string `json:"argumentsError,omitempty"`
+	// Signature is an opaque token the provider gave with this call and needs back
+	// when the call is sent in a later request (Gemini's thought signature, A-162).
+	// Kept with the conversation; only the provider that wrote it reads it, every
+	// other provider ignores it.
+	Signature string `json:"signature,omitempty"`
 }
 
 // ToolResult is the outcome of a ToolCall.
@@ -322,6 +332,11 @@ type Session struct {
 	// back from a cached copy, since the ConversationManager updates the running turn's
 	// copy too.
 	ApprovalMode ApprovalMode `json:"approvalMode,omitempty"`
+	// ReasoningEffort (A-164) is how much the model reasons in this session's turns
+	// (llmhub.ModelOptions.ReasoningEffort), a lowercase level name such as "low" or
+	// "high". Empty = the provider's default. Taken when a turn starts, like LLMModel. Set
+	// with Agent.SetReasoningEffort.
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
 // ApprovalMode (A-135): ApprovalModeAsk (the default) pauses every call that needs

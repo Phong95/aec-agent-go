@@ -31,10 +31,13 @@ type requestBody struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	TopP        *float64 `json:"top_p,omitempty"`
 	// Stop keeps an empty non-nil list as [] and omits nil.
-	Stop          []string       `json:"stop,omitzero"`
-	Tools         []toolParam    `json:"tools,omitempty"`
-	Stream        *bool          `json:"stream,omitempty"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	Stop  []string    `json:"stop,omitzero"`
+	Tools []toolParam `json:"tools,omitempty"`
+	// ReasoningEffort (A-164) is ModelOptions.ReasoningEffort, absent when not set. The
+	// server rejects a level the model does not accept.
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Stream          *bool          `json:"stream,omitempty"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
 }
 
 // streamOptions is {include_usage:true}: the final chunk of a stream then carries
@@ -53,6 +56,30 @@ type systemParam struct {
 type userParam struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+// userPartsParam (A-165) is a user message whose content is a list of parts (text and
+// images).
+type userPartsParam struct {
+	Role    string `json:"role"`
+	Content []any  `json:"content"`
+}
+
+// textContentPart is {type:"text", text}.
+type textContentPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// imageURLPart is {type:"image_url", image_url:{url}}.
+type imageURLPart struct {
+	Type     string   `json:"type"`
+	ImageURL imageURL `json:"image_url"`
+}
+
+// imageURL is {url}: a data: URL.
+type imageURL struct {
+	URL string `json:"url"`
 }
 
 // toolMessageParam is {role:"tool", tool_call_id, content}, the answer to one call.
@@ -160,6 +187,18 @@ func mapMessages(msgs []kernel.Message, opts llmhub.ModelOptions) []any {
 			}
 			continue
 		}
+		// A-165: attached images as image_url parts (data: URLs) after the text.
+		if images := msg.Images(); len(images) > 0 {
+			parts := make([]any, 0, len(images)+1)
+			if msg.Content != "" {
+				parts = append(parts, textContentPart{Type: "text", Text: msg.Content})
+			}
+			for _, img := range images {
+				parts = append(parts, imageURLPart{Type: "image_url", ImageURL: imageURL{URL: img.DataURL()}})
+			}
+			mapped = append(mapped, userPartsParam{Role: "user", Content: parts})
+			continue
+		}
 		mapped = append(mapped, userParam{Role: "user", Content: msg.Content})
 	}
 	return mapped
@@ -204,6 +243,8 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions,
 		TopP:        opts.TopP,
 		Stop:        opts.StopSequences,
 		Tools:       mapTools(opts.Tools),
+		// A-164
+		ReasoningEffort: opts.ReasoningEffort,
 	}
 	if stream {
 		on := true
