@@ -10,6 +10,7 @@ package profile
 
 import (
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
@@ -109,6 +110,9 @@ type AgentProfile struct {
 	InferenceConfig *InferenceConfig     `json:"inferenceConfig,omitempty"`
 	LoopConfig      *LoopConfig          `json:"loopConfig,omitempty"`
 	Memory          memory.Config        `json:"memory"`
+	// SkillLearning (A-166) turns a hard-won success the user confirmed into a skill (a
+	// draft for review, or saved at once in auto mode). Nil = off.
+	SkillLearning *learning.Config `json:"skillLearning,omitempty"`
 	// Subagents (A-105) is the agents this one may hand bounded tasks to through
 	// spawn_subagent, and the budget all children of one of its turns share. Nil = no
 	// subagents.

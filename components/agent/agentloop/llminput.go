@@ -35,9 +35,21 @@ func recalledContent(recalled *memory.RecalledMemories) string {
 // prompt cache keeps it. It returns msgs itself when nothing is replaced and never
 // changes msgs or the messages in it; call ids are kept, so calls and results stay
 // paired.
+//
+// A-175: only calls from earlier turns are replaced; the current turn (from the latest
+// user message on) keeps its full arguments. Models that saw their own calls of this
+// turn shortened took the reference for a placeholder they wrote, and copied it as the
+// content of their next write. A turn's calls are replaced once the next turn starts.
 func withCompactArguments(msgs []kernel.Message) []kernel.Message {
 	compact := map[string]kernel.Arguments{}
-	for _, m := range msgs {
+	earlier := msgs
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == kernel.RoleUser {
+			earlier = msgs[:i]
+			break
+		}
+	}
+	for _, m := range earlier {
 		for _, r := range m.ToolResults {
 			if len(r.CompactArguments) > 0 && (r.IsError == nil || !*r.IsError) {
 				compact[r.ToolCallID] = r.CompactArguments

@@ -139,6 +139,7 @@ func TestWithCompactArgumentsSwapsSuccessfulOnes(t *testing.T) {
 		a129User("save it"),
 		{Role: kernel.RoleAssistant, ToolCalls: []kernel.ToolCall{{ID: "a", Name: "write_file", Arguments: kernel.Arguments(`{"content":"LONG"}`)}}},
 		{Role: kernel.RoleAssistant, ToolResults: []kernel.ToolResult{{ToolCallID: "a", Content: "ok", CompactArguments: kernel.Arguments(`{"content":"[ref]"}`)}}},
+		a129User("next"),
 	}
 	out := agentloop.WithCompactArguments(msgs)
 	if got := out[1].ToolCalls[0]; got.ID != "a" || string(got.Arguments) != `{"content":"[ref]"}` {
@@ -146,6 +147,29 @@ func TestWithCompactArgumentsSwapsSuccessfulOnes(t *testing.T) {
 	}
 	if string(msgs[1].ToolCalls[0].Arguments) != `{"content":"LONG"}` {
 		t.Fatalf("the input was changed")
+	}
+}
+
+func TestWithCompactArgumentsKeepsCurrentTurnWhole(t *testing.T) {
+	msgs := []kernel.Message{
+		a129User("one"),
+		{Role: kernel.RoleAssistant, ToolCalls: []kernel.ToolCall{{ID: "a", Name: "write_file", Arguments: kernel.Arguments(`{"content":"A"}`)}}},
+		{Role: kernel.RoleAssistant, ToolResults: []kernel.ToolResult{{ToolCallID: "a", Content: "ok", CompactArguments: kernel.Arguments(`{"content":"[ref a]"}`)}}},
+		a129User("two"),
+		{Role: kernel.RoleAssistant, ToolCalls: []kernel.ToolCall{{ID: "b", Name: "write_file", Arguments: kernel.Arguments(`{"content":"B"}`)}}},
+		{Role: kernel.RoleAssistant, ToolResults: []kernel.ToolResult{{ToolCallID: "b", Content: "ok", CompactArguments: kernel.Arguments(`{"content":"[ref b]"}`)}}},
+	}
+	out := agentloop.WithCompactArguments(msgs)
+	if got := string(out[1].ToolCalls[0].Arguments); got != `{"content":"[ref a]"}` {
+		t.Fatalf("earlier turn's call = %s, want the compact one", got)
+	}
+	if got := string(out[4].ToolCalls[0].Arguments); got != `{"content":"B"}` {
+		t.Fatalf("current turn's call = %s, want it whole", got)
+	}
+	// Only the current turn: nothing to replace.
+	turn := msgs[3:]
+	if out := agentloop.WithCompactArguments(turn); &out[0] != &turn[0] {
+		t.Fatalf("want the input itself")
 	}
 }
 
@@ -176,16 +200,24 @@ func TestLoopSendsCompactArgumentsAndKeepsOriginal(t *testing.T) {
 	prof.Compactor = a129Config()
 	prof.Compactor.ProactivePruneTokens = 0
 	r := newRig(t, rigOptions{prof: &prof, handlers: []toolhub.Handler{bigTool()}},
-		toolTurn(bigCall("tc-0")), aecmock.ScriptedTurn{Content: "done"})
-	if _, err := r.run(t, "go"); err != nil {
-		t.Fatal(err)
+		toolTurn(bigCall("tc-0")), aecmock.ScriptedTurn{Content: "done"}, aecmock.ScriptedTurn{Content: "again"})
+	for _, q := range []string{"go", "again"} {
+		if _, err := r.run(t, q); err != nil {
+			t.Fatal(err)
+		}
 	}
 	calls := mainCalls(r.models.Calls())
-	if len(calls) != 2 {
-		t.Fatalf("%d main calls, want 2", len(calls))
+	if len(calls) != 3 {
+		t.Fatalf("%d main calls, want 3", len(calls))
+	}
+	// A-175: inside its own turn the call keeps its full arguments.
+	for _, m := range calls[1].Messages {
+		if len(m.ToolCalls) > 0 && !strings.Contains(string(m.ToolCalls[0].Arguments), strings.Repeat("y", 100)) {
+			t.Fatalf("the call was compacted inside its own turn")
+		}
 	}
 	var sent kernel.ToolCall
-	for _, m := range calls[1].Messages {
+	for _, m := range calls[2].Messages {
 		if len(m.ToolCalls) > 0 {
 			sent = m.ToolCalls[0]
 		}

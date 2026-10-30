@@ -15,6 +15,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
 	"github.com/Phong95/aec-agent-go/components/agent/command"
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/internal/jsstr"
@@ -67,6 +68,9 @@ type builtInCommandDeps struct {
 	// listCommands is every command, for /help (the command manager's List, in the asking
 	// client).
 	listCommands func(ac command.AvailabilityContext) []command.Info
+	// confirmLastTurn (A-166) is /learn: the skill learner's confirmation of the session's
+	// last finished turn.
+	confirmLastTurn func(ctx context.Context, sessionID string) (learning.LearnResult, error)
 }
 
 // The limits of the built-ins.
@@ -143,6 +147,10 @@ func BuiltInCommandSpecs() []command.Entry {
 			Arguments: []command.Argument{{Name: "focus", Rest: true}},
 			Safety:    command.SafetyReadOnly,
 		}),
+		// A-166: the user confirms the last task worked, so the skill learner turns it into a skill.
+		builtIn(command.Spec{
+			Name: "learn", Description: "Turn the last task into a skill (it worked " + emDash + " remember how)", Arguments: none, Safety: command.SafetySession,
+		}),
 		builtIn(command.Spec{
 			Name: "copy", Description: "Copy the last reply", Arguments: none, Safety: command.SafetyReadOnly,
 			Requires: []command.ClientCapability{command.CapabilityClipboard},
@@ -184,6 +192,7 @@ func builtInCommands(d builtInCommandDeps) []command.Entry {
 		"init":   d.initCmd,
 		"diff":   d.diff,
 		"review": d.review,
+		"learn":  d.learn,
 		"copy":   d.copyCmd,
 		"exit": func(context.Context, command.RunContext) (command.Result, error) {
 			return command.Result{Text: "Bye.", Action: &command.Action{Type: command.ActionExit}}, nil
@@ -852,6 +861,26 @@ func (d builtInCommandDeps) copyCmd(ctx context.Context, rc command.RunContext) 
 		}
 	}
 	return command.Result{Text: "Nothing to copy yet: there is no reply in this conversation.", Error: command.ResultNotFound}, nil
+}
+
+// --- Skill learning (A-166) ----------------------------------------------------------
+
+func (d builtInCommandDeps) learn(ctx context.Context, rc command.RunContext) (command.Result, error) {
+	if d.confirmLastTurn == nil {
+		return command.Result{Text: "Skill learning is off for this agent. Turn it on in the agent's settings first.", Error: command.ResultUnavailable}, nil
+	}
+	res, err := d.confirmLastTurn(ctx, rc.SessionID)
+	if err != nil {
+		return command.Result{}, err
+	}
+	switch res.Status {
+	case learning.LearnCaptured, learning.LearnAlreadyCaptured:
+		return command.Result{Text: res.Text}, nil
+	case learning.LearnDisabled:
+		return command.Result{Text: res.Text, Error: command.ResultUnavailable}, nil
+	default:
+		return command.Result{Text: res.Text, Error: command.ResultNotFound}, nil
+	}
 }
 
 // --- Helpers -------------------------------------------------------------------------

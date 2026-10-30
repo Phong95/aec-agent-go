@@ -8,3 +8,6 @@ import "github.com/Phong95/aec-agent-go/components/agent/agentloop"
 func WithMemoryWrap(wrap func(agentloop.Memory) agentloop.Memory) Option {
 	return func(o *options) { o.memoryWrap = wrap }
 }
+
+// InspectReplay (A-174) exposes checks 2 and 3 of a verification replay to the tests.
+var InspectReplay = inspectReplay

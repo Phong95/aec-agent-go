@@ -3,6 +3,7 @@ package events
 import (
 	"encoding/json"
 
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/grouphub/group"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
@@ -585,4 +586,67 @@ type GroupTurnFinishedPayload struct {
 	TurnID  string            `json:"turnId"`
 	Status  group.TurnStatus  `json:"status"`
 	Usage   kernel.TokenUsage `json:"usage"`
+}
+
+// Skill learning (A-166) - emitted by the agent's skill learner, with the episode's
+// session id.
+
+// SkillLearningEpisodeCapturedPayload is the payload of SkillLearningEpisodeCaptured: a
+// hard-won turn was confirmed a success and will be distilled.
+type SkillLearningEpisodeCapturedPayload struct {
+	AgentID string                   `json:"agentId"`
+	Episode learning.CapturedEpisode `json:"episode"`
+}
+
+// SkillLearningProposedPayload is the payload of SkillLearningProposed: a draft skill
+// joined the review queue (or, in auto mode, was saved: Auto).
+type SkillLearningProposedPayload struct {
+	AgentID    string                  `json:"agentId"`
+	ProposalID string                  `json:"proposalId"`
+	Action     learning.ProposalAction `json:"action"`
+	SkillName  string                  `json:"skillName"`
+	Auto       bool                    `json:"auto,omitempty"`
+}
+
+// SkillLearningReviewedPayload is the payload of SkillLearningAccepted and
+// SkillLearningRejected.
+type SkillLearningReviewedPayload struct {
+	AgentID    string                  `json:"agentId"`
+	ProposalID string                  `json:"proposalId"`
+	Action     learning.ProposalAction `json:"action"`
+	SkillName  string                  `json:"skillName"`
+	// Edited: accepted with the reviewer's own SKILL.md.
+	Edited bool   `json:"edited,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// SkillLearningSkillUpdatedPayload is the payload of SkillLearningSkillUpdated: a learned
+// skill was created, patched or retired (deleted) in the library.
+type SkillLearningSkillUpdatedPayload struct {
+	AgentID    string                  `json:"agentId"`
+	ProposalID string                  `json:"proposalId"`
+	Action     learning.ProposalAction `json:"action"`
+	SkillName  string                  `json:"skillName"`
+	Auto       bool                    `json:"auto,omitempty"`
+}
+
+// SkillLearningSkillUsedPayload is the payload of SkillLearningSkillUsed (A-172): a
+// learned skill was used in a turn; how the turn went and the skill's health now.
+// A-171: with the turn's tool calls and failures, and those of the episode the skill was
+// learned from - the before/after a host can chart (no extra storage).
+type SkillLearningSkillUsedPayload struct {
+	AgentID     string `json:"agentId"`
+	SkillName   string `json:"skillName"`
+	Smooth      bool   `json:"smooth"`
+	Health      int    `json:"health"`
+	ToolCalls   int    `json:"toolCalls"`
+	FailedCalls int    `json:"failedCalls"`
+	// LearnedFrom is the episode the skill was learned from (nil when its proposal is gone).
+	LearnedFrom *SkillLearningCallCounts `json:"learnedFrom,omitempty"`
+}
+
+// SkillLearningCallCounts is the tool calls and failures of one turn.
+type SkillLearningCallCounts struct {
+	ToolCalls   int `json:"toolCalls"`
+	FailedCalls int `json:"failedCalls"`
 }

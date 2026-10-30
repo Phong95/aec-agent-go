@@ -15,6 +15,7 @@ func (p AgentProfile) Clone() AgentProfile {
 		p.InitialContext = &c
 	}
 	p.Sandbox = p.Sandbox.Clone()
+	p.SkillLearning = p.SkillLearning.Clone()
 	if p.Compactor.KeepToolResults != nil {
 		v := *p.Compactor.KeepToolResults
 		p.Compactor.KeepToolResults = &v

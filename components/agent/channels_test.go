@@ -426,7 +426,7 @@ func TestChannelPublishesItsCommandsAndListsThemInHelp(t *testing.T) {
 	// A-136: then the agent's own commands (its command manager) that work in a chat.
 	want := []string{
 		"new", "stop", "status", "model", "approve", "deny", "yolo", "whoami", "sethome", "help",
-		"compact", "resume", "rename", "context", "usage", "permissions", "plan", "init", "diff", "review",
+		"compact", "resume", "rename", "context", "usage", "permissions", "plan", "init", "diff", "review", "learn",
 	}
 	if !slices.Equal(names, want) {
 		t.Fatalf("commands = %v, want %v", names, want)

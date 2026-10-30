@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/grouphub/group"
 	"github.com/Phong95/aec-agent-go/internal/wiretest"
@@ -156,6 +157,16 @@ func lifecycleSamples() []sample {
 		mk("GroupPresence", events.GroupPresence, events.GroupPresencePayload{GroupID: "g1", AgentID: "spec", State: group.PresenceTool, Tool: "read_spec", RoundID: "r1"}),
 		mk("GroupTurnStarted", events.GroupTurnStarted, events.GroupTurnStartedPayload{GroupID: "g1", TurnID: "t1", Plan: group.PlanRound}),
 		mk("GroupTurnFinished", events.GroupTurnFinished, events.GroupTurnFinishedPayload{GroupID: "g1", TurnID: "t1", Status: group.TurnCompleted, Usage: kernel.TokenUsage{InputTokens: 20, OutputTokens: 10}}),
+		// A-166: the skill-learning kinds.
+		mk("SkillLearningEpisodeCaptured", events.SkillLearningEpisodeCaptured, events.SkillLearningEpisodeCapturedPayload{AgentID: agentID, Episode: learning.CapturedEpisode{
+			Episode: learning.Episode{AgentID: agentID, SessionID: "s-1", MessageStart: 0, MessageEnd: 14, ToolCalls: 6, FailedCalls: 2, SkillsUsed: []string{"plan"}, Outcome: learning.OutcomeCompleted, StartedAt: "t0", EndedAt: "t1"},
+			Signal:  learning.SignalNextMessage, PatchTarget: "door-export",
+		}}),
+		mk("SkillLearningProposed", events.SkillLearningProposed, events.SkillLearningProposedPayload{AgentID: agentID, ProposalID: "p1", Action: learning.ActionCreate, SkillName: "door-export", Auto: true}),
+		mk("SkillLearningAccepted", events.SkillLearningAccepted, events.SkillLearningReviewedPayload{AgentID: agentID, ProposalID: "p1", Action: learning.ActionPatch, SkillName: "door-export", Edited: true}),
+		mk("SkillLearningRejected", events.SkillLearningRejected, events.SkillLearningReviewedPayload{AgentID: agentID, ProposalID: "p1", Action: learning.ActionCreate, SkillName: "door-export", Reason: "too specific"}),
+		mk("SkillLearningSkillUpdated", events.SkillLearningSkillUpdated, events.SkillLearningSkillUpdatedPayload{AgentID: agentID, ProposalID: "p1", Action: learning.ActionRetire, SkillName: "door-export"}),
+		mk("SkillLearningSkillUsed", events.SkillLearningSkillUsed, events.SkillLearningSkillUsedPayload{AgentID: agentID, SkillName: "door-export", Smooth: true, Health: 4, ToolCalls: 2, LearnedFrom: &events.SkillLearningCallCounts{ToolCalls: 6, FailedCalls: 2}}),
 	}
 }
 
@@ -273,8 +284,8 @@ func sdkEventTypeValues(t *testing.T) []string {
 
 func TestKindNames(t *testing.T) {
 	got := events.KindNames()
-	if len(got) != 55 {
-		t.Fatalf("KindNames has %d entries, want 55", len(got))
+	if len(got) != 61 {
+		t.Fatalf("KindNames has %d entries, want 61", len(got))
 	}
 	seen := map[string]bool{}
 	for _, n := range got {

@@ -14,10 +14,13 @@ import (
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem"
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning"
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/artifacthub/artifact"
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
+	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/subagenthub"
@@ -64,6 +67,9 @@ type Agent struct {
 	// memory is the agent's long-term memory: recall for each turn and the
 	// consolidation scheduler. It is started by New and stopped by Dispose.
 	memory *memorysystem.System
+	// learner (A-166) is the agent's skill learning: hard-won turns the user confirmed
+	// become skills. It hears the turn on the bus only. Started by New, stopped by Dispose.
+	learner *skilllearning.System
 	// sandboxes and artifacts are nil when the agent was built without the hub
 	// (Deps.SandboxHub or Deps.ArtifactHub nil).
 	sandboxes *SandboxManager
@@ -405,6 +411,38 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		return nil, err
 	}
 	a.memory = sys
+	// A-166: skill learning - it hears the turn on the bus only, reads the turn's messages,
+	// and writes through the agent's skills (a new skill is enabled for this agent and its
+	// profile saved, as with skill_manage).
+	learnerDeps := skilllearning.Deps{
+		AgentID:     own.ID,
+		Events:      deps.Events,
+		Persistence: func() *persistence.PersistenceHub { return deps.PersistenceHub },
+		Model:       a.models,
+		// A-174: a tool's risk, to keep tasks that reach outside systems from replays.
+		ToolRisk: func(name string) string { return toolRisk(a.tools, name) },
+		// A-174: auto mode saves a draft only after a verification replay passed.
+		Verify: func(ctx context.Context, req learning.VerificationRequest) learning.Verification {
+			return runVerification(ctx, verificationDeps{
+				models: a.models, chat: a.models, toolHub: deps.ToolHub, sandboxes: deps.SandboxHub,
+				bus: deps.Events, trace: deps.Trace, hub: deps.PersistenceHub,
+				open:    a.conv.Open,
+				secrets: a.secrets, logger: deps.Logger,
+			}, a.Profile(), req)
+		},
+	}
+	if a.skills != nil { // a nil *SkillManager must not become a non-nil interface
+		learnerDeps.Skills = a.skills
+	}
+	learnerOpts := slices.Clone(o.learningOpts)
+	if deps.Logger != nil {
+		learnerOpts = append([]skilllearning.Option{skilllearning.WithLogger(deps.Logger)}, learnerOpts...)
+	}
+	learner, err := skilllearning.New(learnerDeps, own.SkillLearning, learnerOpts...)
+	if err != nil {
+		return nil, err
+	}
+	a.learner = learner
 	var mem agentloop.Memory = sys
 	if o.memoryWrap != nil {
 		mem = o.memoryWrap(mem)
@@ -466,7 +504,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	a.loop = loop
 	// Started last, so a failure above leaves nothing running: the memory system is
 	// started only after the loop is built.
-	sys.Start(lifetime) //nolint:contextcheck // the lifetime derives from Background on purpose: it must not carry the request values of New (10-SECURITY UF-3)
+	sys.Start(lifetime)       //nolint:contextcheck // the lifetime derives from Background on purpose: it must not carry the request values of New (10-SECURITY UF-3)
+	a.learner.Start(lifetime) //nolint:contextcheck // as above
 	built = true
 	return a, nil
 }
@@ -513,6 +552,10 @@ func (a *Agent) builtInCommandDeps() builtInCommandDeps {
 			return v, nil
 		},
 		listCommands: func(ac command.AvailabilityContext) []command.Info { return a.commands.List(ac) },
+		// A-166: /learn
+		confirmLastTurn: func(ctx context.Context, sessionID string) (learning.LearnResult, error) {
+			return a.learner.ConfirmLastTurn(ctx, sessionID)
+		},
 	}
 }
 
@@ -990,6 +1033,20 @@ func (a *Agent) UpdateMemoryConfig(c memory.Config) {
 	a.memory.UpdateConfig(c)
 }
 
+// UpdateSkillLearningConfig (A-166) replaces the agent's skill learning config at runtime
+// and passes it to the live learner, which subscribes or unsubscribes when Enabled
+// changed. c is copied (nil = off). It does not persist the profile.
+func (a *Agent) UpdateSkillLearningConfig(c *learning.Config) {
+	a.mu.Lock()
+	a.profile.SkillLearning = c.Clone()
+	a.mu.Unlock()
+	a.learner.UpdateConfig(c.Clone())
+}
+
+// SkillLearning (A-166) returns this agent's skill learning: /learn, the review queue
+// (accept / reject the drafts it wrote) and its learned skills' health.
+func (a *Agent) SkillLearning() skilllearning.AgentSkillLearning { return a.learner }
+
 // UpdateInitialContext replaces the agent's initial context files (USER.md, MEMORY.md,
 // SOUL.md); it applies to the next model call. ic is copied and nil clears them. It
 // does not persist the profile.
@@ -1306,6 +1363,10 @@ func (a *Agent) dispose(ctx context.Context, removeData bool) error {
 	// this agent: that would wait for itself.
 	// Update (A-126): closed with the job manager above.
 	if err := a.memory.Dispose(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	// A-166: unsubscribes, stops its verdict timers and waits for a distill pass in flight.
+	if err := a.learner.Dispose(ctx); err != nil {
 		errs = append(errs, err)
 	}
 	// A running job is waited for. A run still executing would

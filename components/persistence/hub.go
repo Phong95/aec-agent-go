@@ -19,6 +19,7 @@ import (
 // (Update (A-105): eleven, with SubagentRuns; twelve with SubagentTypes.)
 // (Update (A-101): thirteen, with Secrets.)
 // (Update (A-106): fifteen, with Groups and GroupMessages.)
+// (Update (A-166): sixteen, with SkillProposals.)
 //
 // The two message slots are distinct instances: Messages is the full history and
 // CompactedMessages is the compacted LLM working set.
@@ -67,6 +68,10 @@ type PersistenceHub struct {
 	// GroupMessages holds the thread of each group session (A-106): user, agent, hand-off
 	// and note messages.
 	GroupMessages GroupMessageStore
+	// SkillProposals holds the skill learner's drafts (pending, accepted, rejected) and its
+	// learned skills' health records (A-166). Written by each agent's skill learner. The
+	// in-memory default keeps nothing across a restart.
+	SkillProposals SkillProposalStore
 }
 
 // Option sets one store slot of a PersistenceHub.
@@ -127,6 +132,11 @@ func WithGroups(s GroupStore) Option {
 // WithGroupMessages sets the group thread store (A-106).
 func WithGroupMessages(s GroupMessageStore) Option {
 	return func(h *PersistenceHub) { h.GroupMessages = s }
+}
+
+// WithSkillProposals sets the skill proposal store (A-166).
+func WithSkillProposals(s SkillProposalStore) Option {
+	return func(h *PersistenceHub) { h.SkillProposals = s }
 }
 
 // NewPersistenceHub returns a hub whose slots are the given stores. Every slot that is not
@@ -194,6 +204,9 @@ func (h *PersistenceHub) FillDefaults() *PersistenceHub {
 	}
 	if nilcheck.IsNil(h.GroupMessages) {
 		h.GroupMessages = NewMemoryGroupMessageStore()
+	}
+	if nilcheck.IsNil(h.SkillProposals) {
+		h.SkillProposals = NewMemorySkillProposalStore()
 	}
 	return h
 }

@@ -5,12 +5,15 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem"
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning"
 )
 
 // options are the settings of New that are not dependencies.
 type options struct {
 	loopOpts   []agentloop.Option
 	memoryOpts []memorysystem.Option
+	// learningOpts (A-166) configure the skill learner (its clock, its logger).
+	learningOpts []skilllearning.Option
 	// memoryWrap is applied to the memory system before the loop sees it. Only the
 	// test hook of export_test.go sets it, so a test can watch the recalls of a turn
 	// (the Go form of vi.spyOn(memorySystem, "recallForTurn")).
@@ -40,6 +43,14 @@ func WithLoopOptions(opts ...agentloop.Option) Option {
 func WithMemoryOptions(opts ...memorysystem.Option) Option {
 	return func(o *options) {
 		o.memoryOpts = append(o.memoryOpts, opts...)
+	}
+}
+
+// WithSkillLearningOptions (A-166) passes options to the agent's skill learner, for
+// example its clock. The logger of Deps is applied first, so a WithLogger here wins.
+func WithSkillLearningOptions(opts ...skilllearning.Option) Option {
+	return func(o *options) {
+		o.learningOpts = append(o.learningOpts, opts...)
 	}
 }
 

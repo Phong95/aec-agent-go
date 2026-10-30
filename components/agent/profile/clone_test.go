@@ -5,6 +5,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
+	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
@@ -56,6 +57,11 @@ func fullProfile() profile.AgentProfile {
 		},
 		// A-101: the global secrets it may use.
 		Secrets: &secret.Config{Use: []string{"WEATHER_KEY"}},
+		// A-166: skill learning.
+		SkillLearning: &learning.Config{
+			Enabled: true, Mode: learning.ModeAuto, MinToolCalls: &concurrent, MinFailedCalls: &keep, VerdictWaitMinutes: &maxIter,
+			MaxLearnedSkills: &maxResults, RetireAfterDays: &backoff, VerificationsPerDay: &maxIter,
+		},
 	}
 }
 

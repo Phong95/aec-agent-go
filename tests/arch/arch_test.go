@@ -72,14 +72,15 @@ var layerTable = map[string][]string{
 	"kernel":                {"internal/jsonx", "internal/nilcheck", "kernel/ordered"},
 	// Phase 12 (12-02): events, agent and memorysystem log a recovered panic through
 	// internal/redact.Panic (10-SECURITY UF-1).
-	"components/events":                    {"kernel", "internal/jsonx", "internal/redact", "components/grouphub/group"}, // A-106: the group:* payloads carry group.Message
-	"components/trace":                     {"kernel", "internal/jsonx", "kernel/ordered"},
-	"components/sandboxhub":                {"kernel", "components/events", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "kernel/ordered"},
-	"components/sandboxhub/host":           {"kernel", "components/sandboxhub", "internal/jsstr", "internal/viewkit"},
-	"components/sandboxhub/docker":         {"kernel", "components/sandboxhub", "internal/jsonx", "internal/jsstr", "internal/viewkit"},
-	"components/agent/memorysystem/memory": {"kernel", "internal/jsonx"},
-	"components/skillhub/skill":            {"kernel", "kernel/ordered", "internal/jsonx", "internal/jsstr"},
-	"components/artifacthub/artifact":      {"components/sandboxhub", "kernel", "internal/jsonx"},
+	"components/events":                       {"kernel", "internal/jsonx", "internal/redact", "components/grouphub/group", "components/agent/skilllearning/learning"}, // A-106: the group:* payloads carry group.Message; A-166: the skill-learning:* payloads carry learning types
+	"components/agent/skilllearning/learning": {"components/skillhub/skill"},
+	"components/trace":                        {"kernel", "internal/jsonx", "kernel/ordered"},
+	"components/sandboxhub":                   {"kernel", "components/events", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "kernel/ordered"},
+	"components/sandboxhub/host":              {"kernel", "components/sandboxhub", "internal/jsstr", "internal/viewkit"},
+	"components/sandboxhub/docker":            {"kernel", "components/sandboxhub", "internal/jsonx", "internal/jsstr", "internal/viewkit"},
+	"components/agent/memorysystem/memory":    {"kernel", "internal/jsonx"},
+	"components/skillhub/skill":               {"kernel", "kernel/ordered", "internal/jsonx", "internal/jsstr"},
+	"components/artifacthub/artifact":         {"components/sandboxhub", "kernel", "internal/jsonx"},
 	// A-69: promptjob is the type-only contract of scheduled prompt jobs (Job, Run,
 	// Schedule, Runner, Jobs and its Error), shared by persistence, toolhub and agent.
 	// Update (A-126): merged into components/agent/job below.
@@ -126,10 +127,10 @@ var layerTable = map[string][]string{
 	"components/channelplatformhub/slack":               {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
 	"components/channelplatformhub/discord":             {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
 	"components/channelplatformhub/teams":               {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
-	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret"},                                                                   // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets
+	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret", "components/agent/skilllearning/learning"},                        // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets
 	"components/toolhub":                                {"kernel", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "internal/jsonx", "kernel/ordered", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"}, // Update (A-70 agent tools): toolhub.Context.Triggers is a trigger.Triggers; A-105: toolhub.Context.Subagents; A-101: toolhub.Context.Secrets
 	"components/llmhub":                                 {"kernel", "components/toolhub", "internal/jsonx", "internal/jsstr", "internal/viewkit", "internal/redact", "kernel/ordered"},
-	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret", "components/grouphub/group"}, // A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore; A-106: GroupStore, GroupMessageStore
+	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning"}, // A-166: SkillProposalStore; A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore; A-106: GroupStore, GroupMessageStore
 	"components/skillhub":                               {"kernel", "components/skillhub/skill", "components/persistence", "components/events", "kernel/ordered", "internal/nilcheck"},
 	"components/artifacthub":                            {"kernel", "components/artifacthub/artifact", "components/sandboxhub", "components/persistence", "components/events", "internal/jsstr", "internal/nilcheck"},
 	// Phase 9: agentloop is the OTAR loop. It talks to the rest of the SDK only
@@ -137,7 +138,7 @@ var layerTable = map[string][]string{
 	// concrete tool hub; aecmock and conformance sit above it.
 	"components/agent/agentloop": {"kernel", "internal/redact", "components/events", "components/trace", "components/toolhub", "components/llmhub", "components/agent/profile", "components/agent/memorysystem/memory", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"}, // Update (A-70 agent tools): agentloop.Deps.Triggers, handed to the tools; A-105: agentloop.Deps.Subagents; A-101: agentloop.Deps.Secrets
 	"aecmock":                    {"components/channelplatformhub/channel", "kernel", "components/toolhub", "components/llmhub", "components/persistence", "components/sandboxhub", "components/agent/agentloop", "components/agent/profile", "components/agent/memorysystem/memory", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/viewkit"},
-	"conformance":                {"kernel", "components/events", "components/toolhub", "components/llmhub", "components/persistence", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/agent/profile", "components/sandboxhub", "kernel/ordered", "components/agent/agentloop", "components/trace", "conformance/internal/check", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/grouphub/group"},
+	"conformance":                {"kernel", "components/events", "components/toolhub", "components/llmhub", "components/persistence", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/agent/profile", "components/sandboxhub", "kernel/ordered", "components/agent/agentloop", "components/trace", "conformance/internal/check", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning"},
 	"conformance/internal/check": {},
 	// Phase 8: the four provider leaves, each registering itself in init(), and
 	// llm/all, the one blank-import package that links them. A leaf may import
@@ -177,6 +178,8 @@ var layerTable = map[string][]string{
 		"components/secrethub", "components/secrethub/secret",
 		// A-136: the slash-command contracts the agent's command manager implements.
 		"components/agent/command",
+		// A-166: the skill learner and its contracts.
+		"components/agent/skilllearning", "components/agent/skilllearning/learning",
 	},
 	"components/orchestration": {"components/agent", "components/agent/profile", "kernel"},
 	// Phase 10 (10-04): builtin/skills holds skill_view and the workspace copy of a skill.
@@ -217,7 +220,11 @@ var layerTable = map[string][]string{
 	// extraction, indexing, retrieval and consolidation pipeline. It reaches the model
 	// through a consumer port (Model), so it imports neither agent, agentloop, aecmock
 	// nor conformance; JS text semantics come from internal/jsstr.
-	"components/agent/memorysystem": {"kernel", "components/events", "components/agent/memorysystem/memory", "components/persistence", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/redact"},
+	// A-166: skilllearning is the skill learner: it reaches the model through a consumer
+	// port (Model) and the skills through skill.AgentSkills, so it imports neither agent,
+	// agentloop, aecmock nor conformance.
+	"components/agent/skilllearning": {"kernel", "components/events", "components/persistence", "components/llmhub", "components/skillhub/skill", "components/agent/skilllearning/learning"},
+	"components/agent/memorysystem":  {"kernel", "components/events", "components/agent/memorysystem/memory", "components/persistence", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/redact"},
 	// The test-only packages under tests/: their non-test code is a package doc and
 	// imports nothing; what their tests import is checked like any other test import.
 	"tests/arch": {},

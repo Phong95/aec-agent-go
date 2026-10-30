@@ -141,6 +141,20 @@ var (
 	GroupPresence       = Kind[GroupPresencePayload]{Name: "group:presence"}
 	GroupTurnStarted    = Kind[GroupTurnStartedPayload]{Name: "group:turn-started"}
 	GroupTurnFinished   = Kind[GroupTurnFinishedPayload]{Name: "group:turn-finished"}
+
+	// A-166: each agent's skill learner (skilllearning.System, only while skill learning
+	// is enabled) emits skill-learning:* with the episode's session id: episode-captured
+	// when a hard-won turn was confirmed a success, proposed when a draft skill joined the
+	// review queue, accepted / rejected when it was reviewed, skill-updated when a learned
+	// skill was created, patched or retired, and skill-used (A-172) when a learned skill
+	// was used in a turn. They announce facts only; the learner itself subscribes to its
+	// own episode-captured (the distiller).
+	SkillLearningEpisodeCaptured = Kind[SkillLearningEpisodeCapturedPayload]{Name: "skill-learning:episode-captured"}
+	SkillLearningProposed        = Kind[SkillLearningProposedPayload]{Name: "skill-learning:proposed"}
+	SkillLearningAccepted        = Kind[SkillLearningReviewedPayload]{Name: "skill-learning:accepted"}
+	SkillLearningRejected        = Kind[SkillLearningReviewedPayload]{Name: "skill-learning:rejected"}
+	SkillLearningSkillUpdated    = Kind[SkillLearningSkillUpdatedPayload]{Name: "skill-learning:skill-updated"}
+	SkillLearningSkillUsed       = Kind[SkillLearningSkillUsedPayload]{Name: "skill-learning:skill-used"}
 )
 
 // KindNames returns the 32 event type strings in their canonical order.
@@ -153,6 +167,7 @@ var (
 // (Update (A-135): 45, with agent-loop:tool-auto-approved and session:approval-mode.)
 // (Update (A-136): 47, with session:updated and command:executed.)
 // (Update (A-106): 54, with the seven group kinds.)
+// (Update (A-166): 60, with the six skill-learning kinds.)
 // The slice is fresh on every call.
 func KindNames() []string {
 	return []string{
@@ -211,5 +226,11 @@ func KindNames() []string {
 		GroupPresence.Name,
 		GroupTurnStarted.Name,
 		GroupTurnFinished.Name,
+		SkillLearningEpisodeCaptured.Name,
+		SkillLearningProposed.Name,
+		SkillLearningAccepted.Name,
+		SkillLearningRejected.Name,
+		SkillLearningSkillUpdated.Name,
+		SkillLearningSkillUsed.Name,
 	}
 }

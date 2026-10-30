@@ -265,7 +265,7 @@ func TestCommandsListTheBuiltInsWithUsageAliasesAndAvailability(t *testing.T) {
 		names = append(names, c.Name)
 		byName[c.Name] = c
 	}
-	want := []string{"help", "clear", "compact", "resume", "rename", "status", "context", "usage", "model", "permissions", "yolo", "plan", "init", "diff", "review", "copy", "exit"}
+	want := []string{"help", "clear", "compact", "resume", "rename", "status", "context", "usage", "model", "permissions", "yolo", "plan", "init", "diff", "review", "learn", "copy", "exit"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("names = %v", names)
 	}

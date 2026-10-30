@@ -863,6 +863,11 @@ func (c *AgentCore) RemoveAgent(ctx context.Context, id string) error {
 	if err := c.PersistenceHub().SubagentRuns.DeleteByAgent(ctx, id); err != nil {
 		c.logger.Warn("subagents: could not delete the subagent runs of a removed agent", "agent", id, "error", err)
 	}
+	// Its skill proposals and learned-skill records go with it (A-166); the skills it
+	// learned stay in the library. Best effort, logged.
+	if err := c.PersistenceHub().SkillProposals.DeleteByAgent(ctx, id); err != nil {
+		c.logger.Warn("skill-learning: could not delete the skill proposals of a removed agent", "agent", id, "error", err)
+	}
 	// Its own secrets go with it (A-101); global secrets stay. Best effort, logged.
 	if err := c.secrets.DeleteByOwner(ctx, id); err != nil {
 		c.logger.Warn("secrets: could not delete the secrets of a removed agent", "agent", id, "error", err)

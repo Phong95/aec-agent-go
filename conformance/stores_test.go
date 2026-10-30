@@ -101,3 +101,11 @@ func TestGroupMessageStoreDefault(t *testing.T) {
 		return persistence.NewMemoryGroupMessageStore()
 	})
 }
+
+// TestSkillProposalStoreDefault runs the SkillProposalStore suite on the persistence
+// default (A-166).
+func TestSkillProposalStoreDefault(t *testing.T) {
+	conformance.SkillProposalStore(t, func(_ *testing.T) persistence.SkillProposalStore {
+		return persistence.NewMemorySkillProposalStore()
+	})
+}
