@@ -83,6 +83,50 @@ func (m Message) Images() []MessageAttachment {
 	return out
 }
 
+// ToolResultImages (A-180) returns the images m's tool results carry, in result order
+// (nil when none has any).
+func (m Message) ToolResultImages() []MessageAttachment {
+	var out []MessageAttachment
+	for _, r := range m.ToolResults {
+		for _, a := range r.Images {
+			if a.Type == AttachmentTypeImage {
+				out = append(out, a)
+			}
+		}
+	}
+	return out
+}
+
+// ImageCount (A-180) is every image m carries - its attachments and its tool results'
+// images. Each one counts as ImageTokenEstimate tokens.
+func (m Message) ImageCount() int {
+	return len(m.Images()) + len(m.ToolResultImages())
+}
+
+// WithoutImages (A-180) returns results without their images, for counting their text:
+// an image is counted as ImageTokenEstimate, never by its base64 size. results itself is
+// returned when none has images; a nil list stays nil.
+func WithoutImages(results []ToolResult) []ToolResult {
+	if !slices.ContainsFunc(results, func(r ToolResult) bool { return len(r.Images) > 0 }) {
+		return results
+	}
+	out := slices.Clone(results)
+	for i := range out {
+		out[i].Images = nil
+	}
+	return out
+}
+
+// ToolImagesLabel (A-180) is the line before a tool result's images where a provider
+// sends them outside the result (OpenAI-compatible and ChatGPT subscription user
+// messages, Gemini parts), so the model knows which call they came from.
+func ToolImagesLabel(r ToolResult) string {
+	if len(r.Images) == 1 {
+		return "The image returned by tool call " + r.ToolCallID + ":"
+	}
+	return fmt.Sprintf("The %d images returned by tool call %s:", len(r.Images), r.ToolCallID)
+}
+
 // DataURL is the attachment as a data: URL (OpenAI-style image input).
 func (a MessageAttachment) DataURL() string {
 	return "data:" + a.MIMEType + ";base64," + a.Data

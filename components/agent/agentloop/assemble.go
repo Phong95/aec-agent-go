@@ -130,10 +130,13 @@ func (l *Loop) assembleModelInput(ctx context.Context, r *runState, overrides ll
 	// its result), so a provider does not reject the request. It returns the same
 	// slice when there is nothing to repair.
 	messages := repairToolPairs(withRecalledMemories(result.Messages, r.recalled))
+	// A-180: only the newest tool-result images, and none for a model that can't see them.
+	seesImages := l.seesImages(ctx, overrides)
+	messages = withToolImages(messages, imagesKept(seesImages))
 
 	// The agent's tools, plus skill_view when it has skills.
 	// A-105: a subagent's session sees only the tools its scope allows.
-	toolDefs, err := l.toolDefinitions(ctx, r.session)
+	toolDefs, err := l.toolDefinitions(ctx, r.session, seesImages)
 	if err != nil {
 		return modelInput{}, err
 	}

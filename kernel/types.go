@@ -111,6 +111,7 @@ func (m Message) Clone() Message {
 				results[i].Link = &l
 			}
 			results[i].CompactArguments = slices.Clone(results[i].CompactArguments)
+			results[i].Images = slices.Clone(results[i].Images) // A-180
 		}
 		m.ToolResults = results
 	}
@@ -160,6 +161,11 @@ type ToolResult struct {
 	// it). Kept with the conversation; the agent loop swaps them in for the call's
 	// arguments, and providers never send this field. Empty means none.
 	CompactArguments Arguments `json:"compactArguments,omitempty"`
+	// Images (A-180) are images this call produced for the model to look at (e.g. a
+	// screenshot of a page it built). Kept with the conversation; providers send them with
+	// the result, and the agent loop sends only the newest few (withToolImages) and none to
+	// a model that can't see images. Content stays the text.
+	Images []MessageAttachment `json:"images,omitempty"`
 }
 
 // ToolResultLink (A-132) is a link to something a tool call produced that the user

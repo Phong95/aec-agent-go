@@ -151,7 +151,7 @@ func (l *Loop) prepareContext(ctx context.Context, history []kernel.Message, mc 
 // A-105: a subagent's session sees only the tools its scope allows.
 // A-136: a session in plan mode sees only the read-only ones.
 // A-137: the tools handed to subagents (DelegatedTools) are left out.
-func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session) ([]toolhub.Definition, error) {
+func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session, seesImages bool) ([]toolhub.Definition, error) {
 	sessionID := session.ID
 	// A-106: plus the tools the session is granted (SessionTools).
 	toolDefs := slices.Clone(listTools(l.deps.Tools, sessionID))
@@ -170,6 +170,10 @@ func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session) ([]t
 			toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return slices.Contains(delegated, d.Name) })
 		}
 	}
+	// A-180: a tool whose results are images only for a model that can see them.
+	if !seesImages {
+		toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return d.NeedsVision })
+	}
 	if toolDefs == nil {
 		toolDefs = []toolhub.Definition{}
 	}
@@ -181,6 +185,24 @@ func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session) ([]t
 		toolDefs = append(toolDefs, skillDefs...)
 	}
 	return toolDefs, nil
+}
+
+// seesImages (A-180) reports whether the model a call with opts goes to can see images
+// (true when Models has no VisionChecker, or the model reports nothing).
+func (l *Loop) seesImages(ctx context.Context, opts llmhub.ModelOptions) bool {
+	if v, ok := l.deps.Models.(VisionChecker); ok {
+		return v.AcceptsImages(ctx, opts)
+	}
+	return true
+}
+
+// imagesKept (A-180) is how many tool-result images a model request carries: none for a
+// model that can't see them.
+func imagesKept(seesImages bool) int {
+	if seesImages {
+		return MaxToolImagesInContext
+	}
+	return 0
 }
 
 // resolvedModel returns the model a call with opts goes to (the manager's defaults
@@ -268,7 +290,9 @@ func (l *Loop) MeasureContext(ctx context.Context, conv Conversation) (ContextUs
 	if err != nil {
 		return ContextUsage{}, err
 	}
-	tools, err := l.toolDefinitions(ctx, session)
+	// A-180: the images and tools a model call would carry.
+	seesImages := l.seesImages(ctx, llmhub.ModelOptions{Model: session.LLMModel})
+	tools, err := l.toolDefinitions(ctx, session, seesImages)
 	if err != nil {
 		return ContextUsage{}, err
 	}
@@ -277,7 +301,7 @@ func (l *Loop) MeasureContext(ctx context.Context, conv Conversation) (ContextUs
 		sessionID: session.ID,
 		model:     l.resolvedModel(llmhub.ModelOptions{Model: session.LLMModel}),
 		sections:  sections,
-		messages:  repairToolPairs(prepared),
+		messages:  withToolImages(repairToolPairs(prepared), imagesKept(seesImages)),
 		tools:     tools,
 		reported:  session.CurrentTokenUsage,
 		window:    cfg.ContextWindowTokens,

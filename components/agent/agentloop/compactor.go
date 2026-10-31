@@ -331,6 +331,7 @@ func (c *Compactor) ClearOldToolResults(msgs []kernel.Message, count CountFunc) 
 				name = "tool"
 			}
 			m.ToolResults[r.index].Content = clearedToolResultNote(name, r.tokens)
+			m.ToolResults[r.index].Images = nil // A-180: a cleared result's images go with its text
 		}
 		out[r.at] = m
 		total -= r.tokens
@@ -358,6 +359,7 @@ func (c *Compactor) pruneOldToolResults(msgs []kernel.Message, count CountFunc) 
 		if len(cleared.ToolResults) > 0 {
 			for j := range cleared.ToolResults {
 				cleared.ToolResults[j].Content = clearedToolOutput
+				cleared.ToolResults[j].Images = nil // A-180: a cleared result's images go with its text
 			}
 		} else {
 			cleared.Content = clearedToolOutput

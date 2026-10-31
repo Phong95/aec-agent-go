@@ -5,10 +5,12 @@ import (
 	"iter"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
+	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
@@ -24,28 +26,90 @@ import (
 // chat is in flight; a call reads them once.
 type ModelManager struct {
 	hub *llmhub.LLMHub
+	// records (A-180) reads a provider's stored model records, for AcceptsImages; nil
+	// means none is stored.
+	records ModelRecordSource
 
 	mu        sync.RWMutex
 	provider  string
 	model     string
 	inference *profile.InferenceConfig // never mutated after it is stored; replaced as a whole
+
+	// vision (A-180) caches AcceptsImages answers by provider and model, for visionCacheTTL.
+	visionMu sync.Mutex
+	vision   map[string]visionAnswer
+}
+
+// ModelRecordSource (A-180) is where the ModelManager reads a provider's listed models (the
+// ProviderStore's records), to know what a model can do. ok is false when the provider is
+// not stored.
+type ModelRecordSource func(ctx context.Context, provider string) (models []llmhub.ModelRecord, ok bool, err error)
+
+// visionCacheTTL (A-180) is how long an AcceptsImages answer is reused before the records
+// are read again.
+const visionCacheTTL = time.Minute
+
+type visionAnswer struct {
+	accepts bool
+	at      time.Time
 }
 
 var (
 	_ agentloop.Models         = (*ModelManager)(nil)
 	_ agentloop.OptionResolver = (*ModelManager)(nil)
 	_ agentloop.ProviderNamer  = (*ModelManager)(nil)
+	_ agentloop.VisionChecker  = (*ModelManager)(nil)
 )
 
 // NewModelManager returns a ModelManager over hub whose defaults are the provider,
-// the model and the inference config of p (the config is copied).
-func NewModelManager(hub *llmhub.LLMHub, p profile.AgentProfile) *ModelManager {
+// the model and the inference config of p (the config is copied). records (A-180, may be
+// nil) is where AcceptsImages reads the stored model records.
+func NewModelManager(hub *llmhub.LLMHub, p profile.AgentProfile, records ModelRecordSource) *ModelManager {
 	return &ModelManager{
 		hub:       hub,
+		records:   records,
 		provider:  p.Provider,
 		model:     p.LLMModel,
 		inference: cloneInferenceConfig(p.InferenceConfig),
+		vision:    map[string]visionAnswer{},
 	}
+}
+
+// AcceptsImages (A-180) reports whether the model a call with opts goes to can see images:
+// false only when its stored record says it can't (llmhub.ModelAcceptsImages), true when it
+// can or reports nothing - as hosts treat attached images. An unreadable record counts as
+// unknown. Answers are reused for visionCacheTTL.
+func (m *ModelManager) AcceptsImages(ctx context.Context, opts llmhub.ModelOptions) bool {
+	p, err := m.resolve(opts.Provider)
+	if err != nil || m.records == nil {
+		return true
+	}
+	provider, model := p.Name(), m.withDefaults(opts).Model
+	if model == "" {
+		return true
+	}
+	key := provider + "\x00" + model
+	m.visionMu.Lock()
+	cached, hit := m.vision[key]
+	m.visionMu.Unlock()
+	if hit && time.Since(cached.at) < visionCacheTTL {
+		return cached.accepts
+	}
+	accepts := true
+	if records, ok, err := m.records(ctx, provider); err == nil && ok {
+		for _, r := range records {
+			if r.ID == model {
+				if yes, known := llmhub.ModelAcceptsImages(r); known {
+					accepts = yes
+				}
+				break
+			}
+		}
+	}
+	m.visionMu.Lock()
+	m.vision[key] = visionAnswer{accepts: accepts, at: time.Now()}
+	m.visionMu.Unlock()
+	return accepts
 }
 
 // Chat sends one request to the resolved provider with the defaults merged under
@@ -248,4 +312,20 @@ func cloneInferenceConfig(c *profile.InferenceConfig) *profile.InferenceConfig {
 // cloneLoopConfig deep-copies a loop config the same way.
 func cloneLoopConfig(c *profile.LoopConfig) *profile.LoopConfig {
 	return profile.AgentProfile{LoopConfig: c}.Clone().LoopConfig
+}
+
+// providerModelRecords (A-180) reads a provider's model records from the hub's
+// ProviderStore (nil when there is no store).
+func providerModelRecords(hub *persistence.PersistenceHub) ModelRecordSource {
+	if hub == nil || hub.Providers == nil {
+		return nil
+	}
+	store := hub.Providers
+	return func(ctx context.Context, provider string) ([]llmhub.ModelRecord, bool, error) {
+		rec, err := store.Load(ctx, provider)
+		if err != nil || rec == nil {
+			return nil, false, err
+		}
+		return rec.Models, true, nil
+	}
 }

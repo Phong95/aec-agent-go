@@ -211,9 +211,21 @@ func mapMessages(msgs []kernel.Message, opts llmhub.ModelOptions) ([]types.Syste
 				if tr.IsError != nil && *tr.IsError {
 					status = types.ToolResultStatusError
 				}
+				blocks := []types.ToolResultContentBlock{&types.ToolResultContentBlockMemberText{Value: text}}
+				// A-180: a result's images go inside it, after its text.
+				for _, img := range tr.Images {
+					data, err := base64.StdEncoding.DecodeString(img.Data)
+					if err != nil {
+						return nil, nil, kernel.NewModelError("a tool result image is not valid base64", kernel.ModelCodeInvalidRequest, false)
+					}
+					blocks = append(blocks, &types.ToolResultContentBlockMemberImage{Value: types.ImageBlock{
+						Format: types.ImageFormat(strings.TrimPrefix(img.MIMEType, "image/")),
+						Source: &types.ImageSourceMemberBytes{Value: data},
+					}})
+				}
 				content = append(content, &types.ContentBlockMemberToolResult{Value: types.ToolResultBlock{
 					ToolUseId: aws.String(tr.ToolCallID),
-					Content:   []types.ToolResultContentBlock{&types.ToolResultContentBlockMemberText{Value: text}},
+					Content:   blocks,
 					Status:    status,
 				}})
 			}

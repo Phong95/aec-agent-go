@@ -168,6 +168,18 @@ func mapContents(msgs []kernel.Message, opts llmhub.ModelOptions) ([]content, []
 			}
 			parts = append(parts, part{FunctionResponse: &functionResponse{Name: name, Response: resp}})
 		}
+		// A-180: the results' images after the function responses, each result's after a
+		// line naming its call.
+		for _, tr := range results {
+			if len(tr.Images) == 0 {
+				continue
+			}
+			label := kernel.ToolImagesLabel(tr)
+			parts = append(parts, part{Text: &label})
+			for _, img := range tr.Images {
+				parts = append(parts, part{InlineData: &inlineData{MIMEType: img.MIMEType, Data: img.Data}})
+			}
+		}
 		return parts
 	}
 

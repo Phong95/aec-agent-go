@@ -106,6 +106,8 @@ type attemptOutcome struct {
 	// compactArguments is toolhub.Output.CompactArguments (A-129): the call's arguments
 	// as later model requests carry them.
 	compactArguments kernel.Arguments
+	// images is toolhub.Output.Images (A-180): images for the model to look at.
+	images []kernel.MessageAttachment
 }
 
 // failing reports whether the attempt is an error the harness may retry: an error
@@ -275,6 +277,10 @@ func resultOf(call kernel.ToolCall, o attemptOutcome) kernel.ToolResult {
 	if len(o.compactArguments) > 0 && (o.isError == nil || !*o.isError) {
 		res.CompactArguments = slices.Clone(o.compactArguments)
 	}
+	// A-180: images the call produced for the model to look at, on a successful result only
+	if len(o.images) > 0 && (o.isError == nil || !*o.isError) {
+		res.Images = slices.Clone(o.images)
+	}
 	return res
 }
 
@@ -436,6 +442,15 @@ func outcomeOf(o toolhub.Output) attemptOutcome {
 		out.link = &l
 	}
 	out.compactArguments = slices.Clone(o.CompactArguments)
+	// A-180: a tool's images must fit what every provider accepts; ones that don't are left
+	// out with a note, so the model knows it did not get them.
+	if len(o.Images) > 0 {
+		if err := kernel.CheckAttachments(o.Images); err != nil {
+			out.content += "\n\n(The images this tool returned were left out: " + err.Error() + ".)"
+		} else {
+			out.images = slices.Clone(o.Images)
+		}
+	}
 	return out
 }
 

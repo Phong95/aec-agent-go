@@ -89,7 +89,7 @@ func TestOutputCloneIsDeep(t *testing.T) {
 	meta.Set("count", json.Number("2"))
 	meta.Set("nested", []any{"a", ordered.NewObject()})
 	link := &kernel.ToolResultLink{URI: "artifact://art-1", Name: "a.md", Type: "text/markdown", Version: 1}
-	sample := toolhub.Output{Content: "done", IsError: &isErr, Retryable: &retry, Empty: true, Link: link, CompactArguments: kernel.Arguments(`{"content":"[ref]"}`), Metadata: meta}
+	sample := toolhub.Output{Content: "done", IsError: &isErr, Retryable: &retry, Empty: true, Link: link, CompactArguments: kernel.Arguments(`{"content":"[ref]"}`), Images: []kernel.MessageAttachment{{Type: "image", MIMEType: "image/png", Data: "AAAA", Name: "shot.png"}}, Metadata: meta}
 	clonecheck.AssertDeep(t, sample, toolhub.Output.Clone)
 }
 

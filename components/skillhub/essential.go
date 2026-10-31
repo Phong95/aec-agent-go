@@ -22,7 +22,9 @@ var essentialFS embed.FS
 // Update (A-70): watch-and-react is appended as the fourth.
 // Update (A-126): watch-and-notify replaces it - one schedule job that stays
 // [[SILENT]] when there is nothing new; it needs manage_job.
-var essentialSkillNames = [...]string{"skill-creator", "plan", "web-research", "watch-and-notify"}
+// Update (A-182): visual-self-check is appended - render, capture, look, fix, look
+// again; it needs screenshot (A-181), offered only to a model that can see images.
+var essentialSkillNames = [...]string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check"}
 
 // EssentialSkillNames returns the names of the essential skills - the default
 // profile.skills for a new agent. Every call returns a fresh slice.

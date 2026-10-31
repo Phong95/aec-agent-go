@@ -117,8 +117,25 @@ type toolUseBlock struct {
 type toolResultBlock struct {
 	Type      string `json:"type"`
 	ToolUseID string `json:"tool_use_id"`
-	Content   string `json:"content"`
-	IsError   *bool  `json:"is_error,omitempty"`
+	// Content is the result's text, or (A-180) with images the blocks of its text and
+	// then its images (toolResultContent).
+	Content any   `json:"content"`
+	IsError *bool `json:"is_error,omitempty"`
+}
+
+// toolResultContent (A-180) is a tool result's content: the text alone, or with images
+// a text block and then the blocks of its images - inside the result, where Anthropic
+// takes them.
+func toolResultContent(tr kernel.ToolResult) any {
+	if len(tr.Images) == 0 {
+		return tr.Content
+	}
+	blocks := make([]any, 0, len(tr.Images)+1)
+	blocks = append(blocks, textBlock{Type: "text", Text: tr.Content})
+	for _, img := range tr.Images {
+		blocks = append(blocks, imageBlock{Type: "image", Source: imageSource{Type: "base64", MediaType: img.MIMEType, Data: img.Data}})
+	}
+	return blocks
 }
 
 // toolParam is {name, description, input_schema}.
@@ -197,7 +214,7 @@ func mapMessages(msgs []kernel.Message, opts llmhub.ModelOptions) (system string
 func resultBlocks(results []kernel.ToolResult, text *textBlock) []any {
 	blocks := make([]any, 0, len(results)+1)
 	for _, tr := range results {
-		blocks = append(blocks, toolResultBlock{Type: "tool_result", ToolUseID: tr.ToolCallID, Content: tr.Content, IsError: tr.IsError})
+		blocks = append(blocks, toolResultBlock{Type: "tool_result", ToolUseID: tr.ToolCallID, Content: toolResultContent(tr), IsError: tr.IsError})
 	}
 	if text != nil {
 		blocks = append(blocks, *text)

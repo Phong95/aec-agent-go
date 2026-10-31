@@ -141,9 +141,25 @@ func inputItems(msgs []kernel.Message, opts llmhub.ModelOptions) []any {
 }
 
 // appendOutputs appends one function_call_output item per result.
+//
+// A-180: a function_call_output is text, so the results' images follow in one user
+// message, each result's after a line naming its call (kernel.ToolImagesLabel).
 func appendOutputs(input []any, results []kernel.ToolResult) []any {
 	for _, tr := range results {
 		input = append(input, functionCallOutputItem{Type: "function_call_output", CallID: tr.ToolCallID, Output: tr.Content})
+	}
+	var parts []any
+	for _, tr := range results {
+		if len(tr.Images) == 0 {
+			continue
+		}
+		parts = append(parts, textPart{Type: "input_text", Text: kernel.ToolImagesLabel(tr)})
+		for _, img := range tr.Images {
+			parts = append(parts, imagePart{Type: "input_image", ImageURL: img.DataURL()})
+		}
+	}
+	if len(parts) > 0 {
+		input = append(input, userPartsItem{Role: "user", Content: parts})
 	}
 	return input
 }

@@ -268,7 +268,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 			return a.conv.AppendMessage(ctx, sessionID, m)
 		},
 	})
-	a.models = NewModelManager(deps.LLMHub, own)
+	// A-180: the stored model records say whether the session's model can see images.
+	a.models = NewModelManager(deps.LLMHub, own, providerModelRecords(deps.PersistenceHub))
 	// A-106: a group lead's session is granted spawn_subagent while it leads (its spawn
 	// scope).
 	a.tools = NewToolManager(deps.ToolHub, own, WithSessionGrants(func(sessionID string) []string {

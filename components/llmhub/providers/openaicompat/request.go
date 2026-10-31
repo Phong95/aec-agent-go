@@ -213,9 +213,25 @@ func mapMessages(msgs []kernel.Message, opts llmhub.ModelOptions) []any {
 }
 
 // appendToolMessages appends one {role:"tool"} message per result.
+//
+// A-180: a tool message is text only, so the results' images follow in one user message,
+// each result's after a line naming its call (kernel.ToolImagesLabel).
 func appendToolMessages(mapped []any, results []kernel.ToolResult) []any {
 	for _, tr := range results {
 		mapped = append(mapped, toolMessageParam{Role: "tool", ToolCallID: tr.ToolCallID, Content: tr.Content})
+	}
+	var parts []any
+	for _, tr := range results {
+		if len(tr.Images) == 0 {
+			continue
+		}
+		parts = append(parts, textContentPart{Type: "text", Text: kernel.ToolImagesLabel(tr)})
+		for _, img := range tr.Images {
+			parts = append(parts, imageURLPart{Type: "image_url", ImageURL: imageURL{URL: img.DataURL()}})
+		}
+	}
+	if len(parts) > 0 {
+		mapped = append(mapped, userPartsParam{Role: "user", Content: parts})
 	}
 	return mapped
 }

@@ -48,6 +48,14 @@ type OptionResolver interface {
 	ResolveOptions(opts llmhub.ModelOptions) llmhub.ModelOptions
 }
 
+// VisionChecker (A-180) is the optional side of Models that says whether the model a call
+// with opts goes to can see images: false only when its stored record says it can't, true
+// when it can or reports nothing. Without it every model counts as able. The loop sends
+// tool-result images, and offers tools with toolhub.Definition.NeedsVision, only when true.
+type VisionChecker interface {
+	AcceptsImages(ctx context.Context, opts llmhub.ModelOptions) bool
+}
+
 // ProviderNamer is the optional tracing-only side of Models: it names the provider
 // a call would use. An error (for example when no provider is registered) means no
 // provider attribute.

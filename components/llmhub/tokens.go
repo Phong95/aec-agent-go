@@ -25,7 +25,8 @@ func EstimateTokens(msgs []kernel.Message) int {
 			}
 		}
 		if m.ToolResults != nil {
-			if b, err := kernel.EncodeJSON(m.ToolResults); err == nil {
+			// A-180: without their images, counted below.
+			if b, err := kernel.EncodeJSON(kernel.WithoutImages(m.ToolResults)); err == nil {
 				total += kernel.UTF16Len(string(b))
 			}
 		}
@@ -33,7 +34,7 @@ func EstimateTokens(msgs []kernel.Message) int {
 	// A-165: an image is counted as kernel.ImageTokenEstimate, never by its base64 size.
 	images := 0
 	for _, m := range msgs {
-		images += len(m.Images())
+		images += m.ImageCount() // Update (A-180): tool results' images too
 	}
 	return (total+3)/4 + images*kernel.ImageTokenEstimate
 }

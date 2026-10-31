@@ -94,7 +94,7 @@ func (c *Counter) Calibrate(msgs []kernel.Message, usage kernel.TokenUsage, tool
 	// A-165: the images' estimated tokens are taken out first, so they do not skew the text ratio.
 	actual := usage.InputTokens
 	for _, m := range msgs {
-		actual -= len(m.Images()) * kernel.ImageTokenEstimate
+		actual -= m.ImageCount() * kernel.ImageTokenEstimate // Update (A-180): tool results' images too
 	}
 	if actual <= 0 || len(msgs) == 0 {
 		return
@@ -133,7 +133,7 @@ func (c *Counter) Count(m kernel.Message) int {
 	if n, ok := c.cache[digest]; ok {
 		return n
 	}
-	n := estimateTokens(length, c.charsPerToken) + len(m.Images())*kernel.ImageTokenEstimate // A-165
+	n := estimateTokens(length, c.charsPerToken) + m.ImageCount()*kernel.ImageTokenEstimate // A-165, A-180
 	if len(c.cache) >= maxCounterCacheEntries {
 		clear(c.cache)
 	}
@@ -151,7 +151,7 @@ func (c *Counter) countFresh(m kernel.Message) int {
 	_, _, length := measure(m)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return estimateTokens(length, c.charsPerToken) + len(m.Images())*kernel.ImageTokenEstimate // A-165
+	return estimateTokens(length, c.charsPerToken) + m.ImageCount()*kernel.ImageTokenEstimate // A-165, A-180
 }
 
 // estimateTokens is max(1, ceil(length / charsPerToken)).
@@ -174,7 +174,8 @@ func measure(m kernel.Message) (calls, results string, length int) {
 		}
 	}
 	if m.ToolResults != nil {
-		if b, err := kernel.EncodeJSON(m.ToolResults); err == nil {
+		// A-180: without their images, which count as kernel.ImageTokenEstimate each.
+		if b, err := kernel.EncodeJSON(kernel.WithoutImages(m.ToolResults)); err == nil {
 			results = string(b)
 			length += kernel.UTF16Len(results)
 		}
@@ -194,7 +195,8 @@ func measureDigest(m kernel.Message) (digest [sha256.Size]byte, length int) {
 		h.Write([]byte{0})
 	}
 	// A-165: the images count too (their number changes the estimate).
-	for _, img := range m.Images() {
+	// Update (A-180): and the tool results' images.
+	for _, img := range append(m.Images(), m.ToolResultImages()...) {
 		h.Write([]byte(img.Data))
 		h.Write([]byte{0})
 	}

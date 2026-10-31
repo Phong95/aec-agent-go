@@ -3,6 +3,7 @@ package agentloop
 import (
 	"bytes"
 	"slices"
+	"strconv"
 
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
@@ -25,6 +26,64 @@ func recalledContent(recalled *memory.RecalledMemories) string {
 		return ""
 	}
 	return *recalled.Content
+}
+
+// MaxToolImagesInContext (A-180) is the most tool-result images one model request carries.
+// A screenshot loop takes several per round; older ones are rarely worth their tokens
+// (kernel.ImageTokenEstimate each), and the model can take a new one.
+const MaxToolImagesInContext = 6
+
+// withToolImages (A-180) returns msgs with only the newest tool-result images kept: whole
+// results' images, newest first, while they fit in keep (0 for a model that can't see
+// images). A result whose images are left out says so in its content, so the model knows
+// to take a new screenshot. The stored conversation keeps every image. It returns msgs
+// itself when nothing is left out, and never modifies a message of msgs.
+func withToolImages(msgs []kernel.Message, keep int) []kernel.Message {
+	left := max(0, keep)
+	var out []kernel.Message
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if len(msgs[i].ToolResultImages()) == 0 {
+			continue
+		}
+		var results []kernel.ToolResult
+		// The later result of a message is the newer one, so it is kept first.
+		for j := len(msgs[i].ToolResults) - 1; j >= 0; j-- {
+			r := msgs[i].ToolResults[j]
+			n := len(r.Images)
+			if n == 0 {
+				continue
+			}
+			if n <= left {
+				left -= n
+				continue
+			}
+			left = 0
+			if results == nil {
+				results = slices.Clone(msgs[i].ToolResults)
+			}
+			why := "this model can't see images"
+			if keep > 0 {
+				why = "an older image, no longer shown to save context; take a new screenshot to look again"
+			}
+			noun := "images"
+			if n == 1 {
+				noun = "image"
+			}
+			results[j].Images = nil
+			results[j].Content = r.Content + "\n\n(" + strconv.Itoa(n) + " " + noun + " not shown: " + why + ".)"
+		}
+		if results == nil {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(msgs)
+		}
+		out[i].ToolResults = results
+	}
+	if out == nil {
+		return msgs
+	}
+	return out
 }
 
 // withCompactArguments (A-129) returns msgs with each tool call's arguments replaced

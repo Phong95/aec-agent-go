@@ -38,3 +38,13 @@ func TestEstimateTokensCountsImages(t *testing.T) {
 		t.Fatalf("EstimateTokens = %d, want %d", got, want)
 	}
 }
+
+// A-180: a tool result's image counts as kernel.ImageTokenEstimate, not by its base64 size.
+func TestEstimateTokensCountsToolResultImages(t *testing.T) {
+	plain := kernel.Message{Role: kernel.RoleAssistant, ToolResults: []kernel.ToolResult{{ToolCallID: "c1", Content: "shot"}}}
+	withImage := plain.Clone()
+	withImage.ToolResults[0].Images = []kernel.MessageAttachment{{Type: kernel.AttachmentTypeImage, MIMEType: "image/png", Data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}}
+	if got, want := llmhub.EstimateTokens([]kernel.Message{withImage}), llmhub.EstimateTokens([]kernel.Message{plain})+kernel.ImageTokenEstimate; got != want {
+		t.Fatalf("EstimateTokens = %d, want %d", got, want)
+	}
+}

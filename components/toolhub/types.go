@@ -266,6 +266,11 @@ type Definition struct {
 	//     DelegatedTools); without one the parent keeps it.
 	// It is declared last, the key order of core/ts.
 	Subagent SubagentUse `json:"subagent,omitempty"`
+	// NeedsVision (A-180): the tool's results are images for the model to look at
+	// (screenshot), so it is offered only when the session's model can see images
+	// (model.Manager.AcceptsImages; a model that reports nothing counts as able). False
+	// means always offered. Declared after Subagent, the key order of core/ts.
+	NeedsVision bool `json:"needsVision,omitempty"`
 }
 
 // Clone returns a deep copy of the definition: the schema (including its
@@ -391,6 +396,11 @@ type Output struct {
 	// kernel.ToolResult (successful results only); the agent loop swaps them in for the
 	// call's arguments, and the UI keeps the original. Empty means none.
 	CompactArguments kernel.Arguments `json:"compactArguments,omitempty"`
+	// Images (A-180) are images for the model to look at (e.g. a screenshot), at most
+	// kernel.MaxImagesPerMessage and within kernel.CheckAttachments' limits (else they are
+	// left out with a note). The harness copies them onto the kernel.ToolResult
+	// (successful results only).
+	Images []kernel.MessageAttachment `json:"images,omitempty"`
 	// Metadata keeps the key order of the object at every nesting level
 	// (ordered.Object). An absent object is omitted; an explicit {} survives.
 	Metadata ordered.Object `json:"metadata,omitzero"`
@@ -413,6 +423,7 @@ func (o Output) Clone() Output {
 		o.Link = &l
 	}
 	o.CompactArguments = slices.Clone(o.CompactArguments)
+	o.Images = slices.Clone(o.Images) // A-180
 	o.Metadata = o.Metadata.Clone()
 	return o
 }
