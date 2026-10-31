@@ -3,6 +3,7 @@ package openaicompat
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"iter"
 	"net/http"
@@ -15,6 +16,29 @@ import (
 	"github.com/Phong95/aec-agent-go/internal/llmtransport"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
+
+// reasoningText (A-178) is the reasoning text of a streamed delta or a response
+// message, from its extra fields: reasoning_content (DeepSeek, Novita, vLLM) or
+// reasoning (OpenRouter). Neither field is in the OpenAI types, and a server sends one
+// of them, so the first one set is taken; "" when there is none.
+//
+// The field type is the SDK's respjson.Field, taken through its Raw method so the
+// package needs no import of the SDK's internals. The SDK marks an extra field as
+// not Valid (it has no type to check it against), so only the raw JSON is read: a
+// value that is not a string is skipped.
+func reasoningText[F interface{ Raw() string }](extra map[string]F) string {
+	for _, key := range []string{"reasoning_content", "reasoning"} {
+		f, ok := extra[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal([]byte(f.Raw()), &s) == nil && s != "" {
+			return s
+		}
+	}
+	return ""
+}
 
 // toolBuf is one tool call the stream is writing: its identity, the arguments text
 // collected so far, whether the call was announced, and how much of the arguments
@@ -158,6 +182,12 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 					}
 				}
 				continue
+			}
+
+			if reasoning := reasoningText(choice.Delta.JSON.ExtraFields); reasoning != "" {
+				if !yield(kernel.StreamChunk{Type: kernel.ChunkReasoning, Content: &reasoning}, nil) {
+					return
+				}
 			}
 
 			if choice.Delta.Content != "" {

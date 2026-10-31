@@ -46,7 +46,7 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 // The usage is the input and output token counts, or 0 when the response carries
 // none; there are no cache counts. The stop reason is mapped by mapStopReason.
 func mapResponse(out *bedrockruntime.ConverseOutput) kernel.ModelResponse {
-	var text strings.Builder
+	var text, reasoning strings.Builder
 	var calls []kernel.ToolCall
 	var usage kernel.TokenUsage
 	stop := ""
@@ -63,6 +63,10 @@ func mapResponse(out *bedrockruntime.ConverseOutput) kernel.ModelResponse {
 				switch b := block.(type) {
 				case *types.ContentBlockMemberText:
 					text.WriteString(b.Value)
+				case *types.ContentBlockMemberReasoningContent:
+					if r, ok := b.Value.(*types.ReasoningContentBlockMemberReasoningText); ok {
+						reasoning.WriteString(aws.ToString(r.Value.Text))
+					}
 				case *types.ContentBlockMemberToolUse:
 					args, argsErr := toolArguments(b.Value)
 					calls = append(calls, kernel.ToolCall{
@@ -73,12 +77,13 @@ func mapResponse(out *bedrockruntime.ConverseOutput) kernel.ModelResponse {
 					})
 				default:
 					// Images, documents and reasoning blocks are dropped.
+					// Update (A-178): reasoning text is kept (above); only redacted reasoning is dropped.
 				}
 			}
 		}
 	}
 	return kernel.ModelResponse{
-		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls},
+		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()},
 		Usage:      usage,
 		StopReason: mapStopReason(stop),
 	}

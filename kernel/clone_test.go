@@ -45,6 +45,7 @@ func TestMessageCloneIsDeep(t *testing.T) {
 		Role:        kernel.RoleAssistant,
 		Content:     "c",
 		Attachments: []kernel.MessageAttachment{{Type: kernel.AttachmentTypeImage, MIMEType: "image/png", Data: "AAAA", Name: "a.png"}},
+		Reasoning:   "thinking",
 		Timestamp:   "2026-10-01T08:00:00.000Z",
 		ToolCalls: []kernel.ToolCall{
 			{ID: "call_1", Name: "read_file", Arguments: kernel.Arguments(`{"b":1,"a":2}`), ArgumentsError: "the arguments must be one JSON object: []", Signature: "sig-1"},

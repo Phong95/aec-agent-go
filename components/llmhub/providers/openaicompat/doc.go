@@ -2,10 +2,11 @@
 // token estimate and model listing over the Chat Completions API of any server
 // that speaks it, configured by a base URL and an API key.
 //
-// It is an opt-in leaf package. Importing it registers two factories in the
+// It is an opt-in leaf package. Importing it registers three factories in the
 // default llm registry from init(): "openai" (default base URL
-// https://api.openai.com/v1) and "novita" (default base URL
-// https://api.novita.ai/v3/openai), two built-ins built from this one provider. The
+// https://api.openai.com/v1), "novita" (default base URL
+// https://api.novita.ai/v3/openai) and "openrouter" (default base URL
+// https://openrouter.ai/api/v1, A-177), built-ins built from this one provider. The
 // llm/all package imports it with the other providers. The root aec package, kernel and
 // llm never import it, so a consumer that does not want the vendor SDK does not link
 // it.

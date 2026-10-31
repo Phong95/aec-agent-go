@@ -156,7 +156,7 @@ func TestGeminiRequestMapping(t *testing.T) {
 		],
 		"systemInstruction":{"parts":[{"text":"You are an agent."},{"text":"Be brief."}]},
 		"tools":[{"functionDeclarations":[{"name":"read_file","description":"Read a file","parametersJsonSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]}],
-		"generationConfig":{"maxOutputTokens":100,"temperature":0.2}
+		"generationConfig":{"maxOutputTokens":100,"temperature":0.2,"thinkingConfig":{"includeThoughts":true}}
 	}`)
 }
 
@@ -164,7 +164,9 @@ func TestGeminiSkipSignatureAndNoGenerationConfig(t *testing.T) {
 	up := llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply {
 		return jsonReply(0, `{"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`)
 	})
-	p := newTestProvider(t, up, "gemini-3-pro-preview")
+	// A model before Gemini 2.5 (A-178: a thinking model always gets
+	// thinkingConfig.includeThoughts).
+	p := newTestProvider(t, up, "gemini-2.0-flash")
 	msgs := []kernel.Message{
 		{Role: kernel.RoleUser, Content: "hi"},
 		{Role: kernel.RoleAssistant, ToolCalls: []kernel.ToolCall{{ID: "x", Name: "now"}}},
@@ -174,7 +176,7 @@ func TestGeminiSkipSignatureAndNoGenerationConfig(t *testing.T) {
 		t.Fatalf("Chat: %v", err)
 	}
 	r := up.Requests()[0]
-	if r.Path != "/v1beta/models/gemini-3-pro-preview:generateContent" {
+	if r.Path != "/v1beta/models/gemini-2.0-flash:generateContent" {
 		t.Errorf("path %q", r.Path)
 	}
 	assertJSON(t, r.Body, `{"contents":[

@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/Phong95/aec-agent-go/components/llmhub"
@@ -32,27 +33,32 @@ type request struct {
 	system    []types.SystemContentBlock
 	inference *types.InferenceConfiguration
 	tools     *types.ToolConfiguration
+	// additional is additionalModelRequestFields: the reasoning effort of a Claude
+	// model (A-176), nil when there is none.
+	additional document.Interface
 }
 
 // converseInput is the input of a Converse call.
 func (r request) converseInput() *bedrockruntime.ConverseInput {
 	return &bedrockruntime.ConverseInput{
-		ModelId:         aws.String(r.modelID),
-		Messages:        r.messages,
-		System:          r.system,
-		InferenceConfig: r.inference,
-		ToolConfig:      r.tools,
+		ModelId:                      aws.String(r.modelID),
+		Messages:                     r.messages,
+		System:                       r.system,
+		InferenceConfig:              r.inference,
+		ToolConfig:                   r.tools,
+		AdditionalModelRequestFields: r.additional,
 	}
 }
 
 // streamInput is the input of a ConverseStream call.
 func (r request) streamInput() *bedrockruntime.ConverseStreamInput {
 	return &bedrockruntime.ConverseStreamInput{
-		ModelId:         aws.String(r.modelID),
-		Messages:        r.messages,
-		System:          r.system,
-		InferenceConfig: r.inference,
-		ToolConfig:      r.tools,
+		ModelId:                      aws.String(r.modelID),
+		Messages:                     r.messages,
+		System:                       r.system,
+		InferenceConfig:              r.inference,
+		ToolConfig:                   r.tools,
+		AdditionalModelRequestFields: r.additional,
 	}
 }
 
@@ -60,8 +66,9 @@ func (r request) streamInput() *bedrockruntime.ConverseStreamInput {
 // the system blocks and messages (mapMessages), the resolved model id, an
 // inferenceConfig that is always present with maxTokens defaulting to
 // defaultMaxTokens (16384, A-88; it was 4096) and
-// temperature, topP and stopSequences only when given, and a toolConfig only when
-// there are tools.
+// temperature, topP and stopSequences only when given, a toolConfig only when
+// there are tools, and additionalModelRequestFields only for a reasoning effort sent
+// to a Claude model (effortFields, A-176).
 func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions) (request, error) {
 	system, mapped, err := mapMessages(msgs, opts)
 	if err != nil {
@@ -91,13 +98,50 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions)
 	if opts.TopP != nil {
 		inference.TopP = aws.Float32(float32(*opts.TopP))
 	}
+	modelID := p.resolveModelID(model)
 	return request{
-		modelID:   p.resolveModelID(model),
-		messages:  mapped,
-		system:    system,
-		inference: inference,
-		tools:     tools,
+		modelID:    modelID,
+		messages:   mapped,
+		system:     system,
+		inference:  inference,
+		tools:      tools,
+		additional: requestFields(modelID, opts.ReasoningEffort),
 	}, nil
+}
+
+// requestFields is the additionalModelRequestFields of a request: the reasoning
+// effort (effortFields, A-176), and (A-178) thinking {type:"adaptive",
+// display:"summarized"} for a Claude model that thinks by default, so its reasoning
+// text is returned (llmhub.ClaudeThinking). Nil when neither applies.
+func requestFields(modelID, effort string) document.Interface {
+	fields := effortFields(modelID, effort)
+	if thinking := llmhub.ClaudeThinking(modelID); thinking != nil {
+		if fields == nil {
+			fields = map[string]any{}
+		}
+		fields["thinking"] = map[string]any{"type": thinking.Type, "display": thinking.Display}
+	}
+	if fields == nil {
+		return nil
+	}
+	return document.NewLazyDocument(fields)
+}
+
+// effortFields (A-176) is the additionalModelRequestFields that carry a reasoning
+// effort to a Bedrock model: output_config.effort (plus the anthropic_beta flag a
+// known model needs, llmhub.LookupBedrockEffort) for an Anthropic model, and nil when
+// no level is set or the model is not an Anthropic one. The level is passed as given:
+// Bedrock rejects one the model does not accept.
+// A-178: returned as a map, which requestFields completes and wraps in a document.
+func effortFields(modelID, effort string) map[string]any {
+	if effort == "" || !llmhub.IsBedrockAnthropicModel(modelID) {
+		return nil
+	}
+	fields := map[string]any{"output_config": map[string]any{"effort": effort}}
+	if support, ok := llmhub.LookupBedrockEffort(modelID); ok && support.Beta != "" {
+		fields["anthropic_beta"] = []any{support.Beta}
+	}
+	return fields
 }
 
 // saturateInt32 converts n to int32, clamping at the limits of the type: the AWS

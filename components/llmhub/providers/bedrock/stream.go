@@ -126,6 +126,15 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 								return
 							}
 						}
+					case *types.ContentBlockDeltaMemberReasoningContent:
+						// A-178: the model's reasoning text (a signature or redacted delta
+						// carries none).
+						if t, ok := d.Value.(*types.ReasoningContentBlockDeltaMemberText); ok && t.Value != "" {
+							reasoning := t.Value
+							if !yield(kernel.StreamChunk{Type: kernel.ChunkReasoning, Content: &reasoning}, nil) {
+								return
+							}
+						}
 					case *types.ContentBlockDeltaMemberToolUse:
 						if buf == nil {
 							continue

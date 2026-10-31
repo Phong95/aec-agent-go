@@ -13,7 +13,7 @@ func TestRequestCarriesAttachedImages(t *testing.T) {
 	msgs := []kernel.Message{{Role: kernel.RoleUser, Content: "What is this?", Attachments: []kernel.MessageAttachment{
 		{Type: kernel.AttachmentTypeImage, MIMEType: "image/png", Data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", Name: "dot.png"},
 	}}}
-	b, err := buildBody(msgs, llmhub.ModelOptions{})
+	b, err := buildBody(msgs, llmhub.ModelOptions{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

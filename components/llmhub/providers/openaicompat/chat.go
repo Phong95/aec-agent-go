@@ -65,7 +65,10 @@ func mapResponse(res *sdk.ChatCompletion) (kernel.ModelResponse, error) {
 		stop = kernel.StopToolUse
 	}
 	return kernel.ModelResponse{
-		Message: kernel.Message{Role: kernel.RoleAssistant, Content: choice.Message.Content, ToolCalls: calls},
+		Message: kernel.Message{
+			Role: kernel.RoleAssistant, Content: choice.Message.Content, ToolCalls: calls,
+			Reasoning: reasoningText(choice.Message.JSON.ExtraFields),
+		},
 		Usage: kernel.TokenUsage{
 			InputTokens:  int(res.Usage.PromptTokens),
 			OutputTokens: int(res.Usage.CompletionTokens),

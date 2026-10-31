@@ -136,6 +136,14 @@ func (*Provider) CountTokens(ctx context.Context, msgs []kernel.Message) (int, e
 	return llmhub.EstimateTokens(msgs), nil
 }
 
+// callModel is the model of a call: model, or the provider's default when it is empty.
+func (p *Provider) callModel(model string) string {
+	if model == "" {
+		return p.model
+	}
+	return model
+}
+
 // modelURL is the URL of method on the model of the call: "models/x" and
 // "tunedModels/x" are full resource names, a bare id is a base model.
 func (p *Provider) modelURL(model, method string) string {

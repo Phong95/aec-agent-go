@@ -44,7 +44,7 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 			yield(kernel.StreamChunk{}, err)
 			return
 		}
-		body, err := buildBody(msgs, opts)
+		body, err := buildBody(msgs, opts, p.callModel(opts.Model))
 		if err != nil {
 			yield(errorChunk(err.Error()), nil)
 			return
@@ -119,6 +119,13 @@ func readEvents(ctx context.Context, body io.Reader, limit int, yield func(kerne
 		for _, part := range ev.parts() {
 			switch {
 			case part.Thought:
+				// A-178: a thought summary, shown as reasoning.
+				if part.Text != nil && *part.Text != "" {
+					reasoning := *part.Text
+					if !yield(kernel.StreamChunk{Type: kernel.ChunkReasoning, Content: &reasoning}, nil) {
+						return
+					}
+				}
 			case part.FunctionCall != nil:
 				call := toolCall(part)
 				progress := kernel.ToolCallProgress{ID: call.ID, Name: call.Name}

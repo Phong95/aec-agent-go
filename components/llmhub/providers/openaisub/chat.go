@@ -52,7 +52,8 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 		case kernel.ChunkDone:
 			usage = chunk.Usage
 			stop = chunk.StopReason
-		case kernel.ChunkToolCallStart, kernel.ChunkToolCallDelta, kernel.ChunkToolResult, kernel.ChunkUsage:
+		case kernel.ChunkToolCallStart, kernel.ChunkToolCallDelta, kernel.ChunkToolResult, kernel.ChunkUsage, kernel.ChunkReasoning:
+			// (A-178: this provider streams no reasoning.)
 			// Progress chunks carry nothing Chat needs: the complete tool_call follows.
 			// (A provider never sends usage chunks; the agent loop does: usage is on done.)
 		case kernel.ChunkError:

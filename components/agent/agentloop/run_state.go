@@ -71,6 +71,10 @@ type runState struct {
 	// returns, because the helper's result is not available when the consumer stops
 	// iterating (RESEARCH Pitfall 2).
 	partial strings.Builder
+	// partialReasoning (A-178) is the reasoning text of the streamed response so far,
+	// saved with its message (Message.Reasoning). A stopped run saves only the reply
+	// text, not this.
+	partialReasoning strings.Builder
 
 	// usageDirty is true while the session snapshot holds usage that was not handed
 	// back through Conversation.UpdateSession yet.

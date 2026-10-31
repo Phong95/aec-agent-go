@@ -35,9 +35,17 @@ type requestBody struct {
 	Tools []toolParam `json:"tools,omitempty"`
 	// ReasoningEffort (A-164) is ModelOptions.ReasoningEffort, absent when not set. The
 	// server rejects a level the model does not accept.
-	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
-	Stream          *bool          `json:"stream,omitempty"`
-	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// Reasoning (A-177) carries the effort instead of ReasoningEffort when the
+	// provider uses ReasoningObjectParam (OpenRouter).
+	Reasoning     *reasoningParam `json:"reasoning,omitempty"`
+	Stream        *bool           `json:"stream,omitempty"`
+	StreamOptions *streamOptions  `json:"stream_options,omitempty"`
+}
+
+// reasoningParam is {effort}, OpenRouter's reasoning object.
+type reasoningParam struct {
+	Effort string `json:"effort"`
 }
 
 // streamOptions is {include_usage:true}: the final chunk of a stream then carries
@@ -243,8 +251,14 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions,
 		TopP:        opts.TopP,
 		Stop:        opts.StopSequences,
 		Tools:       mapTools(opts.Tools),
-		// A-164
-		ReasoningEffort: opts.ReasoningEffort,
+	}
+	// A-164; A-177: OpenRouter takes the effort in its reasoning object.
+	if opts.ReasoningEffort != "" {
+		if p.reasoningParam == ReasoningObjectParam {
+			body.Reasoning = &reasoningParam{Effort: opts.ReasoningEffort}
+		} else {
+			body.ReasoningEffort = opts.ReasoningEffort
+		}
 	}
 	if stream {
 		on := true

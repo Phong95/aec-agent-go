@@ -150,6 +150,8 @@ func (l *Loop) stream(ctx context.Context, r *runState, overrides llmhub.ModelOp
 		if len(streamed.toolCalls) > 0 {
 			message.ToolCalls = streamed.toolCalls
 		}
+		// A-178: shown with the reply, never sent back to the model.
+		message.Reasoning = r.partialReasoning.String()
 
 		// Run the afterModel middlewares on the collected response, raced against ctx,
 		// as Run does. A stop here saves the partial text the consumer received.
@@ -287,6 +289,7 @@ func (l *Loop) stream(ctx context.Context, r *runState, overrides llmhub.ModelOp
 // returns), so no goroutine is left behind.
 func (l *Loop) streamModelResponse(ctx context.Context, r *runState, in modelInput, yield func(kernel.StreamChunk, error) bool) (streamedResponse, bool) {
 	r.partial.Reset()
+	r.partialReasoning.Reset()
 	out := streamedResponse{stopReason: kernel.StopEndTurn}
 
 	for chunk, err := range l.deps.Models.Stream(ctx, in.messages, in.options) {
@@ -333,6 +336,10 @@ func (l *Loop) streamModelResponse(ctx context.Context, r *runState, in modelInp
 			// Appended before the yield: what the consumer received is what is saved.
 			if chunk.Content != nil {
 				r.partial.WriteString(*chunk.Content)
+			}
+		case kernel.ChunkReasoning:
+			if chunk.Content != nil {
+				r.partialReasoning.WriteString(*chunk.Content)
 			}
 		case kernel.ChunkToolCall:
 			if chunk.ToolCall != nil {

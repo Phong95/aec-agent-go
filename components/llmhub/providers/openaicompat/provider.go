@@ -2,7 +2,9 @@ package openaicompat
 
 import (
 	"context"
+	"maps"
 	"net/http"
+	"slices"
 	"time"
 
 	sdk "github.com/openai/openai-go/v3"
@@ -33,11 +35,23 @@ const (
 
 // options collects what the Option functions set before New builds the services.
 type options struct {
-	name       string
-	httpClient *http.Client
-	maxRetries *int
-	timeout    *time.Duration
+	name           string
+	reasoningParam ReasoningParam
+	headers        map[string]string
+	httpClient     *http.Client
+	maxRetries     *int
+	timeout        *time.Duration
 }
+
+// ReasoningParam (A-177) selects how a request carries ModelOptions.ReasoningEffort.
+type ReasoningParam string
+
+const (
+	// ReasoningEffortParam is OpenAI's top-level "reasoning_effort", the default.
+	ReasoningEffortParam ReasoningParam = "reasoning_effort"
+	// ReasoningObjectParam is OpenRouter's object, "reasoning":{"effort":...}.
+	ReasoningObjectParam ReasoningParam = "reasoning"
+)
 
 // credentialHeaders are the headers that carry the credential of a request and must
 // not follow a redirect to another host. net/http drops Authorization on its own;
@@ -54,6 +68,19 @@ type Option func(*options)
 // passes "novita".
 func WithName(name string) Option {
 	return func(o *options) { o.name = name }
+}
+
+// WithReasoningParam (A-177) sets how the reasoning effort is sent. The default is
+// ReasoningEffortParam; the "openrouter" registry entry passes ReasoningObjectParam.
+func WithReasoningParam(p ReasoningParam) Option {
+	return func(o *options) { o.reasoningParam = p }
+}
+
+// WithHeaders (A-177) adds headers sent with every request. Like the credential,
+// they are dropped on a redirect to another host. The "openrouter" registry entry
+// passes its attribution headers this way.
+func WithHeaders(h map[string]string) Option {
+	return func(o *options) { o.headers = h }
 }
 
 // WithHTTPClient makes the provider send its requests through a copy of c instead
@@ -86,9 +113,10 @@ func WithMaxRetries(n int) Option {
 // Provider is the OpenAI-compatible llmhub.Provider. It is immutable after New and
 // safe for concurrent use.
 type Provider struct {
-	name         string
-	baseURL      string
-	defaultModel string
+	name           string
+	baseURL        string
+	defaultModel   string
+	reasoningParam ReasoningParam
 	// timeout is how long a request waits for the response headers (zero: no
 	// timeout), kept so a test can see the default.
 	timeout time.Duration
@@ -129,12 +157,20 @@ func New(cfg llmhub.ProviderConfig, opts ...Option) (*Provider, error) {
 	if cfg.APIKey != "" {
 		ro = append(ro, option.WithAPIKey(cfg.APIKey))
 	}
+	dropOnRedirect := credentialHeaders
+	if len(o.headers) > 0 {
+		dropOnRedirect = slices.Clone(credentialHeaders)
+		for _, k := range slices.Sorted(maps.Keys(o.headers)) {
+			ro = append(ro, option.WithHeader(k, o.headers[k]))
+			dropOnRedirect = append(dropOnRedirect, k)
+		}
+	}
 	timeout := llmtransport.DefaultRequestTimeout
 	if o.timeout != nil {
 		timeout = *o.timeout
 	}
 	ro = append(ro, option.WithHTTPClient(llmtransport.NewClient(o.httpClient, llmtransport.Config{
-		CredentialHeaders: credentialHeaders,
+		CredentialHeaders: dropOnRedirect,
 		RequestTimeout:    timeout,
 	})))
 	if o.maxRetries != nil {
@@ -144,13 +180,18 @@ func New(cfg llmhub.ProviderConfig, opts ...Option) (*Provider, error) {
 	if model == "" {
 		model = defaultModel
 	}
+	reasoningParam := o.reasoningParam
+	if reasoningParam == "" {
+		reasoningParam = ReasoningEffortParam
+	}
 	return &Provider{
-		name:         name,
-		baseURL:      base,
-		defaultModel: model,
-		timeout:      timeout,
-		chat:         sdk.NewChatCompletionService(ro...),
-		models:       sdk.NewModelService(ro...),
+		name:           name,
+		baseURL:        base,
+		defaultModel:   model,
+		reasoningParam: reasoningParam,
+		timeout:        timeout,
+		chat:           sdk.NewChatCompletionService(ro...),
+		models:         sdk.NewModelService(ro...),
 	}, nil
 }
 

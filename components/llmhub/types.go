@@ -95,8 +95,9 @@ type ModelOptions struct {
 	// lowercase ("low", "high"; ModelInfo.ReasoningEfforts lists what a model accepts).
 	// Empty = the provider's default. Anthropic sends it as output_config.effort,
 	// OpenAI-compatible as reasoning_effort, the ChatGPT subscription (Responses API) as
-	// reasoning.effort, and Gemini as thinkingConfig.thinkingLevel. Bedrock ignores it.
-	// The provider rejects a level the model does not accept.
+	// reasoning.effort, and Gemini as thinkingConfig.thinkingLevel. Bedrock sends it to
+	// Claude models as additionalModelRequestFields.output_config.effort (A-176) and
+	// ignores it for other models. The provider rejects a level the model does not accept.
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 

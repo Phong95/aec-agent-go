@@ -626,6 +626,8 @@ func MapBedrockFoundationModel(raw json.RawMessage, provider string) (ModelInfo,
 	if b, ok := obj["responseStreamingSupported"].(bool); ok {
 		c.Streaming = &b
 	}
+	// A-176: the summary does not report effort support, so it comes from the known Claude models.
+	effort, _ := LookupBedrockEffort(id)
 
 	return ModelInfo{
 		ModelRecord: ModelRecord{
@@ -635,6 +637,7 @@ func MapBedrockFoundationModel(raw json.RawMessage, provider string) (ModelInfo,
 			OwnedBy:          stringOf(obj["providerName"]),
 			InputModalities:  inputModalities,
 			OutputModalities: outputModalities,
+			ReasoningEfforts: effort.Efforts,
 			Capabilities:     compactCapabilities(c),
 		},
 		Raw: rawOrNil(raw),

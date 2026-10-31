@@ -53,6 +53,11 @@ type ProviderConfig struct {
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model,omitempty"`
 	BaseURL string `json:"baseUrl,omitempty"`
+	// AppURL and AppTitle (A-177) name the app that makes the requests. The
+	// openrouter provider sends them as its attribution headers HTTP-Referer and
+	// X-Title; the other providers ignore them.
+	AppURL   string `json:"appUrl,omitempty"`
+	AppTitle string `json:"appTitle,omitempty"`
 	// AWS Bedrock credentials
 	SecretKey string `json:"secretKey,omitempty"`
 	Region    string `json:"region,omitempty"`
@@ -101,6 +106,8 @@ func (c ProviderConfig) attrs() []slog.Attr {
 	if c.BaseURL != "" {
 		plain("baseUrl", redactURL(c.BaseURL))
 	}
+	plain("appUrl", c.AppURL)
+	plain("appTitle", c.AppTitle)
 	secret("secretKey", c.SecretKey)
 	plain("region", c.Region)
 	plain("authType", string(c.AuthType))

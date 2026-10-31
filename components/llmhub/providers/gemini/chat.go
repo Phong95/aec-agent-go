@@ -30,7 +30,7 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 	if err := ctx.Err(); err != nil {
 		return kernel.ModelResponse{}, err
 	}
-	body, err := buildBody(msgs, opts)
+	body, err := buildBody(msgs, opts, p.callModel(opts.Model))
 	if err != nil {
 		return kernel.ModelResponse{}, kernel.WithCause(kernel.NewModelError(err.Error(), kernel.ModelCodeProvider, false), err)
 	}
@@ -68,12 +68,16 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 	}
 
 	var (
-		text  strings.Builder
-		calls []kernel.ToolCall
+		text, reasoning strings.Builder
+		calls           []kernel.ToolCall
 	)
 	for _, part := range parsed.parts() {
 		switch {
 		case part.Thought:
+			// A-178: a thought summary, shown as reasoning.
+			if part.Text != nil {
+				reasoning.WriteString(*part.Text)
+			}
 		case part.FunctionCall != nil:
 			calls = append(calls, toolCall(part))
 		case part.Text != nil:
@@ -81,7 +85,7 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 		}
 	}
 	out := kernel.ModelResponse{
-		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls},
+		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()},
 		StopReason: mapStopReason(parsed.finishReason(), len(calls) > 0),
 	}
 	if u := parsed.usage(); u != nil {

@@ -15,7 +15,7 @@ import (
 // It is an explicit table because Go initialises packages sorted by import path:
 // the Phase 8 provider packages register themselves from init(), and without this
 // table they would register (and list) in alphabetical order, not this order.
-var builtinOrder = []string{"anthropic", "novita", "openai", "bedrock", "openai-subscription", "gemini"}
+var builtinOrder = []string{"anthropic", "novita", "openai", "bedrock", "openai-subscription", "gemini", "openrouter"}
 
 // Registry maps provider names to the factories that build them. A Registry is
 // safe for concurrent use; the zero value is ready to use.
@@ -72,7 +72,7 @@ func (r *Registry) Resolve(name string, cfg ProviderConfig) (Provider, error) {
 
 // List returns the registered provider names: the built-ins that are registered
 // in canonical order (anthropic, novita, openai, bedrock, openai-subscription,
-// gemini), then every other name in registration order. Only built-ins whose
+// gemini, openrouter), then every other name in registration order. Only built-ins whose
 // packages are imported are registered; llm/all imports all of them.
 func (r *Registry) List() []string {
 	r.mu.RLock()

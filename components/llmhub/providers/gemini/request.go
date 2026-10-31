@@ -1,6 +1,8 @@
 package gemini
 
 import (
+	"regexp"
+
 	"github.com/Phong95/aec-agent-go/components/llmhub"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/internal/jsonx"
@@ -87,9 +89,16 @@ type generationConfig struct {
 
 // thinkingConfig (A-164) is {thinkingLevel}: Gemini 3 models take thinking levels, and
 // the API rejects a level the model does not accept.
+// A-178: includeThoughts asks for the thought summaries (parts with thought: true).
 type thinkingConfig struct {
-	ThinkingLevel string `json:"thinkingLevel"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+	IncludeThoughts bool   `json:"includeThoughts,omitempty"`
 }
+
+// thinkingModel (A-178) matches the Gemini models that think and so take
+// thinkingConfig.includeThoughts: Gemini 2.5 and later, as a bare id or a resource
+// name ("models/gemini-2.5-flash").
+var thinkingModel = regexp.MustCompile(`(?i)(?:^|/)gemini-(?:2\.5|[3-9])`)
 
 // requestBody is the JSON the provider sends, with the keys in a fixed order
 // (contents, systemInstruction, tools, generationConfig); every key but contents is
@@ -225,7 +234,10 @@ func mapTools(tools []toolhub.Definition) []tool {
 // is set. maxOutputTokens is left out unless set, so the model's own output limit
 // applies: Gemini counts thinking tokens against it, and
 // llmhub.DefaultMaxOutputTokens could cut a thinking model short.
-func mapGenerationConfig(opts llmhub.ModelOptions) *generationConfig {
+//
+// A-178: a thinking model (thinkingModel, or any model with a thinking level) is asked
+// for its thought summaries; an older model would reject the field.
+func mapGenerationConfig(opts llmhub.ModelOptions, model string) *generationConfig {
 	g := generationConfig{
 		MaxOutputTokens: opts.MaxTokens,
 		Temperature:     opts.Temperature,
@@ -234,8 +246,8 @@ func mapGenerationConfig(opts llmhub.ModelOptions) *generationConfig {
 	if len(opts.StopSequences) > 0 {
 		g.StopSequences = opts.StopSequences
 	}
-	if opts.ReasoningEffort != "" {
-		g.ThinkingConfig = &thinkingConfig{ThinkingLevel: opts.ReasoningEffort}
+	if opts.ReasoningEffort != "" || thinkingModel.MatchString(model) {
+		g.ThinkingConfig = &thinkingConfig{ThinkingLevel: opts.ReasoningEffort, IncludeThoughts: true}
 	}
 	if g.MaxOutputTokens == nil && g.Temperature == nil && g.TopP == nil && g.StopSequences == nil && g.ThinkingConfig == nil {
 		return nil
@@ -244,12 +256,13 @@ func mapGenerationConfig(opts llmhub.ModelOptions) *generationConfig {
 }
 
 // buildBody returns the exact request body of one call.
-func buildBody(msgs []kernel.Message, opts llmhub.ModelOptions) ([]byte, error) {
+// A-178: model is the call's model (opts.Model or the provider's default).
+func buildBody(msgs []kernel.Message, opts llmhub.ModelOptions, model string) ([]byte, error) {
 	contents, system := mapContents(msgs, opts)
 	body := requestBody{
 		Contents:         contents,
 		Tools:            mapTools(opts.Tools),
-		GenerationConfig: mapGenerationConfig(opts),
+		GenerationConfig: mapGenerationConfig(opts, model),
 	}
 	if len(system) > 0 {
 		body.SystemInstruction = &systemInstruction{Parts: system}

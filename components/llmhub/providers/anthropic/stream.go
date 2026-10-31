@@ -106,6 +106,15 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 					if !yield(chunk, nil) {
 						return
 					}
+				case "thinking_delta":
+					// A-178: the thinking text (summarized, llmhub.ClaudeThinking); empty
+					// deltas are skipped.
+					if ev.Delta.Thinking != "" {
+						thinking := ev.Delta.Thinking
+						if !yield(kernel.StreamChunk{Type: kernel.ChunkReasoning, Content: &thinking}, nil) {
+							return
+						}
+					}
 				case "input_json_delta":
 					if cur == nil {
 						continue

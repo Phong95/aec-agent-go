@@ -66,6 +66,10 @@ type Message struct {
 	// with Content (which stays the text). Only user messages carry them; providers send
 	// them as image parts, and CheckAttachments says what is accepted. Nil is omitted.
 	Attachments []MessageAttachment `json:"attachments,omitzero"`
+	// Reasoning (A-178) is the reasoning (thinking) text the model returned with this
+	// assistant message, for display only. Providers never send it back to the model;
+	// empty when the provider returned none.
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 // Time parses Timestamp (an ISO string, see NowISO) as a time.Time in UTC. The
@@ -190,6 +194,11 @@ const (
 	// loop yields one after every response the provider reported a usage for; the
 	// usage is also saved on that response's assistant message (Message.Usage).
 	ChunkUsage ChunkType = "usage"
+	// ChunkReasoning (A-178) carries the next slice of the reasoning (thinking) text the
+	// model returned (StreamChunk.Content). Only providers that return reasoning send
+	// it; the agent loop saves the text on the response's assistant message
+	// (Message.Reasoning).
+	ChunkReasoning ChunkType = "reasoning"
 )
 
 // StreamChunk is one piece of a streamed model response. It is a flat struct:

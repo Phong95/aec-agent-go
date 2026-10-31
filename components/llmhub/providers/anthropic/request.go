@@ -42,6 +42,9 @@ type requestBody struct {
 	Tools         []toolParam `json:"tools,omitempty"`
 	// OutputConfig (A-164) carries the reasoning effort; absent when it is not set.
 	OutputConfig *outputConfig `json:"output_config,omitempty"`
+	// Thinking (A-178) asks a model that thinks by default for its summarized thinking
+	// text (llmhub.ClaudeThinksByDefault); absent for every other model.
+	Thinking *llmhub.ClaudeThinkingDisplay `json:"thinking,omitempty"`
 }
 
 // outputConfig (A-164) is output_config: the effort level, passed as given (the API
@@ -245,6 +248,7 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions)
 		StopSequences: opts.StopSequences,
 		Tools:         mapTools(opts.Tools),
 		OutputConfig:  mapOutputConfig(opts),
+		Thinking:      llmhub.ClaudeThinking(model),
 	})
 	if err != nil {
 		return nil, sdk.MessageNewParams{}, err

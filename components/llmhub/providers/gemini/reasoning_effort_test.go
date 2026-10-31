@@ -13,13 +13,13 @@ import (
 func TestRequestCarriesReasoningEffort(t *testing.T) {
 	msgs := []kernel.Message{{Role: kernel.RoleUser, Content: "hi"}}
 	build := func(opts llmhub.ModelOptions) []byte {
-		b, err := buildBody(msgs, opts)
+		b, err := buildBody(msgs, opts, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return b
 	}
-	if got := string(build(llmhub.ModelOptions{ReasoningEffort: "low"})); !strings.Contains(got, `"generationConfig":{"thinkingConfig":{"thinkingLevel":"low"}}`) {
+	if got := string(build(llmhub.ModelOptions{ReasoningEffort: "low"})); !strings.Contains(got, `"generationConfig":{"thinkingConfig":{"thinkingLevel":"low","includeThoughts":true}}`) {
 		t.Fatalf("body = %s", got)
 	}
 	if got := string(build(llmhub.ModelOptions{})); strings.Contains(got, `thinkingConfig`) {

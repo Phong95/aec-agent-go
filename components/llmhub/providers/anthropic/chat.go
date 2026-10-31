@@ -44,12 +44,14 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 // same path as a streamed call (llmhub.ParseToolArguments), which cannot fail: an
 // input that is not an object becomes empty arguments plus an ArgumentsError.
 func mapResponse(msg *sdk.Message) kernel.ModelResponse {
-	var text strings.Builder
+	var text, reasoning strings.Builder
 	var calls []kernel.ToolCall
 	for _, block := range msg.Content {
 		switch block.Type {
 		case "text":
 			text.WriteString(block.Text)
+		case "thinking":
+			reasoning.WriteString(block.Thinking)
 		case "tool_use":
 			args, argsErr := llmhub.ParseToolArguments(string(block.Input))
 			calls = append(calls, kernel.ToolCall{ID: block.ID, Name: block.Name, Arguments: args, ArgumentsError: argsErr})
@@ -68,7 +70,7 @@ func mapResponse(msg *sdk.Message) kernel.ModelResponse {
 		usage.CacheWriteTokens = &v
 	}
 	return kernel.ModelResponse{
-		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls},
+		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()},
 		Usage:      usage,
 		StopReason: mapStopReason(string(msg.StopReason)),
 	}

@@ -65,7 +65,7 @@ func main() {
 }
 ```
 
-- **Providers:** `anthropic`, `openai`, `novita`, `bedrock`, `openai-subscription` and `gemini`.
+- **Providers:** `anthropic`, `openai`, `novita`, `bedrock`, `openai-subscription`, `gemini` and `openrouter`.
   - Blank-import `components/llmhub/providers/all`, or a single provider package.
   - For `bedrock`, also set `SecretKey` and `Region`.
   - `AgentConfig.LLM` takes a provider you built in code.
