@@ -147,6 +147,11 @@ func (l *Loop) assembleModelInput(ctx context.Context, r *runState, overrides ll
 	if options.Tools == nil {
 		options.Tools = toolDefs
 	}
+	// A-188: every call of a session shares one prompt cache key, unless the caller
+	// set one.
+	if options.PromptCacheKey == "" {
+		options.PromptCacheKey = r.sessionID
+	}
 
 	in := modelInput{messages: messages, toolDefs: toolDefs, options: options, sections: sections}
 	// Computed once per iteration, only when the run is traced: tracing must never

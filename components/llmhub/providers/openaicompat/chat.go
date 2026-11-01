@@ -42,6 +42,8 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 // arguments plus an ArgumentsError instead of failing the call, and its finish
 // reason is mapped by mapFinishReason. The usage is the prompt and completion token
 // counts, or 0 when the response carries none; there are no cache counts.
+// Update (A-188): the cache read and write counts are mapped when the response
+// carries them (usageOf).
 //
 // A response with no choice is a provider error that is not retryable, with the
 // text "the response has no choices".
@@ -69,10 +71,7 @@ func mapResponse(res *sdk.ChatCompletion) (kernel.ModelResponse, error) {
 			Role: kernel.RoleAssistant, Content: choice.Message.Content, ToolCalls: calls,
 			Reasoning: reasoningText(choice.Message.JSON.ExtraFields),
 		},
-		Usage: kernel.TokenUsage{
-			InputTokens:  int(res.Usage.PromptTokens),
-			OutputTokens: int(res.Usage.CompletionTokens),
-		},
+		Usage:      usageOf(res.Usage),
 		StopReason: stop,
 	}, nil
 }

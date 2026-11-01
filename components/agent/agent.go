@@ -1195,7 +1195,7 @@ func (a *Agent) runJobTurn(ctx context.Context, rc job.RunContext) (job.RunResul
 	}
 	out := job.RunResult{
 		Output:  result.Message.Content,
-		Usage:   &job.Usage{InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens},
+		Usage:   job.UsageOf(result.Usage), // A-195: with the cache counts
 		Aborted: result.Aborted,
 	}
 	if result.StopReason == kernel.StopMaxTokens || result.StopReason == kernel.StopError {

@@ -262,6 +262,7 @@ func (l *Loop) run(ctx context.Context, r *runState, overrides llmhub.ModelOptio
 		}
 		end.Set("inputTokens", resp.Usage.InputTokens)
 		end.Set("outputTokens", resp.Usage.OutputTokens)
+		setCacheAttrs(&end, resp.Usage) // A-195
 		end.Set("hasToolCalls", hasToolCalls)
 		end.Set("responsePreview", resp.Message.Content)
 		if resp.Message.ToolCalls != nil {
@@ -545,4 +546,15 @@ func (l *Loop) executeToolCalls(ctx context.Context, r *runState, calls []kernel
 		return nil, err
 	}
 	return results, nil
+}
+
+// setCacheAttrs (A-195) adds a model call's prompt-cache counts to its span end, only
+// the ones the provider reported, so the trace shows the cache hits of every call.
+func setCacheAttrs(end *ordered.Object, u kernel.TokenUsage) {
+	if u.CacheReadTokens != nil {
+		end.Set("cacheReadTokens", *u.CacheReadTokens)
+	}
+	if u.CacheWriteTokens != nil {
+		end.Set("cacheWriteTokens", *u.CacheWriteTokens)
+	}
 }

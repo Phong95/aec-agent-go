@@ -1542,7 +1542,8 @@ func (m *jobManager) process(runCtx context.Context, entry *activeJobRun) {
 			checkpoint.Output = ptr(jobkit.SliceUTF16(result.Output, maxJobRunOutputChars))
 		}
 		if result.Usage != nil {
-			checkpoint.Usage = &job.Usage{InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens}
+			u := result.Usage.Clone() // A-195: with the cache counts
+			checkpoint.Usage = &u
 		}
 		if result.StopReason != "" {
 			checkpoint.StopReason = &result.StopReason

@@ -38,6 +38,8 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 // when there are none), every tool_use block becomes a tool call, and thinking
 // blocks are dropped. The cache token counts are set only when the response
 // carries the field, so a present zero stays 0 and an absent field stays absent.
+// Update (A-188): InputTokens counts the cache reads and writes too
+// (llmhub.NewTokenUsage); Anthropic's input_tokens leaves them out.
 // A JSON null counts as absent.
 //
 // A tool call's arguments are the block's input object re-encoded through the
@@ -57,18 +59,20 @@ func mapResponse(msg *sdk.Message) kernel.ModelResponse {
 			calls = append(calls, kernel.ToolCall{ID: block.ID, Name: block.Name, Arguments: args, ArgumentsError: argsErr})
 		}
 	}
-	usage := kernel.TokenUsage{
-		InputTokens:  int(msg.Usage.InputTokens),
-		OutputTokens: int(msg.Usage.OutputTokens),
+	// Update (A-188): input_tokens leaves the cache out; NewTokenUsage adds the
+	// cache counts to it, so InputTokens means the same for every provider.
+	pu := llmhub.ProviderUsage{
+		Input:              int(msg.Usage.InputTokens),
+		Output:             int(msg.Usage.OutputTokens),
+		InputExcludesCache: true,
 	}
 	if msg.Usage.JSON.CacheReadInputTokens.Valid() {
-		v := int(msg.Usage.CacheReadInputTokens)
-		usage.CacheReadTokens = &v
+		pu.CacheRead = llmhub.IntPtr(int(msg.Usage.CacheReadInputTokens))
 	}
 	if msg.Usage.JSON.CacheCreationInputTokens.Valid() {
-		v := int(msg.Usage.CacheCreationInputTokens)
-		usage.CacheWriteTokens = &v
+		pu.CacheWrite = llmhub.IntPtr(int(msg.Usage.CacheCreationInputTokens))
 	}
+	usage := llmhub.NewTokenUsage(pu)
 	return kernel.ModelResponse{
 		Message:    kernel.Message{Role: kernel.RoleAssistant, Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()},
 		Usage:      usage,

@@ -160,10 +160,8 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 			}
 			chunk := st.Current()
 			if chunk.JSON.Usage.Valid() {
-				usage = &kernel.TokenUsage{
-					InputTokens:  int(chunk.Usage.PromptTokens),
-					OutputTokens: int(chunk.Usage.CompletionTokens),
-				}
+				u := usageOf(chunk.Usage) // A-188: with the cache counts
+				usage = &u
 			}
 
 			// A chunk with no choice is skipped. A choice with no delta still has

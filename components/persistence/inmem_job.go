@@ -305,7 +305,7 @@ func applyJobRunPatch(r *job.Run, p JobRunPatch) {
 		r.Action = *p.Action
 	}
 	if p.Usage != nil {
-		u := *p.Usage
+		u := p.Usage.Clone() // A-195: deep, the cache counts are pointers
 		r.Usage = &u
 	}
 	setString(&r.StopReason, p.StopReason)

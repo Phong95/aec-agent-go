@@ -206,6 +206,9 @@ func TestGeminiChatMapsTheResponse(t *testing.T) {
 	if resp.Usage.InputTokens != 10 || resp.Usage.OutputTokens != 12 {
 		t.Errorf("usage %+v, want 10 in / 12 out", resp.Usage)
 	}
+	if resp.Usage.CacheReadTokens != nil || resp.Usage.CacheWriteTokens != nil {
+		t.Errorf("usage %+v: no cache field was sent, want none", resp.Usage)
+	}
 	calls := resp.Message.ToolCalls
 	if len(calls) != 2 {
 		t.Fatalf("%d calls", len(calls))
@@ -383,5 +386,49 @@ func TestGeminiListModels(t *testing.T) {
 	_, err = newTestProvider(t, denied, "").ListModels(t.Context())
 	if me, ok := asModelError(err); !ok || me.Code != kernel.ModelCodeAuth {
 		t.Errorf("403: %v, want an auth error", err)
+	}
+}
+
+// TestGeminiUsageCachedContent (A-188): cachedContentTokenCount is the cache read
+// count, on chat and on the last usage of a stream; the prompt count already holds it.
+func TestGeminiUsageCachedContent(t *testing.T) {
+	body := `{"candidates":[{"content":{"parts":[{"text":"hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":5,"cachedContentTokenCount":800}}`
+	up := llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply { return jsonReply(0, body) })
+	resp, err := newTestProvider(t, up, "").Chat(t.Context(), helloMsgs, llmhub.ModelOptions{})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Usage.InputTokens != 1000 || resp.Usage.CacheReadTokens == nil || *resp.Usage.CacheReadTokens != 800 || resp.Usage.CacheWriteTokens != nil {
+		t.Errorf("chat usage %+v, want 1000 in / 800 cache read / no write", resp.Usage)
+	}
+
+	zero := `{"candidates":[{"content":{"parts":[{"text":"hi"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":1,"cachedContentTokenCount":0}}`
+	up = llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply { return jsonReply(0, zero) })
+	resp, err = newTestProvider(t, up, "").Chat(t.Context(), helloMsgs, llmhub.ModelOptions{})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Usage.CacheReadTokens == nil || *resp.Usage.CacheReadTokens != 0 {
+		t.Errorf("chat usage %+v, want a present zero cache read", resp.Usage)
+	}
+}
+
+// TestGeminiStreamUsageCachedContent (A-188): done carries the cache read count of
+// the last usageMetadata of the stream.
+func TestGeminiStreamUsageCachedContent(t *testing.T) {
+	up := llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply {
+		return sseReply(
+			`{"candidates":[{"content":{"role":"model","parts":[{"text":"Hel"}]}}],"usageMetadata":{"promptTokenCount":500,"candidatesTokenCount":1,"cachedContentTokenCount":400}}`,
+			`{"candidates":[{"content":{"role":"model","parts":[{"text":"lo"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":500,"candidatesTokenCount":2,"cachedContentTokenCount":400}}`,
+		)
+	})
+	chunks := drain(t, newTestProvider(t, up, ""), helloMsgs, llmhub.ModelOptions{})
+	done := chunks[len(chunks)-1]
+	if done.Type != kernel.ChunkDone || done.Usage == nil {
+		t.Fatalf("last chunk %+v", done)
+	}
+	u := *done.Usage
+	if u.InputTokens != 500 || u.OutputTokens != 2 || u.CacheReadTokens == nil || *u.CacheReadTokens != 400 || u.CacheWriteTokens != nil {
+		t.Errorf("done usage %+v, want 500 in / 2 out / 400 cache read", u)
 	}
 }

@@ -372,6 +372,12 @@ func TestAgentCoreContextTrace(t *testing.T) {
 		// What the provider received, without the tools, is exactly the span's options.
 		received := mainModelCalls(l)[0].Options
 		received.Tools = nil
+		// A-188: the prompt cache key is the session id the loop adds per call; the
+		// span's options leave it out (like the reasoning effort), so it is not compared.
+		if received.PromptCacheKey == "" {
+			t.Fatal("the provider received no prompt cache key")
+		}
+		received.PromptCacheKey = ""
 		raw, err := kernel.EncodeJSON(received)
 		if err != nil {
 			t.Fatal(err)

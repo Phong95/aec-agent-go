@@ -157,3 +157,25 @@ func TestAccessAndSettingsDecodeOlderRowsWithDefaults(t *testing.T) {
 		t.Fatalf("channel = %+v", ch)
 	}
 }
+
+// TestTurnFromStreamKeepsTheCacheCounts (A-195): the turn's usage carries the cache
+// counts of done, and TokenUsage gives them back to a host that records usage.
+func TestTurnFromStreamKeepsTheCacheCounts(t *testing.T) {
+	read, write := 700, 50
+	chunks := []kernel.StreamChunk{{Type: kernel.ChunkDone, Usage: &kernel.TokenUsage{InputTokens: 900, OutputTokens: 4, CacheReadTokens: &read, CacheWriteTokens: &write}}}
+	res, err := channel.TurnFromStream(seq(chunks), nil)
+	if err != nil || res.Usage == nil {
+		t.Fatalf("res = %+v, err = %v", res, err)
+	}
+	u := res.Usage.TokenUsage()
+	if u.InputTokens != 900 || u.CacheReadTokens == nil || *u.CacheReadTokens != 700 || u.CacheWriteTokens == nil || *u.CacheWriteTokens != 50 {
+		t.Fatalf("usage %+v", u)
+	}
+	if u.CacheReadTokens == &read || res.Usage.CacheReadTokens == &read {
+		t.Fatal("the cache counts alias the stream's pointers")
+	}
+	none, _ := channel.TurnFromStream(seq([]kernel.StreamChunk{{Type: kernel.ChunkDone, Usage: &kernel.TokenUsage{InputTokens: 1}}}), nil)
+	if none.Usage.CacheReadTokens != nil || none.Usage.TokenUsage().CacheWriteTokens != nil {
+		t.Fatalf("no cache counts were sent: %+v", none.Usage)
+	}
+}

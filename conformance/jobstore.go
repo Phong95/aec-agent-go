@@ -489,13 +489,15 @@ func JobStore(t *testing.T, newStore JobStoreFactory) {
 
 		cp := update(t, s, id, "w1", persistence.JobRunPatch{
 			SessionID: str("s-1"), StartedAt: str(trigLater), ResultAt: str(trigLater), Output: str("done"),
-			Usage: &job.Usage{InputTokens: 7, OutputTokens: 3}, StopReason: str("max_tokens"), Error: str("old"), Reason: str("Needs approval: x"),
+			Usage: &job.Usage{InputTokens: 7, OutputTokens: 3, CacheReadTokens: intp(5)}, StopReason: str("max_tokens"), Error: str("old"), Reason: str("Needs approval: x"),
 		}, "2026-10-10T00:03:00.000Z")
 		if cp == nil {
 			t.Fatal("checkpoint refused")
 		}
 		check.True(t, cp.Status == job.RunRunning && cp.LeaseOwner == "w1" && cp.SessionID == "s-1" && cp.Output == "done" &&
-			cp.Usage != nil && *cp.Usage == (job.Usage{InputTokens: 7, OutputTokens: 3}) && cp.Reason == "Needs approval: x" &&
+			// A-195: the cache read count round-trips, the unreported write count stays nil.
+			cp.Usage != nil && cp.Usage.InputTokens == 7 && cp.Usage.OutputTokens == 3 &&
+			cp.Usage.CacheReadTokens != nil && *cp.Usage.CacheReadTokens == 5 && cp.Usage.CacheWriteTokens == nil && cp.Reason == "Needs approval: x" &&
 			cp.UpdatedAt == "2026-10-10T00:03:00.000Z", "checkpoint %+v", *cp)
 
 		finished := update(t, s, id, "w1", persistence.JobRunPatch{

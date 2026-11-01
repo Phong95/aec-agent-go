@@ -49,7 +49,12 @@ func TurnFromStream(stream iter.Seq2[kernel.StreamChunk, error], onChunk func(ke
 		case kernel.ChunkDone:
 			result = TurnResult{Aborted: chunk.Aborted, StopReason: string(chunk.StopReason)}
 			if chunk.Usage != nil {
-				result.Usage = &Usage{InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens}
+				// A-195: with the cache counts.
+				u := chunk.Usage.Clone()
+				result.Usage = &Usage{
+					InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+					CacheReadTokens: u.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens,
+				}
 			}
 		default:
 		}

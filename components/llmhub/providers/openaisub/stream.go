@@ -27,6 +27,11 @@ type streamEvent struct {
 		Usage *struct {
 			InputTokens  *float64 `json:"input_tokens"`
 			OutputTokens *float64 `json:"output_tokens"`
+			// InputTokensDetails (A-188) carries cached_tokens, the part of
+			// input_tokens read from the prompt cache.
+			InputTokensDetails *struct {
+				CachedTokens *float64 `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
 		} `json:"usage"`
 		// Status is completed, incomplete or failed in a final event.
 		Status looseString `json:"status"`
@@ -182,7 +187,14 @@ func (s *streamState) handle(ev streamEvent, emit func(kernel.StreamChunk) bool)
 		s.ended = true
 		if ev.Response != nil {
 			if u := ev.Response.Usage; u != nil {
-				s.usage = &kernel.TokenUsage{InputTokens: tokenCount(u.InputTokens), OutputTokens: tokenCount(u.OutputTokens)}
+				// A-188: input_tokens already counts the cached tokens; a cache count is
+				// set only when the event carries it (the API reports no cache writes).
+				pu := llmhub.ProviderUsage{Input: tokenCount(u.InputTokens), Output: tokenCount(u.OutputTokens)}
+				if d := u.InputTokensDetails; d != nil && d.CachedTokens != nil {
+					pu.CacheRead = llmhub.IntPtr(int(*d.CachedTokens))
+				}
+				usage := llmhub.NewTokenUsage(pu)
+				s.usage = &usage
 			}
 			s.stop = finalStopReason(ev)
 		} else if ev.Type == "response.incomplete" {

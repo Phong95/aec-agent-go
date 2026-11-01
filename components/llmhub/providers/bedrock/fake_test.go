@@ -150,8 +150,11 @@ type fixtureEvent struct {
 	} `json:"messageStop"`
 	Metadata *struct {
 		Usage *struct {
-			InputTokens  *int32 `json:"inputTokens"`
-			OutputTokens *int32 `json:"outputTokens"`
+			InputTokens *int32 `json:"inputTokens"`
+			// A-188: the cache counts of a Converse usage.
+			CacheReadInputTokens  *int32 `json:"cacheReadInputTokens"`
+			CacheWriteInputTokens *int32 `json:"cacheWriteInputTokens"`
+			OutputTokens          *int32 `json:"outputTokens"`
 		} `json:"usage"`
 	} `json:"metadata"`
 }
@@ -202,7 +205,10 @@ func eventsFromFixture(t *testing.T, raw []json.RawMessage) []types.ConverseStre
 		case e.Metadata != nil:
 			ev := types.ConverseStreamMetadataEvent{}
 			if u := e.Metadata.Usage; u != nil {
-				ev.Usage = &types.TokenUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+				ev.Usage = &types.TokenUsage{
+					InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+					CacheReadInputTokens: u.CacheReadInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens,
+				} // A-188
 			}
 			out = append(out, &types.ConverseStreamOutputMemberMetadata{Value: ev})
 		default:

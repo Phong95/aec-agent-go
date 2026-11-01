@@ -105,7 +105,7 @@ func (r Run) Clone() Run {
 		r.Revision = &v
 	}
 	if r.Usage != nil {
-		u := *r.Usage
+		u := r.Usage.Clone() // A-195: deep, the cache counts are pointers
 		r.Usage = &u
 	}
 	return r

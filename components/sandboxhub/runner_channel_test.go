@@ -61,6 +61,11 @@ func TestChannelWriterWaitsForTheWindow(t *testing.T) {
 		_, err := w.Write(make([]byte, RunnerStreamChunkBytes*(RunnerStreamWindow+2)))
 		done <- err
 	}()
+	// Wait until the window is full (a slow -race runner may need more than a fixed
+	// sleep), then give the writer a moment to prove it does not send past it.
+	for deadline := time.Now().Add(5 * time.Second); len(sent) < RunnerStreamWindow && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 	time.Sleep(50 * time.Millisecond)
 	if len(sent) != RunnerStreamWindow {
 		t.Fatalf("%d frames before any ack, want %d", len(sent), RunnerStreamWindow)

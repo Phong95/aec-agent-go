@@ -34,6 +34,9 @@ type toolBlock struct {
 //   - the input tokens come from message_start, the output tokens from
 //     message_delta, and message_stop gives done with those two numbers only (a
 //     stream carries no cache usage, CONTEXT C1);
+//     Update (A-188): a stream does carry cache usage - the cache read and write
+//     counts of message_start (and of message_delta, whose counts are cumulative
+//     and win when present) ride on done, through llmhub.NewTokenUsage;
 //   - the stop reason of message_delta, mapped with mapStopReason, rides on done
 //     (A-88); a stream whose message_delta carried none gives done without one;
 //   - a tool_use block still open at message_stop (a response cut off at
@@ -68,9 +71,9 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 		defer func() { _ = st.Close() }()
 
 		var (
-			cur       *toolBlock
-			inTokens  int
-			outTokens int
+			cur *toolBlock
+			// usage gathers the counts of message_start and message_delta (A-188).
+			usage = llmhub.ProviderUsage{InputExcludesCache: true}
 			// stop is the stop reason message_delta reported, put on done (A-88).
 			stop kernel.StopReason
 		)
@@ -141,9 +144,27 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 					}
 				}
 			case "message_start":
-				inTokens = int(ev.Message.Usage.InputTokens)
+				mu := ev.Message.Usage
+				usage.Input = int(mu.InputTokens)
+				if mu.JSON.CacheReadInputTokens.Valid() {
+					usage.CacheRead = llmhub.IntPtr(int(mu.CacheReadInputTokens))
+				}
+				if mu.JSON.CacheCreationInputTokens.Valid() {
+					usage.CacheWrite = llmhub.IntPtr(int(mu.CacheCreationInputTokens))
+				}
 			case "message_delta":
-				outTokens = int(ev.Usage.OutputTokens)
+				du := ev.Usage
+				usage.Output = int(du.OutputTokens)
+				// A-188: the delta's counts are cumulative; when it sends them they win.
+				if du.JSON.InputTokens.Valid() {
+					usage.Input = int(du.InputTokens)
+				}
+				if du.JSON.CacheReadInputTokens.Valid() {
+					usage.CacheRead = llmhub.IntPtr(int(du.CacheReadInputTokens))
+				}
+				if du.JSON.CacheCreationInputTokens.Valid() {
+					usage.CacheWrite = llmhub.IntPtr(int(du.CacheCreationInputTokens))
+				}
 				if ev.Delta.StopReason != "" {
 					stop = mapStopReason(string(ev.Delta.StopReason))
 				}
@@ -160,9 +181,10 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 				}
 				// Nothing is read after done: the stream contract allows no chunk
 				// after it, and the real API closes the stream here.
+				done := llmhub.NewTokenUsage(usage)
 				yield(kernel.StreamChunk{
 					Type:       kernel.ChunkDone,
-					Usage:      &kernel.TokenUsage{InputTokens: inTokens, OutputTokens: outTokens},
+					Usage:      &done,
 					StopReason: stop,
 				}, nil)
 				return

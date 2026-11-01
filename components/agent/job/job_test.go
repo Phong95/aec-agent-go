@@ -17,6 +17,7 @@ func rev(v float64) *float64 { return &v }
 // Job.Clone, Event.Clone and Run.Clone must share nothing with the original.
 func TestCloneIsDeep(t *testing.T) {
 	budget, hourly, runMs, pause := 5, 3, 60_000, 2
+	cacheRead, cacheWrite := 7, 8 // A-195
 	next := "2027-01-01T08:00:00.000Z"
 	clonecheck.AssertDeep(t, job.Job{
 		ID: "t", AgentID: "a", Name: "n", Description: "d", Enabled: true, Version: 2,
@@ -38,7 +39,7 @@ func TestCloneIsDeep(t *testing.T) {
 	clonecheck.AssertDeep(t, job.Run{
 		ID: "r", JobID: "t", AgentID: "a", JobVersion: 1, Cause: job.CauseEvent, BucketKey: "b", Status: job.RunRunning, EventIDs: []string{"e"},
 		Revision: rev(2), CorrelationID: "c", Depth: 1, NotBefore: "n", Deadline: "d", ExpiresAt: "x", Attempts: 1, MaxAttempts: 2,
-		LeaseOwner: "o", LeaseUntil: "l", SessionID: "s", ResultAt: "ra", Output: "out", Silent: true, Action: job.ActionTool, Usage: &job.Usage{InputTokens: 1, OutputTokens: 2},
+		LeaseOwner: "o", LeaseUntil: "l", SessionID: "s", ResultAt: "ra", Output: "out", Silent: true, Action: job.ActionTool, Usage: &job.Usage{InputTokens: 1, OutputTokens: 2, CacheReadTokens: &cacheRead, CacheWriteTokens: &cacheWrite},
 		StopReason: "sr", Error: "er", Reason: "re", DeliveredAt: "da", ReplayOf: "rp", CreatedAt: "c", StartedAt: "s", FinishedAt: "f", UpdatedAt: "u",
 	}, job.Run.Clone)
 }

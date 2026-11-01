@@ -99,6 +99,12 @@ type ModelOptions struct {
 	// Claude models as additionalModelRequestFields.output_config.effort (A-176) and
 	// ignores it for other models. The provider rejects a level the model does not accept.
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	// PromptCacheKey (A-188) groups the requests that share a prompt prefix, so a
+	// provider with automatic prompt caching routes them to the same cache. The agent
+	// loop sets it to the session id when the caller did not. The ChatGPT
+	// subscription (Responses API) sends it as prompt_cache_key; the other providers
+	// ignore it. Empty = none.
+	PromptCacheKey string `json:"promptCacheKey,omitempty"`
 }
 
 // ModelAcceptsImages (A-165) says whether a listed model takes images: accepts is true when

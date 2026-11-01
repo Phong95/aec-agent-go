@@ -45,6 +45,26 @@ func (p *Provider) Chat(ctx context.Context, msgs []kernel.Message, opts llmhub.
 //
 // The usage is the input and output token counts, or 0 when the response carries
 // none; there are no cache counts. The stop reason is mapped by mapStopReason.
+// Update (A-188): the cache read and write counts are mapped when the response
+// carries them (usageOf), and InputTokens counts them too.
+// usageOf (A-188) maps a Converse token usage: Bedrock's inputTokens leaves the
+// cache reads and writes out, so llmhub.NewTokenUsage adds them; a cache count is
+// set only when the response carries it.
+func usageOf(u *types.TokenUsage) kernel.TokenUsage {
+	pu := llmhub.ProviderUsage{
+		Input:              int(aws.ToInt32(u.InputTokens)),
+		Output:             int(aws.ToInt32(u.OutputTokens)),
+		InputExcludesCache: true,
+	}
+	if u.CacheReadInputTokens != nil {
+		pu.CacheRead = llmhub.IntPtr(int(*u.CacheReadInputTokens))
+	}
+	if u.CacheWriteInputTokens != nil {
+		pu.CacheWrite = llmhub.IntPtr(int(*u.CacheWriteInputTokens))
+	}
+	return llmhub.NewTokenUsage(pu)
+}
+
 func mapResponse(out *bedrockruntime.ConverseOutput) kernel.ModelResponse {
 	var text, reasoning strings.Builder
 	var calls []kernel.ToolCall
@@ -53,10 +73,7 @@ func mapResponse(out *bedrockruntime.ConverseOutput) kernel.ModelResponse {
 	if out != nil {
 		stop = string(out.StopReason)
 		if out.Usage != nil {
-			usage = kernel.TokenUsage{
-				InputTokens:  int(aws.ToInt32(out.Usage.InputTokens)),
-				OutputTokens: int(aws.ToInt32(out.Usage.OutputTokens)),
-			}
+			usage = usageOf(out.Usage)
 		}
 		if msg, ok := out.Output.(*types.ConverseOutputMemberMessage); ok {
 			for _, block := range msg.Value.Content {

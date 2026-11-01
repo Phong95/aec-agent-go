@@ -275,6 +275,11 @@ type ModelResponse struct {
 // CacheReadTokens and CacheWriteTokens are pointers because the SDK writes
 // explicit zeros (run totals always carry them) and an explicit zero must
 // survive a round trip while an absent field must stay absent.
+//
+// Update (A-188): every built-in provider fills them on chat and stream when the
+// API reports them, and InputTokens is all the input of the call, cache reads and
+// writes included, for every provider (llmhub.NewTokenUsage). A nil cache count
+// means the provider did not report one, not that nothing was cached.
 type TokenUsage struct {
 	InputTokens      int  `json:"inputTokens"`
 	OutputTokens     int  `json:"outputTokens"`

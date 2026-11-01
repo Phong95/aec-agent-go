@@ -31,6 +31,7 @@ type toolBuf struct {
 //     carries an ArgumentsError instead of failing the stream), and frees the
 //     buffer;
 //   - the usage of the metadata event is sent with done (a missing count is 0);
+//     Update (A-188): with its cache read and write counts, through usageOf;
 //   - messageStart, messageStop (so no stop reason), reasoning deltas and every
 //     other event are ignored; since A-88 messageStop is read for its stop reason
 //     only, which rides on done mapped with mapStopReason (done has none when
@@ -172,10 +173,8 @@ func (p *Provider) Stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 				case *types.ConverseStreamOutputMemberMetadata:
 					ended = true
 					if e.Value.Usage != nil {
-						usage = &kernel.TokenUsage{
-							InputTokens:  int(aws.ToInt32(e.Value.Usage.InputTokens)),
-							OutputTokens: int(aws.ToInt32(e.Value.Usage.OutputTokens)),
-						}
+						u := usageOf(e.Value.Usage)
+						usage = &u
 					}
 				default:
 					// messageStart and unknown members are ignored (messageStop only

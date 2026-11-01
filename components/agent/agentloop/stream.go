@@ -196,6 +196,7 @@ func (l *Loop) stream(ctx context.Context, r *runState, overrides llmhub.ModelOp
 		if streamed.usage != nil {
 			end.Set("inputTokens", resp.Usage.InputTokens)
 			end.Set("outputTokens", resp.Usage.OutputTokens)
+			setCacheAttrs(&end, resp.Usage) // A-195
 		}
 		r.endModelSpan(end)
 

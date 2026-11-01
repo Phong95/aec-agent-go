@@ -70,6 +70,10 @@ type requestBody struct {
 	Tools  []toolParam `json:"tools,omitempty"`
 	// Reasoning (A-164) carries ModelOptions.ReasoningEffort; absent when it is not set.
 	Reasoning *reasoningParam `json:"reasoning,omitempty"`
+	// PromptCacheKey (A-188) carries ModelOptions.PromptCacheKey (the session id from
+	// the agent loop), so the calls of one session hit the same prompt cache; absent
+	// when it is not set.
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 }
 
 // reasoningParam (A-164) is the request's reasoning: {effort}.
@@ -203,6 +207,7 @@ func (p *Provider) buildBody(msgs []kernel.Message, opts llmhub.ModelOptions) ([
 	if opts.ReasoningEffort != "" {
 		body.Reasoning = &reasoningParam{Effort: opts.ReasoningEffort}
 	}
+	body.PromptCacheKey = opts.PromptCacheKey // A-188
 	return jsonx.Marshal(body)
 }
 

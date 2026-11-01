@@ -38,6 +38,10 @@ type usageMetadata struct {
 	// ThoughtsTokenCount is the thinking tokens: billed as output and counted against
 	// maxOutputTokens.
 	ThoughtsTokenCount int `json:"thoughtsTokenCount"`
+	// CachedContentTokenCount (A-188) is the part of the prompt read from the cache
+	// (implicit or explicit caching), already counted in PromptTokenCount; nil when
+	// the response does not carry it.
+	CachedContentTokenCount *int `json:"cachedContentTokenCount"`
 }
 
 // apiError is the {code, message, status, details} of an error body or event.
@@ -88,12 +92,19 @@ func (r *responseBody) finishReason() string {
 
 // usage is the token usage, nil when the response reported none. Output counts the
 // thinking tokens too.
+// Update (A-188): the cached prompt tokens are the cache read count (Gemini reports
+// no cache write count); the prompt count already includes them.
 func (r *responseBody) usage() *kernel.TokenUsage {
 	if r.UsageMetadata == nil {
 		return nil
 	}
 	u := r.UsageMetadata
-	return &kernel.TokenUsage{InputTokens: u.PromptTokenCount, OutputTokens: u.CandidatesTokenCount + u.ThoughtsTokenCount}
+	usage := llmhub.NewTokenUsage(llmhub.ProviderUsage{
+		Input:     u.PromptTokenCount,
+		Output:    u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		CacheRead: u.CachedContentTokenCount,
+	})
+	return &usage
 }
 
 // toolCall maps a function call part. The Gemini API does not always give an id;

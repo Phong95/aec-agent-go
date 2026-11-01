@@ -42,6 +42,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+
+	"github.com/Phong95/aec-agent-go/kernel"
 )
 
 // ---------------------------------------------------------------------------
@@ -507,6 +509,30 @@ const (
 type Usage struct {
 	InputTokens  int `json:"inputTokens"`
 	OutputTokens int `json:"outputTokens"`
+	// CacheReadTokens and CacheWriteTokens (A-195) are the run's prompt-cache
+	// counts, as kernel.TokenUsage: nil when the provider reported none.
+	CacheReadTokens  *int `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens *int `json:"cacheWriteTokens,omitempty"`
+}
+
+// UsageOf (A-195) is a run's usage from the turn's kernel.TokenUsage, with the
+// cache counts (copied).
+func UsageOf(u kernel.TokenUsage) *Usage {
+	c := u.Clone()
+	return &Usage{InputTokens: c.InputTokens, OutputTokens: c.OutputTokens, CacheReadTokens: c.CacheReadTokens, CacheWriteTokens: c.CacheWriteTokens}
+}
+
+// Clone (A-195) returns a deep copy: the cache count pointers are copied.
+func (u Usage) Clone() Usage {
+	if u.CacheReadTokens != nil {
+		v := *u.CacheReadTokens
+		u.CacheReadTokens = &v
+	}
+	if u.CacheWriteTokens != nil {
+		v := *u.CacheWriteTokens
+		u.CacheWriteTokens = &v
+	}
+	return u
 }
 
 // Run is one logical run - the unit of work, retries and history. Several coalesced

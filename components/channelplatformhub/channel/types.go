@@ -474,6 +474,19 @@ type Platform interface {
 type Usage struct {
 	InputTokens  int `json:"inputTokens"`
 	OutputTokens int `json:"outputTokens"`
+	// CacheReadTokens and CacheWriteTokens (A-195) are the turn's prompt-cache
+	// counts, as kernel.TokenUsage: nil when the provider reported none.
+	CacheReadTokens  *int `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens *int `json:"cacheWriteTokens,omitempty"`
+}
+
+// TokenUsage (A-195) is the turn's usage as a kernel.TokenUsage, for a host that
+// records it.
+func (u Usage) TokenUsage() kernel.TokenUsage {
+	return kernel.TokenUsage{
+		InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+		CacheReadTokens: u.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens,
+	}.Clone()
 }
 
 // TurnContext is what the TurnRunner receives for one inbound message. The turn's
