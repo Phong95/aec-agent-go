@@ -38,6 +38,10 @@ type options struct {
 	name           string
 	reasoningParam ReasoningParam
 	headers        map[string]string
+	// A-207: prompt caching (WithPromptCacheKey, WithCacheControl).
+	promptCacheKey bool
+	sessionID      bool
+	cacheControl   CacheControl
 	httpClient     *http.Client
 	maxRetries     *int
 	timeout        *time.Duration
@@ -52,6 +56,14 @@ const (
 	// ReasoningObjectParam is OpenRouter's object, "reasoning":{"effort":...}.
 	ReasoningObjectParam ReasoningParam = "reasoning"
 )
+
+// CacheControl (A-207) selects how an endpoint takes prompt-cache markers.
+type CacheControl string
+
+// OpenRouterCacheControl (A-207) marks the system and last message with cache_control
+// parts for the OpenRouter models whose upstream needs them
+// (llmhub.OpenRouterCacheControl).
+const OpenRouterCacheControl CacheControl = "openrouter"
 
 // credentialHeaders are the headers that carry the credential of a request and must
 // not follow a redirect to another host. net/http drops Authorization on its own;
@@ -74,6 +86,26 @@ func WithName(name string) Option {
 // ReasoningEffortParam; the "openrouter" registry entry passes ReasoningObjectParam.
 func WithReasoningParam(p ReasoningParam) Option {
 	return func(o *options) { o.reasoningParam = p }
+}
+
+// WithPromptCacheKey (A-207) sends ModelOptions.PromptCacheKey as prompt_cache_key. The
+// "openai" and "novita" registry entries pass it; an endpoint that rejects unknown fields
+// must leave it off.
+func WithPromptCacheKey(on bool) Option {
+	return func(o *options) { o.promptCacheKey = on }
+}
+
+// WithSessionID (A-207) sends ModelOptions.PromptCacheKey as session_id: OpenRouter then
+// keeps the session on one upstream provider (and its prompt cache) from the first request,
+// instead of only after it has seen a cache hit. The "openrouter" registry entry passes it.
+func WithSessionID(on bool) Option {
+	return func(o *options) { o.sessionID = on }
+}
+
+// WithCacheControl (A-207) sets how the endpoint takes prompt-cache markers; the
+// "openrouter" registry entry passes OpenRouterCacheControl.
+func WithCacheControl(c CacheControl) Option {
+	return func(o *options) { o.cacheControl = c }
 }
 
 // WithHeaders (A-177) adds headers sent with every request. Like the credential,
@@ -117,6 +149,11 @@ type Provider struct {
 	baseURL        string
 	defaultModel   string
 	reasoningParam ReasoningParam
+	// promptCacheKey, sessionID and cacheControl (A-207): see WithPromptCacheKey,
+	// WithSessionID, WithCacheControl.
+	promptCacheKey bool
+	sessionID      bool
+	cacheControl   CacheControl
 	// timeout is how long a request waits for the response headers (zero: no
 	// timeout), kept so a test can see the default.
 	timeout time.Duration
@@ -189,6 +226,9 @@ func New(cfg llmhub.ProviderConfig, opts ...Option) (*Provider, error) {
 		baseURL:        base,
 		defaultModel:   model,
 		reasoningParam: reasoningParam,
+		promptCacheKey: o.promptCacheKey,
+		sessionID:      o.sessionID,
+		cacheControl:   o.cacheControl,
 		timeout:        timeout,
 		chat:           sdk.NewChatCompletionService(ro...),
 		models:         sdk.NewModelService(ro...),

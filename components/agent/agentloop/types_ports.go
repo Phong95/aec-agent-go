@@ -164,6 +164,15 @@ type Memory interface {
 	RecallForTurn(ctx context.Context, userMessage, sessionID string) (memory.RecalledMemories, error)
 }
 
+// MemoryTools is the optional part of a Memory that offers tools to the model
+// (memory_search: recall on demand). Like the skill tools, they are added to the
+// model's tools every call and run directly, without the policy or the approval gate:
+// they only read the agent's own memory.
+type MemoryTools interface {
+	Tool(name string) (toolhub.Handler, bool)
+	ToolDefinitions(ctx context.Context) ([]toolhub.Definition, error)
+}
+
 // Sandboxes is the agent's sandbox access (the two methods of the sandbox manager
 // the loop uses). It is optional in Deps: an agent without sandbox wiring passes
 // nil, and tools then see no GetSandbox.

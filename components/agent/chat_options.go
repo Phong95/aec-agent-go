@@ -96,6 +96,12 @@ func WithStopSequences(seqs ...string) ModelOption {
 	return func(o *llmhub.ModelOptions) { o.StopSequences = slices.Clone(seqs) }
 }
 
+// WithPromptCaching (A-207) turns provider prompt caching on or off for the call, over the
+// agent's inferenceConfig.promptCaching.
+func WithPromptCaching(on bool) ModelOption {
+	return func(o *llmhub.ModelOptions) { o.PromptCaching = &on }
+}
+
 // WithModelOptions is the advanced escape hatch: it replaces the model options set
 // so far by the earlier options of the call with a copy of opts (the options after
 // it apply on top). Every field is passed to the loop as it is, so it can do what

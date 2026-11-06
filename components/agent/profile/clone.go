@@ -39,6 +39,10 @@ func (p AgentProfile) Clone() AgentProfile {
 			c.TopP = &v
 		}
 		c.StopSequences = slices.Clone(c.StopSequences)
+		if c.PromptCaching != nil { // A-207
+			v := *c.PromptCaching
+			c.PromptCaching = &v
+		}
 		p.InferenceConfig = &c
 	}
 	if p.LoopConfig != nil {

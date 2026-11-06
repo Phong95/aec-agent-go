@@ -17,7 +17,7 @@ func TestRequestCarriesAttachedImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _, err := p.buildRequest(msgs, llmhub.ModelOptions{})
+	b, _, err := p.buildRequest(msgs, llmhub.ModelOptions{PromptCaching: new(bool)} /* A-207: the mapping without cache markers */)
 	if err != nil {
 		t.Fatal(err)
 	}

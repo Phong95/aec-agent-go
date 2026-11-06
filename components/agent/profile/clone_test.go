@@ -38,7 +38,7 @@ func fullProfile() profile.AgentProfile {
 			SummarizationModel: "claude-haiku",
 		},
 		InferenceConfig: &profile.InferenceConfig{
-			MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, StopSequences: []string{"END", "STOP"},
+			MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, StopSequences: []string{"END", "STOP"}, PromptCaching: new(bool),
 		},
 		LoopConfig: &profile.LoopConfig{MaxIterations: &maxIter, MaxToolRetries: &retries, RetryBackoffMs: &backoff, MaxConcurrentTurns: &concurrent, MaxToolResultChars: &keep},
 		Memory: memory.Config{

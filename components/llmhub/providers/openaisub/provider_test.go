@@ -508,8 +508,13 @@ func TestSubscriptionHeaderCasing(t *testing.T) {
 			t.Errorf("responses header %s = %q, want %q", name, responses[name], want)
 		}
 	}
-	if _, ok := responses["originator"]; ok {
-		t.Error("the responses call sent originator")
+	if responses["originator"] != "aec-agent" {
+		t.Errorf("responses header originator = %q, want aec-agent", responses["originator"])
+	}
+	for _, name := range []string{"session_id", "conversation_id"} {
+		if _, ok := responses[name]; ok {
+			t.Errorf("the responses call sent %s without a prompt cache key", name)
+		}
 	}
 	for name, want := range map[string]string{
 		"authorization":      "Bearer tok",
@@ -732,5 +737,39 @@ func TestSubscriptionErrorEventDetail(t *testing.T) {
 				t.Errorf("message %q, want %q", me.Message, c.want)
 			}
 		})
+	}
+}
+
+// TestSubscriptionSessionHeaders requires a call with a prompt cache key to send it as
+// the session_id and conversation_id headers too, as the Codex client does.
+func TestSubscriptionSessionHeaders(t *testing.T) {
+	up := llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply {
+		return sseBytes([]string{minimalStream})
+	})
+	p := newTestProvider(t, up, caseConfig{Token: "tok", Account: "acct"})
+	drain(t, p, helloMsgs, llmhub.ModelOptions{PromptCacheKey: "s-1"})
+	h := up.Requests()[0].Header
+	for _, name := range []string{"session_id", "conversation_id"} {
+		if got := h.Get(name); got != "s-1" {
+			t.Errorf("header %s = %q, want s-1", name, got)
+		}
+	}
+}
+
+// TestSubscriptionCachingOff (A-207): with ModelOptions.PromptCaching false the call sends
+// neither prompt_cache_key nor the session headers.
+func TestSubscriptionCachingOff(t *testing.T) {
+	up := llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply {
+		return sseBytes([]string{minimalStream})
+	})
+	p := newTestProvider(t, up, caseConfig{Token: "tok", Account: "acct"})
+	off := false
+	drain(t, p, helloMsgs, llmhub.ModelOptions{PromptCacheKey: "s-1", PromptCaching: &off})
+	r := up.Requests()[0]
+	if r.Header.Get("session_id") != "" || r.Header.Get("conversation_id") != "" {
+		t.Errorf("session headers sent while caching is off: %v", r.Header)
+	}
+	if strings.Contains(string(r.Body), "prompt_cache_key") {
+		t.Errorf("prompt_cache_key sent while caching is off: %s", r.Body)
 	}
 }

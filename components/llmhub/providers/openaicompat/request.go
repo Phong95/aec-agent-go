@@ -38,9 +38,15 @@ type requestBody struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// Reasoning (A-177) carries the effort instead of ReasoningEffort when the
 	// provider uses ReasoningObjectParam (OpenRouter).
-	Reasoning     *reasoningParam `json:"reasoning,omitempty"`
-	Stream        *bool           `json:"stream,omitempty"`
-	StreamOptions *streamOptions  `json:"stream_options,omitempty"`
+	Reasoning *reasoningParam `json:"reasoning,omitempty"`
+	// PromptCacheKey (A-207) is ModelOptions.PromptCacheKey for an endpoint that takes it
+	// (WithPromptCacheKey), absent otherwise or while caching is off.
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
+	// SessionID (A-207) is ModelOptions.PromptCacheKey as OpenRouter's sticky-routing key
+	// (WithSessionID), absent otherwise or while caching is off.
+	SessionID     string         `json:"session_id,omitempty"`
+	Stream        *bool          `json:"stream,omitempty"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
 }
 
 // reasoningParam is {effort}, OpenRouter's reasoning object.
@@ -77,12 +83,39 @@ type userPartsParam struct {
 type textContentPart struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+	// CacheControl (A-207) is OpenRouter's prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+// cacheControl (A-207) is {type:"ephemeral"}.
+type cacheControl struct {
+	Type string `json:"type"`
+}
+
+// ephemeral (A-207) is the marker every cached part carries.
+var ephemeral = &cacheControl{Type: "ephemeral"}
+
+// partsParam (A-207) is a system or user message whose content is a list of parts (a
+// message marked for the prompt cache).
+type partsParam struct {
+	Role    string `json:"role"`
+	Content []any  `json:"content"`
+}
+
+// toolPartsParam (A-207) is a tool message whose content is a list of parts (marked for
+// the prompt cache).
+type toolPartsParam struct {
+	Role       string `json:"role"`
+	ToolCallID string `json:"tool_call_id"`
+	Content    []any  `json:"content"`
 }
 
 // imageURLPart is {type:"image_url", image_url:{url}}.
 type imageURLPart struct {
 	Type     string   `json:"type"`
 	ImageURL imageURL `json:"image_url"`
+	// CacheControl (A-207) is OpenRouter's prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // imageURL is {url}: a data: URL.
@@ -252,6 +285,69 @@ func mapTools(tools []toolhub.Definition) []toolParam {
 	return out
 }
 
+// withCacheControl (A-207): OpenRouter caches Claude and Gemini models only when the
+// request carries cache_control, so the last system message and the last message get their
+// text as a part with the marker (the last system message covers the tools and the system
+// prompt, the last message the growing conversation). Other providers and models are left
+// as they are.
+func (p *Provider) withCacheControl(mapped []any, model string, opts llmhub.ModelOptions) []any {
+	if p.cacheControl != OpenRouterCacheControl || !llmhub.PromptCachingOn(opts) || !llmhub.OpenRouterCacheControl(model) {
+		return mapped
+	}
+	lastSystem := -1
+	for i := len(mapped) - 1; i >= 0; i-- {
+		if _, ok := mapped[i].(systemParam); ok {
+			lastSystem = i
+			break
+		}
+	}
+	if lastSystem >= 0 {
+		mapped[lastSystem] = markLastPart(mapped[lastSystem])
+	}
+	if n := len(mapped); n > 0 && n-1 != lastSystem {
+		mapped[n-1] = markLastPart(mapped[n-1])
+	}
+	return mapped
+}
+
+// markLastPart (A-207) is a system, user or tool message with cache_control on its last
+// content part: string content becomes one text part with the marker. An assistant
+// message or an empty text is left as it is.
+func markLastPart(m any) any {
+	switch v := m.(type) {
+	case systemParam:
+		if v.Content == "" {
+			return v
+		}
+		return partsParam{Role: v.Role, Content: []any{textContentPart{Type: "text", Text: v.Content, CacheControl: ephemeral}}}
+	case userParam:
+		if v.Content == "" {
+			return v
+		}
+		return partsParam{Role: v.Role, Content: []any{textContentPart{Type: "text", Text: v.Content, CacheControl: ephemeral}}}
+	case toolMessageParam:
+		if v.Content == "" {
+			return v
+		}
+		return toolPartsParam{Role: v.Role, ToolCallID: v.ToolCallID, Content: []any{textContentPart{Type: "text", Text: v.Content, CacheControl: ephemeral}}}
+	case userPartsParam:
+		if len(v.Content) == 0 {
+			return v
+		}
+		parts := append([]any(nil), v.Content...)
+		switch part := parts[len(parts)-1].(type) {
+		case textContentPart:
+			part.CacheControl = ephemeral
+			parts[len(parts)-1] = part
+		case imageURLPart:
+			part.CacheControl = ephemeral
+			parts[len(parts)-1] = part
+		}
+		return userPartsParam{Role: v.Role, Content: parts}
+	}
+	return m
+}
+
 // buildRequest returns the exact request body of one call. A streaming body ends
 // with "stream":true and "stream_options":{"include_usage":true}.
 func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions, stream bool) ([]byte, error) {
@@ -262,7 +358,7 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions,
 	body := requestBody{
 		Model:       model,
 		MaxTokens:   opts.MaxTokens,
-		Messages:    mapMessages(msgs, opts),
+		Messages:    p.withCacheControl(mapMessages(msgs, opts), model, opts), // A-207
 		Temperature: opts.Temperature,
 		TopP:        opts.TopP,
 		Stop:        opts.StopSequences,
@@ -274,6 +370,15 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions,
 			body.Reasoning = &reasoningParam{Effort: opts.ReasoningEffort}
 		} else {
 			body.ReasoningEffort = opts.ReasoningEffort
+		}
+	}
+	// A-207: prompt_cache_key for the endpoints that take it, while caching is on.
+	if opts.PromptCacheKey != "" && llmhub.PromptCachingOn(opts) {
+		if p.promptCacheKey {
+			body.PromptCacheKey = opts.PromptCacheKey
+		}
+		if p.sessionID {
+			body.SessionID = opts.PromptCacheKey
 		}
 	}
 	if stream {

@@ -8,6 +8,20 @@ import (
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
+// memoryTools is the memory system's tools (memory_search), nil when the agent has no
+// memory system or it offers none.
+func (l *Loop) memoryTools() MemoryTools {
+	if l.deps.Memory == nil {
+		return nil
+	}
+	mt, _ := l.deps.Memory.(MemoryTools)
+	return mt
+}
+
+// The per-turn recall is off (recall is on demand through memory_search, see
+// beginRun); recallMemories is kept so it can be switched back on.
+var _ = (*Loop).recallMemories
+
 // recallMemories asks the memory system for the memories that fit this turn, once
 // per run. It returns nil when the agent has no memory system
 // (no span is started then) and when the recall fails: a recall failure must never

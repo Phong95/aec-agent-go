@@ -142,7 +142,7 @@ func (o attemptOutcome) failing() bool {
 // stopped run stays silent, and a result that was ready when the stop arrived is
 // kept and reported. Retry events are emitted as they
 // happen.
-func (e *executor) executeWithRetries(ctx context.Context, run *toolRun, call kernel.ToolCall, tc toolhub.Context, isSkill bool, kind kindEvents, pre *preauth) (res kernel.ToolResult, done func()) {
+func (e *executor) executeWithRetries(ctx context.Context, run *toolRun, call kernel.ToolCall, tc toolhub.Context, direct bool, kind kindEvents, pre *preauth) (res kernel.ToolResult, done func()) {
 	r := run.r
 	cfg := profile.ResolveLoopConfig(e.deps.Profile().LoopConfig)
 	var lastErr error
@@ -154,7 +154,7 @@ func (e *executor) executeWithRetries(ctx context.Context, run *toolRun, call ke
 		if ctx.Err() != nil {
 			break
 		}
-		out, err := e.runAttempt(ctx, run, call, tc, isSkill, attempt, pre)
+		out, err := e.runAttempt(ctx, run, call, tc, direct, attempt, pre)
 		// A-101: a secret value a tool echoed never reaches the model, the conversation, a
 		// trace, an event or the UI.
 		out.content = e.redact(out.content)
@@ -307,13 +307,16 @@ func backoff(baseMs, attempt int) time.Duration {
 // runAttempt makes one attempt. A returned error is a failure, and a panic of the
 // tool is turned into a *toolPanic here, per attempt, so the turn never crashes;
 // the caller treats it as final (never retried).
-func (e *executor) runAttempt(ctx context.Context, run *toolRun, call kernel.ToolCall, tc toolhub.Context, isSkill bool, attempt int, pre *preauth) (out attemptOutcome, err error) {
+func (e *executor) runAttempt(ctx context.Context, run *toolRun, call kernel.ToolCall, tc toolhub.Context, direct bool, attempt int, pre *preauth) (out attemptOutcome, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			out, err = attemptOutcome{}, &toolPanic{value: rec, stack: panicStack()}
 		}
 	}()
-	if isSkill {
+	if direct {
+		if h, ok := e.memoryTool(call.Name); ok {
+			return e.runMemoryTool(ctx, h, call, tc)
+		}
 		return e.runSkill(ctx, call, tc)
 	}
 	return e.runTool(ctx, run, call, tc, attempt, pre)
@@ -329,6 +332,16 @@ func (e *executor) runSkill(ctx context.Context, call kernel.ToolCall, tc toolhu
 	if h == nil {
 		return attemptOutcome{content: `Skill tool "` + call.Name + `" not available for this agent`, isError: boolPtr(true)}, nil
 	}
+	o, err := h.Execute(ctx, call.Arguments, tc)
+	if err != nil {
+		return attemptOutcome{}, err
+	}
+	return outcomeOf(o), nil
+}
+
+// runMemoryTool runs a memory tool (memory_search) directly, like runSkill: it only
+// reads the agent's own memory, so it skips the policy and the approval gate.
+func (e *executor) runMemoryTool(ctx context.Context, h toolhub.Handler, call kernel.ToolCall, tc toolhub.Context) (attemptOutcome, error) {
 	o, err := h.Execute(ctx, call.Arguments, tc)
 	if err != nil {
 		return attemptOutcome{}, err

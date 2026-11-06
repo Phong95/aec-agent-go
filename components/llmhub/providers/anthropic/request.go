@@ -31,8 +31,9 @@ const (
 type requestBody struct {
 	Model     string `json:"model"`
 	MaxTokens int    `json:"max_tokens"`
-	// System is omitted when empty.
-	System string `json:"system,omitempty"`
+	// System is omitted when empty. A-207: a string, or with prompt caching on one text
+	// block carrying cache_control (withCacheMarkers).
+	System any `json:"system,omitempty"`
 	// Messages is always present, an empty list encodes [].
 	Messages    []messageParam `json:"messages"`
 	Temperature *float64       `json:"temperature,omitempty"`
@@ -72,12 +73,24 @@ type messageParam struct {
 type textBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+	// CacheControl (A-207) is the prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
+
+// cacheControl (A-207) is {type:"ephemeral"}: a prompt-cache breakpoint (5-minute TTL).
+type cacheControl struct {
+	Type string `json:"type"`
+}
+
+// ephemeral (A-207) is the marker every cached block carries.
+var ephemeral = &cacheControl{Type: "ephemeral"}
 
 // imageBlock (A-165) is {type:"image", source:{type:"base64", media_type, data}}.
 type imageBlock struct {
 	Type   string      `json:"type"`
 	Source imageSource `json:"source"`
+	// CacheControl (A-207) is the prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // imageSource is the base64 source of an imageBlock.
@@ -110,6 +123,8 @@ type toolUseBlock struct {
 	ID    string           `json:"id"`
 	Name  string           `json:"name"`
 	Input kernel.Arguments `json:"input"`
+	// CacheControl (A-207) is the prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // toolResultBlock is {type:"tool_result", tool_use_id, content, is_error}. IsError
@@ -121,6 +136,8 @@ type toolResultBlock struct {
 	// then its images (toolResultContent).
 	Content any   `json:"content"`
 	IsError *bool `json:"is_error,omitempty"`
+	// CacheControl (A-207) is the prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // toolResultContent (A-180) is a tool result's content: the text alone, or with images
@@ -143,6 +160,8 @@ type toolParam struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
 	InputSchema inputSchema `json:"input_schema"`
+	// CacheControl (A-207) is the prompt-cache marker; absent when nil.
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // inputSchema is {type:"object", properties, required}. Only these two members of
@@ -240,6 +259,65 @@ func mapTools(tools []toolhub.Definition) []toolParam {
 	return out
 }
 
+// withCacheMarkers (A-207) adds the prompt-cache markers (llmhub promptcache.go) unless
+// caching is off: cache_control on the system prompt (sent as one text block), or on the
+// last tool when there is no system prompt, and on the last block of the last message. Two
+// of the API's four breakpoints; a block that cannot carry a marker (an empty text) is left
+// unmarked. mapped and tools are changed in place (they are this call's own).
+func withCacheMarkers(system string, mapped []messageParam, tools []toolParam, opts llmhub.ModelOptions) any {
+	if !llmhub.PromptCachingOn(opts) {
+		if system == "" {
+			return nil
+		}
+		return system
+	}
+	var sys any
+	if system != "" {
+		sys = []textBlock{{Type: "text", Text: system, CacheControl: ephemeral}}
+	} else if len(tools) > 0 {
+		tools[len(tools)-1].CacheControl = ephemeral
+	}
+	if n := len(mapped); n > 0 {
+		mapped[n-1].Content = markLastBlock(mapped[n-1].Content)
+	}
+	return sys
+}
+
+// markLastBlock (A-207) is a message content with cache_control on its last block: a
+// string becomes one marked text block (an empty one stays as it is).
+func markLastBlock(content any) any {
+	switch c := content.(type) {
+	case string:
+		if c == "" {
+			return c
+		}
+		return []any{textBlock{Type: "text", Text: c, CacheControl: ephemeral}}
+	case []any:
+		if len(c) == 0 {
+			return c
+		}
+		out := append([]any(nil), c...)
+		switch b := out[len(out)-1].(type) {
+		case textBlock:
+			if b.Text != "" {
+				b.CacheControl = ephemeral
+			}
+			out[len(out)-1] = b
+		case imageBlock:
+			b.CacheControl = ephemeral
+			out[len(out)-1] = b
+		case toolUseBlock:
+			b.CacheControl = ephemeral
+			out[len(out)-1] = b
+		case toolResultBlock:
+			b.CacheControl = ephemeral
+			out[len(out)-1] = b
+		}
+		return out
+	}
+	return content
+}
+
 // buildRequest returns the exact request body of one call and the typed SDK
 // parameters that go with it. The typed Model and MaxTokens are set on the
 // parameters so that the SDK's pre-request checks run on the real values (the
@@ -255,15 +333,16 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions)
 		maxTokens = *opts.MaxTokens
 	}
 	system, mapped := mapMessages(msgs, opts)
+	tools := mapTools(opts.Tools)
 	body, err := jsonx.Marshal(requestBody{
 		Model:         model,
 		MaxTokens:     maxTokens,
-		System:        system,
+		System:        withCacheMarkers(system, mapped, tools, opts), // A-207
 		Messages:      mapped,
 		Temperature:   opts.Temperature,
 		TopP:          opts.TopP,
 		StopSequences: opts.StopSequences,
-		Tools:         mapTools(opts.Tools),
+		Tools:         tools,
 		OutputConfig:  mapOutputConfig(opts),
 		Thinking:      llmhub.ClaudeThinking(model),
 	})

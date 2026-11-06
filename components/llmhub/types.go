@@ -104,7 +104,14 @@ type ModelOptions struct {
 	// loop sets it to the session id when the caller did not. The ChatGPT
 	// subscription (Responses API) sends it as prompt_cache_key; the other providers
 	// ignore it. Empty = none.
+	// A-207: and the ChatGPT subscription sends it as the session_id / conversation_id
+	// headers; OpenAI-compatible registry entries that accept it send prompt_cache_key too.
 	PromptCacheKey string `json:"promptCacheKey,omitempty"`
+	// PromptCaching (A-207) set to false turns prompt caching off for the call: no cache
+	// markers (Anthropic cache_control, Bedrock cachePoint, OpenRouter cache_control parts)
+	// and no prompt cache key. Nil or true = on (PromptCachingOn). Per agent through
+	// profile.InferenceConfig.PromptCaching.
+	PromptCaching *bool `json:"promptCaching,omitempty"`
 }
 
 // ModelAcceptsImages (A-165) says whether a listed model takes images: accepts is true when

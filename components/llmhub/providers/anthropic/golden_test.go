@@ -179,6 +179,9 @@ func TestAnthropicRequestsMatchGolden(t *testing.T) {
 	used := map[string]bool{}
 	defer checkDivergencesUsed(t, requestDivergences, used)
 	for _, e := range f.Entries {
+		// A-207: the recordings predate the prompt-cache markers, so they are replayed with
+		// caching off (prompt_cache_test.go covers the markers).
+		e.Options.PromptCaching = new(bool)
 		t.Run(e.Name+"/"+e.Method, func(t *testing.T) {
 			reply := jsonReply(minimalMessage)
 			if e.Method == "stream" {

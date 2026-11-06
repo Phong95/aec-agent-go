@@ -66,6 +66,9 @@ type InferenceConfig struct {
 	Temperature   *float64 `json:"temperature,omitempty"`
 	TopP          *float64 `json:"topP,omitempty"`
 	StopSequences []string `json:"stopSequences,omitzero"`
+	// PromptCaching (A-207) false turns provider prompt caching off for this agent
+	// (llmhub.ModelOptions.PromptCaching). Nil = on.
+	PromptCaching *bool `json:"promptCaching,omitempty"`
 }
 
 // LoopConfig holds the per-agent agent-loop limits. Omitted fields fall back to

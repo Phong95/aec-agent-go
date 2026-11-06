@@ -22,7 +22,9 @@ func factory(name, base string) llmhub.Factory {
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = base
 		}
-		p, err := New(cfg, WithName(name))
+		// A-207: both built-in entries (openai, novita) take prompt_cache_key (Novita
+		// checked live 2026-11-05).
+		p, err := New(cfg, WithName(name), WithPromptCacheKey(true))
 		if err != nil {
 			return nil, err
 		}
@@ -36,7 +38,11 @@ func openRouterFactory(cfg llmhub.ProviderConfig) (llmhub.Provider, error) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = OpenRouterBaseURL
 	}
-	p, err := New(cfg, WithName("openrouter"), WithReasoningParam(ReasoningObjectParam), WithHeaders(openRouterHeaders(cfg)))
+	// A-207: cache_control parts for Claude and Gemini models (their upstreams need them), and
+	// the session id as session_id so OpenRouter keeps a session on one upstream provider (and
+	// its prompt cache) from the first request.
+	p, err := New(cfg, WithName("openrouter"), WithReasoningParam(ReasoningObjectParam), WithHeaders(openRouterHeaders(cfg)),
+		WithCacheControl(OpenRouterCacheControl), WithSessionID(true))
 	if err != nil {
 		return nil, err
 	}

@@ -312,17 +312,24 @@ func requireHit(t *testing.T, store string, tl *tally, methods ...string) {
 
 // memoryProfile is a profile with the memory system on, so a turn recalls from the
 // memory store.
+// Update: memory is recalled on demand, so a turn reads the memory store when the model
+// calls memory_search (memorySearchTurn).
 func memoryProfile(id string) profile.AgentProfile {
 	p := testProfile(id)
 	p.Memory = memory.Config{Enabled: true}
 	return p
 }
 
+// memorySearchTurn is a scripted model turn that calls memory_search.
+func memorySearchTurn() aecmock.ScriptedTurn {
+	return aecmock.ScriptedTurn{ToolCalls: []kernel.ToolCall{{ID: "tc-mem", Name: "memory_search", Arguments: kernel.Arguments(`{"query":"anything"}`)}}}
+}
+
 // PER-01 (ROADMAP success criterion 1): a persistence hub that covers all 8 store
 // interfaces, every one custom, plugs into the AgentCore, and every store is used by the
 // component that owns it: agents by SpawnAgent and Initialize, sessions and the message
 // stores by the conversation (the compacted one when a session is loaded), memory by
-// the turn's recall, artifacts by the artifact hub, skills by the skill hub. Providers
+// the turn's recall (update: the model's memory_search call), artifacts by the artifact hub, skills by the skill hub. Providers
 // is the one slot no SDK component writes (the server does): it must be the plugged
 // wrapper and reachable.
 func TestAgentCore_PersistenceHubAllEightCustom(t *testing.T) {
@@ -332,7 +339,9 @@ func TestAgentCore_PersistenceHubAllEightCustom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAgentCore: %v", err)
 	}
-	if err := core.UseLLMProvider(aecmock.NewMockProvider("mock", func([]kernel.Message) string { return "hello" })); err != nil {
+	// The model searches its memory once (memory is recalled on demand, through
+	// memory_search), then answers.
+	if err := core.UseLLMProvider(aecmock.NewScriptedProvider("mock", []aecmock.ScriptedTurn{memorySearchTurn(), {Content: "hello"}, {Content: "hello"}})); err != nil {
 		t.Fatal(err)
 	}
 
@@ -411,8 +420,9 @@ func TestAgentCore_PersistenceHubAllEightCustom(t *testing.T) {
 	if stored, err := c.hub.Agents.Load(ctx, "a1"); err != nil || stored == nil {
 		t.Errorf("Agents.Load(a1) = %v, %v, want the spawned profile", stored, err)
 	}
-	if msgs, err := c.hub.Messages.Get(ctx, session.ID); err != nil || len(msgs) != 2 {
-		t.Errorf("Messages.Get = %d messages, %v, want the user message and the reply", len(msgs), err)
+	// The user message, the memory_search call, its result and the reply.
+	if msgs, err := c.hub.Messages.Get(ctx, session.ID); err != nil || len(msgs) != 4 {
+		t.Errorf("Messages.Get = %d messages, %v, want the user message, the memory_search call and result, and the reply", len(msgs), err)
 	}
 	if rec, err := c.hub.Skills.Load(ctx, "site-diary"); err != nil || rec == nil {
 		t.Errorf("Skills.Load(site-diary) = %v, %v, want the created skill", rec, err)
@@ -492,7 +502,9 @@ func TestAgentCore_UsePersistenceDoesNotReachLiveAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := core.UseLLMProvider(aecmock.NewMockProvider("mock", func([]kernel.Message) string { return "ok" })); err != nil {
+	// Turns in order: the live agent's "hi", its memory_search turn (call, then answer),
+	// and the later agent's "hi".
+	if err := core.UseLLMProvider(aecmock.NewScriptedProvider("mock", []aecmock.ScriptedTurn{{Content: "ok"}, memorySearchTurn(), {Content: "ok"}, {Content: "ok"}, {Content: "ok"}})); err != nil {
 		t.Fatal(err)
 	}
 	live, err := core.SpawnAgent(ctx, memoryProfile("live"))
@@ -517,12 +529,16 @@ func TestAgentCore_UsePersistenceDoesNotReachLiveAgents(t *testing.T) {
 	}
 	requireHit(t, "old Sessions", oldHub.sessions, "Create", "Update")
 	requireHit(t, "old Messages", oldHub.messages, "Append")
+	if msgs, _ := oldHub.hub.Messages.Get(ctx, liveSession.ID); len(msgs) != 2 {
+		t.Errorf("old Messages hold %d messages of the live session, want 2", len(msgs))
+	}
+	// A turn in which the model searches memory reads the old hub's memory store.
+	if _, err := live.Chat(ctx, "what do you remember?"); err != nil {
+		t.Fatal(err)
+	}
 	requireHit(t, "old Memory", oldHub.memory, "Query")
 	if n := newHub.sessions.count("Create") + newHub.messages.count("Append") + newHub.memory.count("Query"); n != 0 {
 		t.Errorf("the live agent reached the new hub: %d conversation or memory calls", n)
-	}
-	if msgs, _ := oldHub.hub.Messages.Get(ctx, liveSession.ID); len(msgs) != 2 {
-		t.Errorf("old Messages hold %d messages of the live session, want 2", len(msgs))
 	}
 
 	// The agent spawned afterwards uses the new hub.

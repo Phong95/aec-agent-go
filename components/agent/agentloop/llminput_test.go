@@ -128,6 +128,7 @@ func sameInput(t *testing.T, cs ctxSpan, sent []kernel.Message) {
 
 // X1 and X2: the span is the exact model input, with memory injected into the last
 // system message and the base prompt recorded before the injection.
+// Update: memory is no longer injected (recall is the memory_search tool).
 func TestContextSpan_EqualsModelInput_Run(t *testing.T) { contextSpanEqualsModelInput(t, "run") }
 
 func TestContextSpan_EqualsModelInput_Stream(t *testing.T) { contextSpanEqualsModelInput(t, "stream") }
@@ -151,33 +152,23 @@ func contextSpanEqualsModelInput(t *testing.T, mode string) {
 	cs := spans[0]
 	sent := r.models.Calls()[0].Messages
 	sameInput(t, cs, sent)
-	if cs.MemoryInjection != "appended-to-system" || cs.MemoryBlock == nil || *cs.MemoryBlock != recalledText {
-		t.Fatalf("memory injection = %q, block %v", cs.MemoryInjection, cs.MemoryBlock)
+	// Update: memory is recalled on demand (memory_search), so a memory system no longer
+	// injects anything into the turn: the system message is the base prompt and no
+	// memory-recall span runs.
+	if cs.MemoryInjection != "none" || cs.MemoryBlock != nil || cs.RecalledMemories != 0 {
+		t.Fatalf("memory injection = %q, block %v, recalled %d", cs.MemoryInjection, cs.MemoryBlock, cs.RecalledMemories)
 	}
-	if cs.BaseSystemPrompt == nil || *cs.BaseSystemPrompt != "You are a test agent." {
-		t.Fatalf("baseSystemPrompt = %v, want the prompt before the injection", cs.BaseSystemPrompt)
-	}
-	if want := "You are a test agent.\n\n" + recalledText; sent[0].Content != want {
-		t.Fatalf("system message = %q, want the memory appended after a blank line", sent[0].Content)
+	if cs.BaseSystemPrompt == nil || *cs.BaseSystemPrompt != "You are a test agent." || sent[0].Content != "You are a test agent." {
+		t.Fatalf("baseSystemPrompt = %v, system message %q, want the prompt only", cs.BaseSystemPrompt, sent[0].Content)
 	}
 	if cs.SystemMessageIndex == nil || *cs.SystemMessageIndex != 0 {
 		t.Fatalf("systemMessageIndex = %v", cs.SystemMessageIndex)
 	}
-	if cs.RecalledMemories != 1 || !slices.Equal(cs.MemoryRecordIDs, []string{"m1"}) || cs.MemoryTokens <= 0 {
-		t.Fatalf("recalled %d %v, memory tokens %d", cs.RecalledMemories, cs.MemoryRecordIDs, cs.MemoryTokens)
+	if calls := mem.Calls(); len(calls) != 0 {
+		t.Fatalf("recall calls = %+v, want none", calls)
 	}
-	if calls := mem.Calls(); len(calls) != 1 || calls[0].UserMessage != "When is the deadline?" || calls[0].SessionID != "s-1" {
-		t.Fatalf("recall calls = %+v, want exactly one for the user message", calls)
-	}
-
-	// The memory-recall span: a child of the run span, with the recall statistics.
-	if got := r.sink.parentName("memory-recall"); got != "agent-run" {
-		t.Fatalf("memory-recall parent = %q, want agent-run", got)
-	}
-	keys := endKeys(t, r.sink, "memory-recall")
-	want := []string{"queryLength", "queryPreview", "recalledCount", "maxResults", "hit", "indexRebuilt", "injectedChars", "injectedTokens", "topScore", "memories"}
-	if !slices.Equal(keys, want) {
-		t.Fatalf("memory-recall end keys = %v, want %v", keys, want)
+	if _, ok := r.sink.endAttrs("memory-recall"); ok {
+		t.Fatal("a memory-recall span ran")
 	}
 }
 
@@ -398,6 +389,7 @@ func TestContextSpan_MemoryDisabled(t *testing.T) {
 // A failing recall never fails the turn: the span ends with the error, a warning is
 // logged with ids and the error text only, and the run goes on without memories.
 func TestMemoryRecallFailureDoesNotFailTheTurn(t *testing.T) {
+	t.Skip("per-turn memory recall is off: memory is recalled on demand through memory_search (see beginRun); this covers the switched-off path")
 	lg, buf := failureLog()
 	mem := aecmock.NewScriptedMemory().With(aecmock.WithRecallError(errBoom("index unavailable")))
 	r := promptRig(t, rigOptions{memory: mem, loopOpts: []agentloop.Option{agentloop.WithLogger(lg)}}, aecmock.ScriptedTurn{Content: "carried on"})
@@ -472,6 +464,7 @@ func TestWithRecalledMemories(t *testing.T) {
 // When the compacted messages hold no system message, memory injection puts a new one in
 // front and the summary index shifts by one.
 func TestMemoryInjectionShiftsTheSummaryIndex(t *testing.T) {
+	t.Skip("per-turn memory recall is off: memory is recalled on demand through memory_search (see beginRun); this covers the switched-off path")
 	usage := &kernel.TokenUsage{InputTokens: 100, OutputTokens: 50}
 	mem := aecmock.NewScriptedMemory(recalledMemories())
 	r := newRig(t, rigOptions{prof: x3Profile(), memory: mem},
@@ -534,6 +527,7 @@ func TestRun_SeedsTheCounterFromTheSession(t *testing.T) {
 // second iteration therefore counts them again, while the messages of the conversation
 // keep the count they had.
 func TestFreshMessagesAreCountedAtTheCurrentRatio(t *testing.T) {
+	t.Skip("per-turn memory recall is off: memory is recalled on demand through memory_search (see beginRun); this covers the switched-off path")
 	h := constTool("lookup", toolhub.Output{Content: "ok"})
 	// 10 input tokens for the first call: the ratio moves to (chars sent) / 10.
 	first := toolTurn(callOf("tc-1", "lookup", `{}`))

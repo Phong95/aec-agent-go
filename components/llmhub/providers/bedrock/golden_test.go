@@ -207,6 +207,9 @@ func TestBedrockRequestsMatchGolden(t *testing.T) {
 	defer checkDivergencesUsed(t, requestPathDivergences, usedPath)
 	defer checkDivergencesUsed(t, requestBodyDivergences, usedBody)
 	for _, e := range f.Entries {
+		// A-207: the recordings predate the prompt-cache markers, so they are replayed with
+		// caching off (prompt_cache_test.go covers the markers).
+		e.Options.PromptCaching = new(bool)
 		t.Run(e.Name+"/"+e.Method, func(t *testing.T) {
 			up := llmtest.NewUpstream(t, func(llmtest.Request) llmtest.Reply {
 				return llmtest.Reply{

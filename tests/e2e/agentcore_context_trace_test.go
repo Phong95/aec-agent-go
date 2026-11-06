@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/Phong95/aec-agent-go/aecmock"
@@ -175,7 +173,8 @@ var withSummarizer = aecmock.WithScriptedOptions(aecmock.WithSummaryReply("SUMMA
 
 // TestAgentCoreContextTrace checks the context-assembly
 // span of a real AgentCore run is the exact input of the model call, with memory injected
-// through the real memory system, after compaction, in a tool loop, with the effective
+// through the real memory system (update: memory is no longer injected, it is the
+// memory_search tool), after compaction, in a tool loop, with the effective
 // options, and the model-call span records the streamed token counts. The two paired
 // cases (compaction and tool loop, each on the run and the stream path) are subtests
 // named with their path.
@@ -201,20 +200,22 @@ func TestAgentCoreContextTrace(t *testing.T) {
 		if cs.BaseSystemPrompt == nil || *cs.BaseSystemPrompt != traceSystemPrompt {
 			t.Fatalf("baseSystemPrompt = %v, want %q", cs.BaseSystemPrompt, traceSystemPrompt)
 		}
-		if cs.MemoryBlock == nil || !strings.Contains(*cs.MemoryBlock, "## Recalled memories") || !strings.Contains(*cs.MemoryBlock, "Vietnamese") {
-			t.Fatalf("memoryBlock = %v, want the recalled memories heading and the Vietnamese memory", cs.MemoryBlock)
-		}
-		if !slices.Equal(cs.MemoryRecordIDs, []string{"m1"}) {
-			t.Fatalf("memoryRecordIds = %v, want [m1]", cs.MemoryRecordIDs)
-		}
-		if cs.MemoryInjection != "appended-to-system" {
-			t.Fatalf("memoryInjection = %q, want appended-to-system", cs.MemoryInjection)
+		// Update: memory is recalled on demand (memory_search), not injected into the turn.
+		if cs.MemoryBlock != nil || len(cs.MemoryRecordIDs) != 0 || cs.MemoryInjection != "none" {
+			t.Fatalf("memoryBlock = %v, memoryRecordIds = %v, memoryInjection = %q, want nothing injected", cs.MemoryBlock, cs.MemoryRecordIDs, cs.MemoryInjection)
 		}
 		if cs.SystemMessageIndex == nil {
 			t.Fatal("systemMessageIndex is not defined")
 		}
-		if got, want := cs.Messages[*cs.SystemMessageIndex].Content, *cs.BaseSystemPrompt+"\n\n"+*cs.MemoryBlock; got != want {
-			t.Fatalf("system message = %q, want the base prompt, a blank line and the memory block %q", got, want)
+		if got := cs.Messages[*cs.SystemMessageIndex].Content; got != *cs.BaseSystemPrompt {
+			t.Fatalf("system message = %q, want the base prompt only", got)
+		}
+		offered := false
+		for _, d := range cs.Tools {
+			offered = offered || d.Name == "memory_search"
+		}
+		if !offered {
+			t.Fatalf("tools offered = %+v, want memory_search", cs.Tools)
 		}
 		if cs.MessageCount != len(main[0].Messages) {
 			t.Fatalf("messageCount = %d, want %d", cs.MessageCount, len(main[0].Messages))
@@ -239,11 +240,8 @@ func TestAgentCoreContextTrace(t *testing.T) {
 			t.Fatalf("%d main provider calls, want 1", len(main))
 		}
 		requireSpanEqualsInput(t, cs, main[0].Messages)
-		if cs.MemoryBlock == nil || !strings.Contains(*cs.MemoryBlock, "Vietnamese") {
-			t.Fatalf("memoryBlock = %v, want the Vietnamese memory", cs.MemoryBlock)
-		}
-		if cs.MemoryInjection != "appended-to-system" {
-			t.Fatalf("memoryInjection = %q, want appended-to-system", cs.MemoryInjection)
+		if cs.MemoryBlock != nil || cs.MemoryInjection != "none" {
+			t.Fatalf("memoryBlock = %v, memoryInjection = %q, want nothing injected", cs.MemoryBlock, cs.MemoryInjection)
 		}
 		if cs.MessageCount != len(main[0].Messages) {
 			t.Fatalf("messageCount = %d, want %d", cs.MessageCount, len(main[0].Messages))

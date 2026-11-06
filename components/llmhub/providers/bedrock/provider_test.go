@@ -90,7 +90,7 @@ func TestBedrockMapMessagesEmptyContentGuard(t *testing.T) {
 		if _, err := p.Chat(t.Context(), []kernel.Message{
 			{Role: kernel.RoleUser, Content: "hi"},
 			{Role: kernel.RoleAssistant, Content: ""},
-		}, llmhub.ModelOptions{}); err != nil {
+		}, llmhub.ModelOptions{PromptCaching: new(bool)} /* A-207: the mapping without cache markers */); err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
 		in := input()
@@ -110,7 +110,7 @@ func TestBedrockMapMessagesEmptyContentGuard(t *testing.T) {
 			Role:        kernel.RoleTool,
 			Content:     "",
 			ToolResults: []kernel.ToolResult{{ToolCallID: "t1", Content: "", IsError: &f}},
-		}}, llmhub.ModelOptions{}); err != nil {
+		}}, llmhub.ModelOptions{PromptCaching: new(bool)} /* A-207: the mapping without cache markers */); err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
 		in := input()
@@ -127,7 +127,7 @@ func TestBedrockMapMessagesEmptyContentGuard(t *testing.T) {
 		if _, err := p.Chat(t.Context(), []kernel.Message{
 			{Role: kernel.RoleUser, Content: "hi"},
 			{Role: kernel.RoleAssistant, Content: "", ToolCalls: []kernel.ToolCall{{ID: "call1", Name: "search", Arguments: kernel.Arguments(`{"q":"x"}`)}}},
-		}, llmhub.ModelOptions{}); err != nil {
+		}, llmhub.ModelOptions{PromptCaching: new(bool)} /* A-207: the mapping without cache markers */); err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
 		in := input()
@@ -515,7 +515,7 @@ func TestBedrockToolResultStatus(t *testing.T) {
 			{ToolCallID: "b", Content: "x", IsError: &no},
 			{ToolCallID: "c", Content: "x"},
 		},
-	}}, llmhub.ModelOptions{})
+	}}, llmhub.ModelOptions{PromptCaching: new(bool)} /* A-207: the mapping without cache markers */)
 	if err != nil {
 		t.Fatal(err)
 	}

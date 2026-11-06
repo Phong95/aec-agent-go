@@ -440,7 +440,11 @@ func (l *Loop) beginRun(ctx context.Context, userMessage, sessionID string, ro R
 	}
 
 	// Memory recall: once per run, keyed on the user's message. It never fails the turn.
-	r.recalled = l.recallMemories(ctx, r, userMessage)
+	// Update: recall is on demand now, through the memory system's memory_search tool
+	// (MemoryTools). A block injected every turn changed the system message each turn
+	// and broke the provider's prompt cache, so the per-turn recall stays off.
+	// r.recalled = l.recallMemories(ctx, r, userMessage)
+	_ = userMessage
 	return r, nil
 }
 

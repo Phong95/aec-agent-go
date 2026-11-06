@@ -224,7 +224,7 @@ var layerTable = map[string][]string{
 	// port (Model) and the skills through skill.AgentSkills, so it imports neither agent,
 	// agentloop, aecmock nor conformance.
 	"components/agent/skilllearning": {"kernel", "components/events", "components/persistence", "components/llmhub", "components/skillhub/skill", "components/agent/skilllearning/learning"},
-	"components/agent/memorysystem":  {"kernel", "components/events", "components/agent/memorysystem/memory", "components/persistence", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/redact"},
+	"components/agent/memorysystem":  {"kernel", "components/events", "components/agent/memorysystem/memory", "components/persistence", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/redact", "components/toolhub"}, // memory_search: the memory system owns its recall tool
 	// The test-only packages under tests/: their non-test code is a package doc and
 	// imports nothing; what their tests import is checked like any other test import.
 	"tests/arch": {},

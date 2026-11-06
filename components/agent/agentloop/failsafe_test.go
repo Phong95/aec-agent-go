@@ -268,6 +268,9 @@ func TestStop_PortsThatIgnoreCtxDoNotDelayIt(t *testing.T) {
 	for _, tc := range cases {
 		for _, mode := range tc.modes {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				if tc.name == "memory recall" {
+					t.Skip("per-turn memory recall is off: memory is recalled on demand through memory_search (see beginRun)")
+				}
 				synctest.Test(t, func(t *testing.T) {
 					release := make(chan struct{})
 					rg := newRig(t, tc.opts(release), tc.turns...)
@@ -435,6 +438,7 @@ func (panicMemory) RecallForTurn(context.Context, string, string) (memory.Recall
 // never failing the turn, so a panicking memory system is recorded on the span like
 // any failed recall and the run carries on.
 func TestMemoryRecallPanicDoesNotFailTheTurn(t *testing.T) {
+	t.Skip("per-turn memory recall is off: memory is recalled on demand through memory_search (see beginRun); this covers the switched-off path")
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	r := promptRig(t, rigOptions{memory: panicMemory{}, loopOpts: []agentloop.Option{agentloop.WithLogger(lg)}}, aecmock.ScriptedTurn{Content: "carried on"})
 	res, err := r.run(t, "question")

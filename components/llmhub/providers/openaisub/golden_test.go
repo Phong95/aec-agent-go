@@ -144,7 +144,7 @@ type requestFixture struct {
 
 // comparedHeaders are the request headers of the calls that the provider sets.
 // Other headers are the transport's (user agent, content length, encoding).
-var comparedHeaders = []string{"authorization", "content-type", "openai-beta", "chatgpt-account-id", "originator"}
+var comparedHeaders = []string{"authorization", "content-type", "openai-beta", "chatgpt-account-id", "originator", "session_id", "conversation_id"}
 
 // checkHeaders requires the headers the provider sent to equal the recorded headers:
 // the same names (compared without regard to case, as servers do) and the same

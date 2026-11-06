@@ -184,6 +184,14 @@ func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session, sees
 		}
 		toolDefs = append(toolDefs, skillDefs...)
 	}
+	// Recall on demand: the memory system's tools (memory_search) while its memory is on.
+	if mt := l.memoryTools(); mt != nil {
+		memoryDefs, err := mt.ToolDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		toolDefs = append(toolDefs, memoryDefs...)
+	}
 	return toolDefs, nil
 }
 

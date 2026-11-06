@@ -99,6 +99,7 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions)
 		inference.TopP = aws.Float32(float32(*opts.TopP))
 	}
 	modelID := p.resolveModelID(model)
+	system, mapped, tools = withCachePoints(system, mapped, tools, modelID, opts) // A-207
 	return request{
 		modelID:    modelID,
 		messages:   mapped,
@@ -107,6 +108,29 @@ func (p *Provider) buildRequest(msgs []kernel.Message, opts llmhub.ModelOptions)
 		tools:      tools,
 		additional: requestFields(modelID, opts.ReasoningEffort),
 	}, nil
+}
+
+// withCachePoints (A-207) adds Converse cachePoint blocks for model families that support
+// them (llmhub.BedrockCachePoints) unless caching is off: one after the system blocks (it
+// covers the tools and the system prompt), or after the tools when there is no system prompt
+// (Claude only), and one at the end of the last message (the growing conversation). The
+// slices are this call's own, so they are extended in place.
+func withCachePoints(system []types.SystemContentBlock, mapped []types.Message, tools *types.ToolConfiguration, modelID string, opts llmhub.ModelOptions) ([]types.SystemContentBlock, []types.Message, *types.ToolConfiguration) {
+	if !llmhub.PromptCachingOn(opts) || !llmhub.BedrockCachePoints(modelID) {
+		return system, mapped, tools
+	}
+	point := types.CachePointBlock{Type: types.CachePointTypeDefault}
+	if len(system) > 0 {
+		system = append(system, &types.SystemContentBlockMemberCachePoint{Value: point})
+	} else if tools != nil && len(tools.Tools) > 0 && llmhub.BedrockClaude(modelID) {
+		tools.Tools = append(tools.Tools, &types.ToolMemberCachePoint{Value: point})
+	}
+	if n := len(mapped); n > 0 && len(mapped[n-1].Content) > 0 {
+		last := mapped[n-1]
+		last.Content = append(append([]types.ContentBlock(nil), last.Content...), &types.ContentBlockMemberCachePoint{Value: point})
+		mapped[n-1] = last
+	}
+	return system, mapped, tools
 }
 
 // requestFields is the additionalModelRequestFields of a request: the reasoning

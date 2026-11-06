@@ -358,7 +358,12 @@ func (p *Provider) stream(ctx context.Context, msgs []kernel.Message, opts llmhu
 			res.fail(mapNetworkError(err), yield)
 			return
 		}
-		req.Header = buildHeaders(c)
+		// A-207: no cache key (and no session headers) while prompt caching is off.
+		cacheKey := ""
+		if llmhub.PromptCachingOn(opts) {
+			cacheKey = opts.PromptCacheKey
+		}
+		req.Header = buildHeaders(c, cacheKey)
 		resp, err := p.client.Do(req)
 		if err != nil {
 			// The caller's context decides, not the derived one this function cancels

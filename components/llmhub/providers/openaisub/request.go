@@ -207,7 +207,9 @@ func (p *Provider) buildBody(msgs []kernel.Message, opts llmhub.ModelOptions) ([
 	if opts.ReasoningEffort != "" {
 		body.Reasoning = &reasoningParam{Effort: opts.ReasoningEffort}
 	}
-	body.PromptCacheKey = opts.PromptCacheKey // A-188
+	if llmhub.PromptCachingOn(opts) { // A-207: not while caching is off
+		body.PromptCacheKey = opts.PromptCacheKey // A-188
+	}
 	return jsonx.Marshal(body)
 }
 
@@ -216,13 +218,23 @@ func (p *Provider) buildBody(msgs []kernel.Message, opts llmhub.ModelOptions) ([
 // flag, and the account id when there is one. Header names are in net/http's
 // canonical form (OpenAI-Beta is sent as Openai-Beta); servers match names without
 // regard to case.
-func buildHeaders(c creds) http.Header {
+//
+// Prompt-cache check: like the Codex client, the call also sends originator and, when
+// there is a prompt cache key (the session id), the session_id and conversation_id
+// headers with that key, so the backend can keep one session's calls on the machine
+// that holds its prompt cache.
+func buildHeaders(c creds, cacheKey string) http.Header {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+c.token)
 	h.Set("Content-Type", "application/json")
 	h.Set("OpenAI-Beta", "responses=experimental")
+	h.Set("originator", "aec-agent")
 	if c.account != "" {
 		h.Set("ChatGPT-Account-Id", c.account)
+	}
+	if cacheKey != "" {
+		h.Set("session_id", cacheKey)
+		h.Set("conversation_id", cacheKey)
 	}
 	return h
 }

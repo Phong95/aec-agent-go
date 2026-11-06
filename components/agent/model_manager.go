@@ -275,6 +275,10 @@ func mergeInference(base *profile.InferenceConfig, opts llmhub.ModelOptions) llm
 	if len(out.StopSequences) == 0 && len(base.StopSequences) > 0 {
 		out.StopSequences = slices.Clone(base.StopSequences)
 	}
+	if out.PromptCaching == nil && base.PromptCaching != nil { // A-207
+		v := *base.PromptCaching
+		out.PromptCaching = &v
+	}
 	return out
 }
 
@@ -293,6 +297,10 @@ func cloneModelOptions(o llmhub.ModelOptions) llmhub.ModelOptions {
 		o.TopP = &v
 	}
 	o.StopSequences = slices.Clone(o.StopSequences)
+	if o.PromptCaching != nil { // A-207
+		v := *o.PromptCaching
+		o.PromptCaching = &v
+	}
 	if o.Tools != nil {
 		tools := make([]toolhub.Definition, len(o.Tools))
 		for i, d := range o.Tools {

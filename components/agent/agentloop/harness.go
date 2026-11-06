@@ -154,6 +154,10 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 	if isSkill {
 		kind, spanKind = skillEvents, trace.KindSkillDispatch
 	}
+	// direct: a skill tool or a memory tool (memory_search) - both only read the agent's
+	// own skills or memory, so they skip the scope, the policy and the approval gate. A
+	// memory tool keeps the tool events and span kind.
+	direct := isSkill || e.isMemoryTool(call.Name)
 
 	// skillName is the skill skill_view loads; it is used only when the argument is a
 	// string, and names the span after it.
@@ -235,7 +239,7 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 
 	// A-105: a subagent's session may use only the tools its scope allows (read-only by
 	// default, never spawn_subagent). Checked before the policy, so nothing is asked.
-	if !isSkill {
+	if !direct {
 		if denied := e.checkScope(run, call); denied != nil {
 			span.End(obj("error", "scope-denied"))
 			return *denied
@@ -246,7 +250,7 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 	// Authorized is what attempt 0 runs, so the policy runs exactly once when nothing
 	// fails.
 	var pre *preauth
-	if !isSkill {
+	if !direct {
 		auth, decision, err := e.deps.Tools.Authorize(ctx, call.Name, call.Arguments, tc)
 		switch {
 		case err != nil:
@@ -303,7 +307,7 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 		done   func()
 	}
 	d, aborted, err := raceAbortKeepFinished(ctx, func() (dispatched, error) {
-		res, done := e.executeWithRetries(ctx, run, call, tc, isSkill, kind, pre)
+		res, done := e.executeWithRetries(ctx, run, call, tc, direct, kind, pre)
 		return dispatched{result: res, done: done}, nil
 	})
 	if aborted {
@@ -377,6 +381,25 @@ func (e *executor) isSkill(name string) bool {
 	}
 	_, ok := e.deps.Skills.Tool(name)
 	return ok
+}
+
+// isMemoryTool reports whether name is a memory tool (memory_search), that is a tool
+// the memory system knows.
+func (e *executor) isMemoryTool(name string) bool {
+	_, ok := e.memoryTool(name)
+	return ok
+}
+
+// memoryTool is the memory system's handler for name, if it has one.
+func (e *executor) memoryTool(name string) (toolhub.Handler, bool) {
+	if e.deps.Memory == nil {
+		return nil, false
+	}
+	mt, ok := e.deps.Memory.(MemoryTools)
+	if !ok {
+		return nil, false
+	}
+	return mt.Tool(name)
 }
 
 // emitFailed emits the kind's failed event.
