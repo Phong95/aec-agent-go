@@ -24,7 +24,10 @@ var essentialFS embed.FS
 // [[SILENT]] when there is nothing new; it needs manage_job.
 // Update (A-182): visual-self-check is appended - render, capture, look, fix, look
 // again; it needs screenshot (A-181), offered only to a model that can see images.
-var essentialSkillNames = [...]string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check"}
+// Update (A-209): artifacts is appended - when and how to save, update and find
+// artifacts; it needs the artifact tool (which replaced save_artifact, update_artifact,
+// read_artifact, list_artifacts).
+var essentialSkillNames = [...]string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check", "artifacts"}
 
 // EssentialSkillNames returns the names of the essential skills - the default
 // profile.skills for a new agent. Every call returns a fresh slice.

@@ -18,17 +18,18 @@ import (
 // The non-ASCII characters of the tool texts are built from code points, so this source
 // stays ASCII-only.
 var (
-	emDash   = string(rune(0x2014)) // U+2014 EM DASH
-	midDot   = string(rune(0x00b7)) // U+00B7 MIDDLE DOT
-	ellipsis = string(rune(0x2026)) // U+2026 HORIZONTAL ELLIPSIS
+	emDash = string(rune(0x2014)) // U+2014 EM DASH
+	midDot = string(rune(0x00b7)) // U+00B7 MIDDLE DOT
+	// Update (A-209): ellipsis (U+2026) went with read_artifact's truncation note.
 )
 
 // hints are the advice appended to an ArtifactError, by code. A code that is
 // not listed has no hint.
+// Update (A-209): the hints name the artifact tool's actions.
 var hints = map[kernel.ArtifactErrorCode]string{
-	kernel.ArtifactCodeNameConflict:  "Use update_artifact to add a new version, or save under a different name.",
-	kernel.ArtifactCodeNotFound:      "Check the exact name or id with list_artifacts.",
-	kernel.ArtifactCodeConflict:      "Read the artifact again to get the current version, then update it.",
+	kernel.ArtifactCodeNameConflict:  `Use action "update" to add a new version, or save under a different name.`,
+	kernel.ArtifactCodeNotFound:      `Check the exact name or id with action "list".`,
+	kernel.ArtifactCodeConflict:      "List the artifacts again to get the current version, then update it.",
 	kernel.ArtifactCodeNotConfigured: "No artifact store is configured on this server; tell the user.",
 	kernel.ArtifactCodeFileMissing:   "write the file first (write_file) or pass content, then try again",
 }
@@ -175,12 +176,13 @@ func sourceFrom(a toolkit.Args) source {
 // ignoredFromPathNote is told to the model when it passed both content and from_path: the
 // call went through on the inline content, and this says which argument was dropped so
 // the next call is unambiguous (and so a track it actually wanted is not silent).
+// (Update (A-209): it points at the artifact tool's "update" action.)
 func ignoredFromPathNote(ignored string) string {
 	if ignored == "" {
 		return ""
 	}
 	return "\nNote: you passed both \"content\" and \"from_path\" " + emDash + " the inline content was saved and \"" + ignored + "\" was ignored. " +
-		"Pass only one. To track that file instead, call update_artifact with just \"from_path\"."
+		"Pass only one. To track that file instead, call action \"update\" with just \"from_path\"."
 }
 
 // artifactLink (A-132) is the link save/update put on their Output, so the chat can

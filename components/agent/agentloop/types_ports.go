@@ -86,6 +86,27 @@ type SessionTools interface {
 	ListFor(sessionID string) []toolhub.Definition
 }
 
+// ToolScope (A-209, ToolScope of core/ts) is a session's tool scope. With a nil call it
+// says whether the session sees the tool at all (the tool list); with a call - the call's
+// own risk and arguments - whether this call may run (a read-only child may save an
+// artifact but not update one).
+type ToolScope func(def toolhub.Definition, call *ScopeCall) bool
+
+// ScopeCall (A-209) is the call a ToolScope judges at dispatch: its own risk (the
+// handler's RiskFor when it is a toolhub.CallRisker, else the definition's Risk) and its
+// arguments.
+type ScopeCall struct {
+	Risk toolhub.Risk
+	Args kernel.Arguments
+}
+
+// CallRisks is the optional part of Tools that gives the risk of one call before it is
+// authorized (A-209), found by type assertion: the tool scope of a subagent judges a call
+// before the policy runs. Without it, the scope sees the definition's Risk.
+type CallRisks interface {
+	CallRisk(name string, args kernel.Arguments) (toolhub.Risk, bool)
+}
+
 // listTools is the session's tools: SessionTools.ListFor when t has it, List otherwise.
 func listTools(t Tools, sessionID string) []toolhub.Definition {
 	if st, ok := t.(SessionTools); ok {
@@ -256,7 +277,9 @@ type Deps struct {
 	// a child run's session (a subagent) gets only its read-only tools, and never
 	// spawn_subagent. Resolved per model call and per dispatch; nil, or a nil result,
 	// means every tool of the agent.
-	ToolScope func(sessionID string) func(def toolhub.Definition) bool
+	// Update (A-209): at dispatch the scope also gets the call's risk and arguments (a
+	// read-only child may save an artifact but not update one); see ToolScope.
+	ToolScope func(sessionID string) ToolScope
 	// DelegatedTools (A-137) is the tools the agent hands to its subagents in a session
 	// (the subagent manager's delegatedTools), left out of the tool list the model is
 	// offered - hidden, not refused, so a call already in the history still runs.

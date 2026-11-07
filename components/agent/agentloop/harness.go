@@ -346,7 +346,8 @@ func (e *executor) checkScope(run *toolRun, call kernel.ToolCall) *kernel.ToolRe
 		if def.Name != call.Name {
 			continue
 		}
-		if inScope(def) {
+		// A-209: judged on this call - its own risk and arguments (artifact save vs update).
+		if inScope(def, &ScopeCall{Risk: callRisk(e.deps.Tools, def, call), Args: call.Arguments}) {
 			return nil
 		}
 		reason := `"` + call.Name + `" is not available to you as a subagent in this run`
@@ -355,6 +356,17 @@ func (e *executor) checkScope(run *toolRun, call kernel.ToolCall) *kernel.ToolRe
 		return &res
 	}
 	return nil
+}
+
+// callRisk is the risk of one call before it is authorized (A-209): the Tools' CallRisk
+// when it has one (CallRisks), else the definition's Risk.
+func callRisk(t Tools, def toolhub.Definition, call kernel.ToolCall) toolhub.Risk {
+	if cr, ok := t.(CallRisks); ok {
+		if risk, found := cr.CallRisk(call.Name, call.Arguments); found {
+			return risk
+		}
+	}
+	return def.Risk
 }
 
 // checkPlanMode (A-136) answers a call that is not read-only with a denial while the

@@ -37,7 +37,7 @@ func loadEssentialFixture(t *testing.T) (essentialFixture, []byte) {
 func TestEssentialSkillsMatchGolden(t *testing.T) {
 	fixture, raw := loadEssentialFixture(t)
 	got := skillhub.EssentialSkills()
-	if len(got) != len(fixture.Skills) || len(got) != 5 { // Update (A-70): 4 with watch-and-react. Update (A-182): 5 with visual-self-check
+	if len(got) != len(fixture.Skills) || len(got) != 6 { // Update (A-70): 4 with watch-and-react. Update (A-182): 5 with visual-self-check. Update (A-209): 6 with artifacts
 		t.Fatalf("EssentialSkills() has %d packages, the TS dump has %d", len(got), len(fixture.Skills))
 	}
 	for i, want := range fixture.Skills {
@@ -85,7 +85,8 @@ func TestEssentialSkillNames(t *testing.T) {
 		t.Errorf("EssentialSkillNames() = %v, the TS dump has %v", got, fixture.Names)
 	}
 	// Update (A-182): visual-self-check is the fifth.
-	if !slices.Equal(got, []string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check"}) {
+	// Update (A-209): artifacts is the sixth.
+	if !slices.Equal(got, []string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check", "artifacts"}) {
 		t.Errorf("EssentialSkillNames() = %v", got)
 	}
 }
@@ -100,7 +101,7 @@ func TestEssentialSkillsAreFreshCopies(t *testing.T) {
 	first[1], first[2] = first[2], first[1]
 
 	again := skillhub.EssentialSkills()
-	if len(again) != 5 || again[0].Content != wantContent || again[0].Files[0].Content != wantFile || len(again[0].Files) != 1 {
+	if len(again) != 6 || again[0].Content != wantContent || again[0].Files[0].Content != wantFile || len(again[0].Files) != 1 {
 		t.Error("mutating a returned package changed the next EssentialSkills() call")
 	}
 	if again[1].Content == again[2].Content {
@@ -139,7 +140,7 @@ func TestEssentialSkillsLoadAsBuiltIn(t *testing.T) {
 			t.Errorf("%s: source %q version %d", sk.Name, sk.Source, sk.Version)
 		}
 	}
-	if want := []string{"plan", "skill-creator", "visual-self-check", "watch-and-notify", "web-research"}; !slices.Equal(names, want) {
+	if want := []string{"artifacts", "plan", "skill-creator", "visual-self-check", "watch-and-notify", "web-research"}; !slices.Equal(names, want) {
 		t.Fatalf("List() names = %v, want %v", names, want)
 	}
 

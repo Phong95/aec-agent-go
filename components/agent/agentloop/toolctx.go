@@ -162,7 +162,7 @@ func sortedObject(m map[string]any) ordered.Object {
 
 // toolScope is the session's tool scope (A-105), or nil when every tool of the agent may
 // be used.
-func (l *Loop) toolScope(sessionID string) func(toolhub.Definition) bool {
+func (l *Loop) toolScope(sessionID string) ToolScope {
 	if l.deps.ToolScope == nil {
 		return nil
 	}

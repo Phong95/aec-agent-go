@@ -309,6 +309,16 @@ type CallRisker interface {
 	RiskFor(args kernel.Arguments) Risk
 }
 
+// CallSandboxOperator is the optional part of a Handler whose sandbox operation depends on
+// the call's arguments (A-209, ToolHandler.sandboxOperationFor of core/ts): the artifact
+// tool's "list" needs no sandbox approval, "save" and "update" are fs.write.
+// SandboxOperationFor decides the sandbox approval gate for that one call;
+// Definition().SandboxOperation stays the worst case. An empty result means the call
+// needs no sandbox approval.
+type CallSandboxOperator interface {
+	SandboxOperationFor(args kernel.Arguments) sandboxhub.Operation
+}
+
 // Context is what a tool receives next to its arguments.
 //
 // Cancellation arrives through the ctx parameter of Handler.Execute. GetSandbox,

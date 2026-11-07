@@ -17,10 +17,10 @@ import (
 // conflict from the view.
 func TestUpdateRefusesAFractionalExpectedVersion(t *testing.T) {
 	h := setup(t, "s1")
-	execute(t, NewSaveTool(Options{}), h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
+	execute(t, saveTool(Options{}), h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
 
 	for _, v := range []string{"1.5", "0.5", "-2.25", "1e20"} {
-		out := execute(t, NewUpdateTool(Options{}), h.tc, `{"name":"a.md","content":"v2","expected_version":`+v+`}`)
+		out := execute(t, updateTool(Options{}), h.tc, `{"name":"a.md","content":"v2","expected_version":`+v+`}`)
 		if !notRetryable(out) || !strings.Contains(out.Content, `"expected_version" must be a whole number`) {
 			t.Errorf("expected_version %s: output = %+v, want the whole-number argument error", v, out)
 		}
@@ -34,9 +34,9 @@ func TestUpdateRefusesAFractionalExpectedVersion(t *testing.T) {
 // argument only; the other arguments of the call are kept (the toolkit's per-key decode).
 func TestHugeNumberKeepsTheOtherArguments(t *testing.T) {
 	h := setup(t, "s1")
-	execute(t, NewSaveTool(Options{}), h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
+	execute(t, saveTool(Options{}), h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
 
-	out := execute(t, NewUpdateTool(Options{}), h.tc, `{"name":"a.md","content":"v2","expected_version":1e999}`)
+	out := execute(t, updateTool(Options{}), h.tc, `{"name":"a.md","content":"v2","expected_version":1e999}`)
 	if isError(out) {
 		t.Fatalf("error output: %s", out.Content)
 	}
@@ -45,9 +45,10 @@ func TestHugeNumberKeepsTheOtherArguments(t *testing.T) {
 		t.Errorf("the file = %q, want v2", got)
 	}
 
-	read := execute(t, NewReadTool(Options{}), h.tc, `{"name":"a.md","max_bytes":1e999}`)
-	if isError(read) || !strings.Contains(read.Content, "v2") {
-		t.Errorf("read with a huge max_bytes = %+v", read)
+	// Update (A-209): read_artifact is gone; a huge limit of list is the same per-key drop.
+	listed := execute(t, listTool(Options{}), h.tc, `{"limit":1e999}`)
+	if isError(listed) || !strings.Contains(listed.Content, "a.md (text/markdown) v2") {
+		t.Errorf("list with a huge limit = %+v", listed)
 	}
 }
 
@@ -73,8 +74,7 @@ func TestArgumentsNeverNameAnAgent(t *testing.T) {
 		tool toolhub.Handler
 		args string
 	}{
-		{NewReadTool(Options{}), `{"id":"` + saved.Artifact.ID + `","name":"secret.md","agentId":"a2","agent_id":"a2"}`},
-		{NewUpdateTool(Options{}), `{"id":"` + saved.Artifact.ID + `","content":"hijacked","agentId":"a2"}`},
+		{updateTool(Options{}), `{"id":"` + saved.Artifact.ID + `","content":"hijacked","agentId":"a2"}`},
 	} {
 		out := execute(t, h.tool, tc, h.args)
 		if !notRetryable(out) {
@@ -82,7 +82,7 @@ func TestArgumentsNeverNameAnAgent(t *testing.T) {
 		}
 		hasMeta(t, out, map[string]any{"code": "not_found"})
 	}
-	list := execute(t, NewListTool(Options{}), tc, `{"agentId":"a2"}`)
+	list := execute(t, listTool(Options{}), tc, `{"agentId":"a2"}`)
 	hasMeta(t, list, map[string]any{"count": 0})
 }
 
@@ -92,13 +92,13 @@ func TestNoEmitAndNoView(t *testing.T) {
 	h := setup(t, "s1")
 	tc := h.tc
 	tc.Emit = nil
-	out := execute(t, NewSaveTool(Options{}), tc, `{"name":"a.md","type":"text/markdown","content":"x"}`)
+	out := execute(t, saveTool(Options{}), tc, `{"name":"a.md","type":"text/markdown","content":"x"}`)
 	if isError(out) {
 		t.Fatalf("error output: %s", out.Content)
 	}
 
 	tc.GetArtifacts = func() artifact.View { return nil }
-	out = execute(t, NewListTool(Options{}), tc, `{}`)
+	out = execute(t, listTool(Options{}), tc, `{}`)
 	if !notRetryable(out) || !strings.Contains(out.Content, "no artifact store") {
 		t.Errorf("output = %+v, want the no artifact store error", out)
 	}
@@ -109,7 +109,7 @@ func TestAccessorWithoutAView(t *testing.T) {
 	h := setup(t, "s1")
 	tc := h.tc
 	tc.GetSandbox = func(context.Context) (sandboxhub.View, error) { return nil, nil }
-	out := execute(t, NewSaveTool(Options{}), tc, `{"name":"a.md","type":"text/markdown","content":"x"}`)
+	out := execute(t, saveTool(Options{}), tc, `{"name":"a.md","type":"text/markdown","content":"x"}`)
 	if !notRetryable(out) || !strings.Contains(out.Content, "no sandbox") {
 		t.Errorf("output = %+v, want the no sandbox error", out)
 	}

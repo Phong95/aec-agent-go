@@ -152,7 +152,8 @@ type ToolResult struct {
 	// IsError is a pointer because an explicit false is meaningful.
 	IsError *bool `json:"isError,omitempty"`
 	// Link (A-132) is something this call produced that the user can open - e.g. the
-	// artifact save_artifact / update_artifact wrote - so a UI can link to it and open
+	// artifact save_artifact / update_artifact wrote (A-209: the artifact tool's save /
+	// update) - so a UI can link to it and open
 	// it. Kept with the conversation; providers never send it to the model (the model
 	// reads Content).
 	Link *ToolResultLink `json:"link,omitempty"`

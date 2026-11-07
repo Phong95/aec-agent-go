@@ -86,7 +86,7 @@ func (v *view) Save(ctx context.Context, in artifact.SaveInput, sb sandboxhub.Vi
 	}
 	if existing != nil {
 		return artifact.Write{}, kernel.NewArtifactError(
-			fmt.Sprintf("This agent already has an artifact named \"%s\" (v%d) \u2014 use update_artifact to change it", name, existing.Version),
+			fmt.Sprintf("This agent already has an artifact named \"%s\" (v%d) \u2014 use the artifact tool's \"update\" action to change it", name, existing.Version),
 			kernel.ArtifactCodeNameConflict, existing.ID)
 	}
 

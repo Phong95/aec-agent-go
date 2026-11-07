@@ -2,8 +2,11 @@ package artifacts
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -93,6 +96,35 @@ func contextOn(t *testing.T, hub *artifacthub.ArtifactHub, env sandboxhub.View, 
 	}
 }
 
+// actionTool (A-209) is the artifact tool with one action put first into the arguments of
+// every call, so the cases of the four tools before A-209 read as they did.
+type actionTool struct {
+	*Tool
+	action string
+}
+
+func (a actionTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhub.Context) (toolhub.Output, error) {
+	return a.Tool.Execute(ctx, withAction(args, a.action), tc)
+}
+
+// withAction returns the JSON object args with "action" as its first key.
+func withAction(args kernel.Arguments, action string) kernel.Arguments {
+	body := strings.TrimSpace(string(args))
+	head := `{"action":"` + action + `"`
+	if inner := strings.TrimSpace(strings.TrimPrefix(body, "{")); inner != "}" {
+		head += ","
+	}
+	merged, err := kernel.NewArguments([]byte(head + strings.TrimPrefix(body, "{")))
+	if err != nil {
+		panic(err)
+	}
+	return merged
+}
+
+func saveTool(o Options) actionTool   { return actionTool{NewTool(o), ActionSave} }
+func updateTool(o Options) actionTool { return actionTool{NewTool(o), ActionUpdate} }
+func listTool(o Options) actionTool   { return actionTool{NewTool(o), ActionList} }
+
 // execute runs a handler with the JSON arguments and fails the test on a returned error:
 // an artifact tool reports every problem as an output.
 func execute(t *testing.T, h toolhub.Handler, tc toolhub.Context, args string) toolhub.Output {
@@ -180,33 +212,87 @@ func eventTypes(h harness) []string {
 // titles. A title that holds an em dash builds it from the code point, so this source
 // stays ASCII.
 func TestArtifactTools(t *testing.T) {
-	save, update, read, list := NewSaveTool(Options{}), NewUpdateTool(Options{}), NewReadTool(Options{}), NewListTool(Options{})
+	// Update (A-209): one artifact tool; read is gone (the model reads the file with read_file).
+	save, update, list := saveTool(Options{}), updateTool(Options{}), listTool(Options{})
 
 	// --- artifact tool definitions ---------------------------------------------------------
 
-	t.Run("exposes the four A-62 tools with the right risk and sandboxOperation", func(t *testing.T) {
+	t.Run("exposes one artifact tool whose risk and sandbox operation follow the action", func(t *testing.T) {
 		tools := NewTools(Options{})
-		names := make([]string, len(tools))
-		byName := map[string]toolhub.Definition{}
-		for i, h := range tools {
-			d := h.Definition()
-			names[i] = d.Name
-			byName[d.Name] = d
+		if len(tools) != 1 || tools[0].Definition().Name != "artifact" || !slices.Equal(ToolNames(), []string{"artifact"}) {
+			t.Fatalf("tools = %d, names %v", len(tools), ToolNames())
 		}
-		if !slices.Equal(names, ToolNames()) {
-			t.Fatalf("names = %v, want %v", names, ToolNames())
+		d := tools[0].Definition()
+		// the definition states the worst case
+		if d.Risk != toolhub.RiskDraft || d.SandboxOperation != sandboxhub.OperationFSWrite || !slices.Equal(d.Parameters.Required, []string{"action"}) {
+			t.Errorf("definition risk %q op %q required %v", d.Risk, d.SandboxOperation, d.Parameters.Required)
 		}
-		want := map[string][2]string{
-			"save_artifact":   {string(toolhub.RiskDraft), string(sandboxhub.OperationFSWrite)},
-			"update_artifact": {string(toolhub.RiskDraft), string(sandboxhub.OperationFSWrite)},
-			"read_artifact":   {string(toolhub.RiskReadOnly), string(sandboxhub.OperationFSRead)},
-			"list_artifacts":  {string(toolhub.RiskReadOnly), ""},
-		}
-		for name, w := range want {
-			d := byName[name]
-			if string(d.Risk) != w[0] || string(d.SandboxOperation) != w[1] {
-				t.Errorf("%s: risk %q sandboxOperation %q, want %q %q", name, d.Risk, d.SandboxOperation, w[0], w[1])
+		tool := NewTool(Options{})
+		args := func(s string) kernel.Arguments {
+			a, err := kernel.NewArguments([]byte(s))
+			if err != nil {
+				t.Fatal(err)
 			}
+			return a
+		}
+		if tool.RiskFor(args(`{"action":"list"}`)) != toolhub.RiskReadOnly || tool.SandboxOperationFor(args(`{"action":" LIST "}`)) != "" {
+			t.Error("list: want read-only and no sandbox operation")
+		}
+		for _, a := range []string{`{"action":"save"}`, `{"action":"update"}`, `{"action":"nonsense"}`, `{}`, `{"action":3}`} {
+			if tool.RiskFor(args(a)) != toolhub.RiskDraft || tool.SandboxOperationFor(args(a)) != sandboxhub.OperationFSWrite {
+				t.Errorf("%s: want draft and fs.write", a)
+			}
+		}
+	})
+
+	t.Run("refuses a missing or unknown action without retry", func(t *testing.T) {
+		h := setup(t, "s1")
+		for _, a := range []string{`{"name":"a.md"}`, `{"action":"read","name":"a.md"}`, `{"action":3,"name":"a.md"}`} {
+			out := execute(t, NewTool(Options{}), h.tc, a)
+			if !notRetryable(out) || out.Content != `artifact: "action" must be one of save, update, list` {
+				t.Errorf("%s: output = %+v", a, out)
+			}
+		}
+	})
+
+	t.Run("accepts an action with other case and spaces", func(t *testing.T) {
+		h := setup(t, "s1")
+		out := execute(t, NewTool(Options{}), h.tc, `{"action":" Save ","name":"a.md","type":"text/markdown","content":"hi"}`)
+		if isError(out) {
+			t.Errorf("error output: %s", out.Content)
+		}
+	})
+
+	t.Run("points the A-129 content reference at read_file on the tracked path", func(t *testing.T) {
+		h := setup(t, "s1")
+		out := execute(t, save, h.tc, `{"name":"big.md","type":"text/markdown","content":"`+strings.Repeat("x", 2000)+`"}`)
+		var compact map[string]any
+		if err := out.CompactArguments.Decode(&compact); err != nil {
+			t.Fatal(err)
+		}
+		if c, _ := compact["content"].(string); !strings.Contains(c, `read it with read_file "/workspace/agents/a1/artifacts/big.md"`) {
+			t.Errorf("compact content = %q", c)
+		}
+		if compact["action"] != "save" {
+			t.Errorf("compact action = %v", compact["action"])
+		}
+	})
+
+	t.Run("maps the retired tool names to artifact, keeping order and dropping duplicates", func(t *testing.T) {
+		if got := toolhub.RenamedToolNames([]string{"read_file", "save_artifact", "list_artifacts", "terminal", "read_artifact"}); !slices.Equal(got, []string{"read_file", "artifact", "terminal"}) {
+			t.Errorf("RenamedToolNames = %v", got)
+		}
+		if got := toolhub.RenamedToolNames([]string{"artifact", "update_artifact"}); !slices.Equal(got, []string{"artifact"}) {
+			t.Errorf("RenamedToolNames = %v", got)
+		}
+		renamed := toolhub.RenamedTools()
+		for _, name := range RetiredToolNames() {
+			if renamed[name] != "artifact" {
+				t.Errorf("%s is renamed to %q, want artifact", name, renamed[name])
+			}
+		}
+		if len(renamed) != len(RetiredToolNames()) {
+			t.Errorf("RenamedTools = %v, want only the retired artifact tools", renamed)
 		}
 	})
 
@@ -262,7 +348,7 @@ func TestArtifactTools(t *testing.T) {
 		if v.Note != "first pass" {
 			t.Errorf("note = %q", v.Note)
 		}
-		wantOrigin := artifact.Origin{AgentID: "a1", SessionID: "sess-7", Tool: "save_artifact", SandboxPath: a.SandboxPath, SandboxID: h.env.ID()}
+		wantOrigin := artifact.Origin{AgentID: "a1", SessionID: "sess-7", Tool: "artifact", SandboxPath: a.SandboxPath, SandboxID: h.env.ID()}
 		if v.Origin != wantOrigin {
 			t.Errorf("origin = %+v, want %+v", v.Origin, wantOrigin)
 		}
@@ -324,8 +410,8 @@ func TestArtifactTools(t *testing.T) {
 			t.Errorf("output = %+v, want a non-retryable error", again)
 		}
 		hasMeta(t, again, map[string]any{"code": "name_conflict"})
-		if !strings.Contains(again.Content, "update_artifact") {
-			t.Errorf("content = %q, want it to point at update_artifact", again.Content)
+		if !strings.Contains(again.Content, `action "update"`) {
+			t.Errorf("content = %q, want it to point at the update action", again.Content)
 		}
 		if got := mustRead(t, h.env, "artifacts/a.md"); got != "one" {
 			t.Errorf("the file = %q, want it untouched", got)
@@ -568,82 +654,106 @@ func TestArtifactTools(t *testing.T) {
 	})
 
 	// --- read_artifact ----------------------------------------------------------------------
+	// Update (A-209): there is no read action - the model reads the tracked file with
+	// read_file, and list says whether each file still matches its last version.
 
-	t.Run("returns the tracked file's content with a header naming the tracked path", func(t *testing.T) {
+	t.Run("list says nothing extra for a current file and points at read_file", func(t *testing.T) {
 		h := setup(t, "s1")
 		execute(t, save, h.tc, `{"name":"a.md","type":"text/markdown","content":"hello"}`)
 
-		out := execute(t, read, h.tc, `{"name":"a.md"}`)
+		out := execute(t, list, h.tc, `{}`)
 
 		if isError(out) {
 			t.Fatalf("error output: %s", out.Content)
 		}
-		for _, part := range []string{"a.md (text/markdown) v1", "hello"} {
-			if !strings.Contains(out.Content, part) {
-				t.Errorf("content = %q, want it to contain %q", out.Content, part)
-			}
+		if strings.Contains(out.Content, "changed since") || strings.Contains(out.Content, "missing") {
+			t.Errorf("content = %q, want no status part", out.Content)
 		}
-		hasMeta(t, out, map[string]any{"version": 1, "status": "current", "truncated": false})
-		if !metaHas(out, "sandboxPath") {
-			t.Error("metadata has no sandboxPath")
+		if !strings.HasSuffix(out.Content, "\nRead one with read_file on its path.") {
+			t.Errorf("content = %q, want the read_file footer", out.Content)
 		}
-	})
-
-	t.Run("bounds long content without touching the tracked file", func(t *testing.T) {
-		h := setup(t, "s1")
-		execute(t, save, h.tc, `{"name":"a.md","type":"text/markdown","content":"`+strings.Repeat("z", 500)+`"}`)
-
-		out := execute(t, read, h.tc, `{"name":"a.md","max_bytes":100}`)
-
-		hasMeta(t, out, map[string]any{"truncated": true, "bytes": 500})
-		if !strings.Contains(out.Content, "raise max_bytes") {
-			t.Errorf("content = %q, want the truncation note", out.Content)
-		}
-		if got := readArtifact(t, h, "a.md", h.env).File; got.Content != strings.Repeat("z", 500) {
-			t.Errorf("the tracked file was cut: %d bytes", len(got.Content))
+		if got := listedStatus(t, out); !slices.Equal(got, []string{"current"}) {
+			t.Errorf("statuses = %v, want current", got)
 		}
 	})
 
-	t.Run("is not an error when the file changed since it was tracked, and suggests re-tracking", func(t *testing.T) {
+	t.Run("list marks a file that changed since it was tracked, and suggests recording it", func(t *testing.T) {
 		h := setup(t, "s1")
 		execute(t, save, h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
 		mustWrite(t, h.env, "artifacts/a.md", "edited outside the tool")
 
-		out := execute(t, read, h.tc, `{"name":"a.md"}`)
+		out := execute(t, list, h.tc, `{}`)
 
 		if isError(out) {
 			t.Errorf("error output: %s", out.Content)
 		}
-		hasMeta(t, out, map[string]any{"status": "changed"})
-		for _, part := range []string{"changed since", "update_artifact"} {
+		for _, part := range []string{"changed since v1", `action "update" and just the name`} {
 			if !strings.Contains(out.Content, part) {
 				t.Errorf("content = %q, want it to contain %q", out.Content, part)
 			}
 		}
+		if got := listedStatus(t, out); !slices.Equal(got, []string{"changed"}) {
+			t.Errorf("statuses = %v, want changed", got)
+		}
 	})
 
-	t.Run("gives a non-retryable file_missing error when the tracked file is gone", func(t *testing.T) {
+	t.Run("list marks a tracked file that is gone as missing, with the reason", func(t *testing.T) {
 		h := setup(t, "s1")
 		execute(t, save, h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
 		fresh := sandboxOf(t, "a1", sandboxhub.KindDocker) // same id, empty store: the file is no longer there
 		tc := h.tc
 		tc.GetSandbox = func(context.Context) (sandboxhub.View, error) { return fresh, nil }
 
-		out := execute(t, read, tc, `{"name":"a.md"}`)
+		out := execute(t, list, tc, `{}`)
 
-		if !notRetryable(out) {
-			t.Errorf("output = %+v, want a non-retryable error", out)
+		if isError(out) || !strings.Contains(out.Content, "missing: ") {
+			t.Errorf("output = %+v, want the missing status", out)
 		}
-		hasMeta(t, out, map[string]any{"code": "file_missing"})
+		if got := listedStatus(t, out); !slices.Equal(got, []string{"missing"}) {
+			t.Errorf("statuses = %v, want missing", got)
+		}
 	})
 
-	t.Run("reports not_found for an artifact that was never saved", func(t *testing.T) {
+	t.Run("list still lists without a status when the agent has no sandbox or it fails", func(t *testing.T) {
 		h := setup(t, "s1")
-		out := execute(t, read, h.tc, `{"name":"ghost.md"}`)
-		if !notRetryable(out) {
-			t.Errorf("output = %+v, want a non-retryable error", out)
+		execute(t, save, h.tc, `{"name":"a.md","type":"text/markdown","content":"v1"}`)
+
+		noSandbox, failing := h.tc, h.tc
+		noSandbox.GetSandbox = nil
+		failing.GetSandbox = func(context.Context) (sandboxhub.View, error) { return nil, errors.New("sandbox down") }
+		for _, tc := range []toolhub.Context{noSandbox, failing} {
+			out := execute(t, list, tc, `{}`)
+			if isError(out) {
+				t.Errorf("error output: %s", out.Content)
+			}
+			hasMeta(t, out, map[string]any{"count": 1})
+			if got := listedStatus(t, out); !slices.Equal(got, []string{""}) {
+				t.Errorf("statuses = %v, want none", got)
+			}
 		}
-		hasMeta(t, out, map[string]any{"code": "not_found"})
+	})
+
+	t.Run("list checks the status of many artifacts", func(t *testing.T) {
+		h := setup(t, "s1")
+		for i := range 20 {
+			execute(t, save, h.tc, `{"name":"a`+strconv.Itoa(i)+`.md","type":"text/markdown","content":"v1"}`)
+		}
+		mustWrite(t, h.env, "artifacts/a7.md", "edited")
+
+		out := execute(t, list, h.tc, `{}`)
+
+		got := listedStatus(t, out)
+		changed := 0
+		for _, st := range got {
+			if st == "changed" {
+				changed++
+			} else if st != "current" {
+				t.Errorf("status %q, want current or changed", st)
+			}
+		}
+		if len(got) != 20 || changed != 1 {
+			t.Errorf("statuses = %v, want 20 with one changed", got)
+		}
 	})
 
 	t.Run("gives a missing file naming both ids when read from a different sandbox", func(t *testing.T) {
@@ -698,8 +808,33 @@ func TestArtifactTools(t *testing.T) {
 		h := setup(t, "s1")
 		out := execute(t, list, h.tc, `{}`)
 		hasMeta(t, out, map[string]any{"count": 0})
-		if !strings.Contains(out.Content, "save_artifact") {
-			t.Errorf("content = %q, want it to point at save_artifact", out.Content)
+		if !strings.Contains(out.Content, `action "save"`) {
+			t.Errorf("content = %q, want it to point at the save action", out.Content)
 		}
 	})
+}
+
+// listedStatus is the status of every listed artifact in the metadata of a list output,
+// "" for one with no status.
+func listedStatus(t *testing.T, out toolhub.Output) []string {
+	t.Helper()
+	raw, err := kernel.EncodeJSON(out.Metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta struct {
+		Artifacts []struct {
+			Status *string `json:"status"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatal(err)
+	}
+	statuses := make([]string, len(meta.Artifacts))
+	for i, a := range meta.Artifacts {
+		if a.Status != nil {
+			statuses[i] = *a.Status
+		}
+	}
+	return statuses
 }

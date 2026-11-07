@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/events"
@@ -1168,7 +1169,7 @@ func (m *subagentManager) parentSessionOf(sessionID string) (string, bool) {
 
 // toolScope is a child session's tool scope (read-only by default); nil for other
 // sessions.
-func (m *subagentManager) toolScope(sessionID string) func(toolhub.Definition) bool {
+func (m *subagentManager) toolScope(sessionID string) agentloop.ToolScope {
 	m.mu.Lock()
 	b, ok := m.bindings[sessionID]
 	m.mu.Unlock()
@@ -1180,9 +1181,18 @@ func (m *subagentManager) toolScope(sessionID string) func(toolhub.Definition) b
 
 // childToolScope is the tools a child with access may use.
 // (Update (A-137): never one whose definition says Subagent: SubagentNever either.)
-func childToolScope(access subagent.Access) func(toolhub.Definition) bool {
-	return func(d toolhub.Definition) bool {
-		return d.Subagent != toolhub.SubagentNever && subagent.ChildMayUse(access, d.Name, string(d.Risk))
+// Update (A-209): with a call (at dispatch) it judges that call - its own risk and
+// arguments (subagent.ChildMayCall): a read-only child may save or list artifacts but
+// not update one.
+func childToolScope(access subagent.Access) agentloop.ToolScope {
+	return func(d toolhub.Definition, call *agentloop.ScopeCall) bool {
+		if d.Subagent == toolhub.SubagentNever {
+			return false
+		}
+		if call == nil {
+			return subagent.ChildMayUse(access, d.Name, string(d.Risk))
+		}
+		return subagent.ChildMayCall(access, d.Name, string(call.Risk), call.Args)
 	}
 }
 
@@ -1232,7 +1242,7 @@ func (m *subagentManager) delegatedTools(ctx context.Context, session kernel.Ses
 		tools := typeTools(t, parentTools)
 		inScope := childToolScope(t.Access)
 		for _, d := range preferred {
-			if !slices.Contains(tools, d.Name) || !inScope(d) {
+			if !slices.Contains(tools, d.Name) || !inScope(d, nil) {
 				continue
 			}
 			i := slices.IndexFunc(out, func(x delegatedTool) bool { return x.name == d.Name })

@@ -156,7 +156,8 @@ func (l *Loop) toolDefinitions(ctx context.Context, session kernel.Session, sees
 	// A-106: plus the tools the session is granted (SessionTools).
 	toolDefs := slices.Clone(listTools(l.deps.Tools, sessionID))
 	if inScope := l.toolScope(sessionID); inScope != nil {
-		toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return !inScope(d) })
+		// A-209: listing, so no call (nil).
+		toolDefs = slices.DeleteFunc(toolDefs, func(d toolhub.Definition) bool { return !inScope(d, nil) })
 	}
 	// A-136: in plan mode the model is offered only read-only tools (the executor refuses
 	// the rest).

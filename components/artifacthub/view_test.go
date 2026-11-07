@@ -304,7 +304,7 @@ func TestSaveRefusesNameAlreadyUsed(t *testing.T) {
 	two := "two"
 	_, err := v.Save(ctx, artifact.SaveInput{Name: "a.md", Type: "text/markdown", Content: &two}, e.fv)
 	ae := expectCode(t, err, kernel.ArtifactCodeNameConflict)
-	if ae.ArtifactID != first.Artifact.ID || !strings.Contains(ae.Message, "update_artifact") {
+	if ae.ArtifactID != first.Artifact.ID || !strings.Contains(ae.Message, `the artifact tool's "update" action`) {
 		t.Fatalf("error = %+v", ae)
 	}
 	if f, err := e.fv.ReadFile(ctx, "artifacts/a.md", sandboxhub.ReadOptions{}); err != nil || f.Content != "one" {

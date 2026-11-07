@@ -15,6 +15,7 @@ import (
 
 // TestArtifacts_SaveEndToEnd is the tracer of plan 11-03: an agent built with CreateAgent
 // and the artifact tools saves an artifact through save_artifact. The content lands in the
+// (Update (A-209): through the artifact tool's "save" action.)
 // agent's folder of the in-memory sandbox of a real AgentCore, the artifact is tracked in
 // the core's artifact hub for that agent and session, and artifact:saved is emitted with
 // the expected payload (ROADMAP success criterion 3).
@@ -25,7 +26,7 @@ func TestArtifacts_SaveEndToEnd(t *testing.T) {
 
 	const content = "# Plan\n"
 	model := aecmock.NewScriptedProvider("scripted", []aecmock.ScriptedTurn{
-		toolTurn(toolCallOf("tc-1", "save_artifact", `{"name":"site-plan","type":"report","content":"# Plan\n"}`)),
+		toolTurn(toolCallOf("tc-1", "artifact", `{"action":"save","name":"site-plan","type":"report","content":"# Plan\n"}`)),
 		{Content: "Saved"},
 	})
 
@@ -33,7 +34,7 @@ func TestArtifacts_SaveEndToEnd(t *testing.T) {
 		Provider: "scripted",
 		APIKey:   "k",
 		Model:    "m",
-		Tools:    []toolhub.Handler{artifacts.NewSaveTool(artifacts.Options{})},
+		Tools:    []toolhub.Handler{artifacts.NewTool(artifacts.Options{})},
 	}, aec.WithCore(core), aec.WithProviderRegistry(registryFor(model)))
 	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
@@ -153,4 +154,70 @@ func TestArtifacts_SaveEndToEnd(t *testing.T) {
 		}
 	}
 	dispose()
+}
+
+// TestArtifactToolInTheAgentLoop (A-209): the artifact tool through an agent - the
+// approval gate follows the call's action (list asks nothing on a host folder, save asks
+// like write_file), and a profile that still lists the retired tool names gets the
+// artifact tool.
+func TestArtifactToolInTheAgentLoop(t *testing.T) {
+	artifactCore := func(t *testing.T, o workspaceCoreOptions) *workspaceCore {
+		t.Helper()
+		wc := newWorkspaceCore(t, o)
+		for _, h := range artifacts.NewTools(artifacts.Options{}) {
+			if err := wc.core.UseTool(h); err != nil {
+				t.Fatalf("UseTool: %v", err)
+			}
+		}
+		return wc
+	}
+
+	t.Run("asks before save on a host folder, but not before list", func(t *testing.T) {
+		handler := workspaceApprovals()
+		own := sandboxhub.Selection{Mode: sandboxhub.SelectionOwn, Own: &sandboxhub.OwnConfig{}}
+		run := runWorkspaceLoop(t, artifactCore(t, workspaceCoreOptions{withHost: true, interaction: handler}), loopRunOptions{
+			sandbox: own,
+			tools:   []string{"artifact"},
+			calls: []loopCall{
+				{"artifact", `{"action":"list"}`},
+				{"artifact", `{"action":"save","name":"a.md","type":"text/markdown","content":"hi"}`},
+				{"artifact", `{"action":"list"}`},
+			},
+		})
+		defer run.dispose(t)
+
+		reqs := handler.Approvals()
+		if len(reqs) != 1 || reqs[0].ToolName != "artifact" || !strings.Contains(string(reqs[0].Arguments), `"save"`) {
+			t.Fatalf("approvals = %+v, want one, for the save", reqs)
+		}
+		run.requireResults(t, 3)
+		for i, want := range []string{"No artifacts yet", `Saved artifact "a.md"`, "a.md (text/markdown) v1"} {
+			if !strings.Contains(run.results[i].Content, want) {
+				t.Errorf("result %d = %q, want it to contain %q", i, run.results[i].Content, want)
+			}
+		}
+	})
+
+	t.Run("gives a profile that still lists the retired tool names the artifact tool", func(t *testing.T) {
+		run := runWorkspaceLoop(t, artifactCore(t, workspaceCoreOptions{}), loopRunOptions{
+			tools: artifacts.RetiredToolNames(),
+			calls: []loopCall{{"artifact", `{"action":"list"}`}},
+		})
+		defer run.dispose(t)
+
+		if got := run.agent.Profile().Tools; len(got) != 1 || got[0] != "artifact" {
+			t.Errorf("profile tools = %v, want [artifact]", got)
+		}
+		offered := false
+		for _, d := range run.provider.Calls()[0].Options.Tools {
+			offered = offered || d.Name == "artifact"
+		}
+		if !offered {
+			t.Error("the model was not offered the artifact tool")
+		}
+		run.requireResults(t, 1)
+		if !strings.Contains(run.results[0].Content, "No artifacts yet") {
+			t.Errorf("result = %q", run.results[0].Content)
+		}
+	})
 }

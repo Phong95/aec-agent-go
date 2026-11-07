@@ -183,6 +183,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	}()
 
 	own := p.Clone()
+	// A-209: a stored profile may still list renamed tools (save_artifact & co. -> artifact).
+	own.Tools = toolhub.RenamedToolNames(own.Tools)
 	a := &Agent{
 		id: own.ID, profile: own, saveProfile: deps.SaveProfile, cancelLifetime: cancel,
 		toolHub: deps.ToolHub,
@@ -934,7 +936,8 @@ func (a *Agent) mergeSessionModel(session kernel.Session, opts llmhub.ModelOptio
 // UpdateTools replaces the agent's tool allowlist and propagates it to the
 // ToolManager. names is copied. It does not persist the profile.
 func (a *Agent) UpdateTools(names []string) {
-	names = slices.Clone(names)
+	// A-209: an old client may still send renamed tool names.
+	names = toolhub.RenamedToolNames(names)
 	a.mu.Lock()
 	a.profile.Tools = slices.Clone(names)
 	a.mu.Unlock()

@@ -102,6 +102,36 @@ func TestValidateRequest(t *testing.T) {
 	}
 }
 
+// A-209: a read-only child sees the artifact tool and may save or list with it, but not
+// update; a write child may update.
+func TestChildMayCall(t *testing.T) {
+	args := func(s string) kernel.Arguments { return kernel.Arguments(s) }
+	ro := subagent.AccessReadOnly
+	if !subagent.ChildMayUse(ro, "artifact", "draft") {
+		t.Error("a read-only child does not see the artifact tool")
+	}
+	for _, c := range []struct {
+		access     subagent.Access
+		name, risk string
+		args       string
+		want       bool
+	}{
+		{ro, "artifact", "draft", `{"action":"save"}`, true},
+		{ro, "artifact", "draft", `{"action":" SAVE "}`, true},
+		{ro, "artifact", "read-only", `{"action":"list"}`, true},
+		{ro, "artifact", "draft", `{"action":"update"}`, false},
+		{ro, "artifact", "draft", `{}`, false},
+		{ro, "artifact", "draft", `{"action":3}`, false},
+		{ro, "write_file", "draft", `{"action":"save"}`, false},
+		{ro, "spawn_subagent", "read-only", `{}`, false},
+		{subagent.AccessWrite, "artifact", "draft", `{"action":"update"}`, true},
+	} {
+		if got := subagent.ChildMayCall(c.access, c.name, c.risk, args(c.args)); got != c.want {
+			t.Errorf("ChildMayCall(%s, %s, %s, %s) = %v, want %v", c.access, c.name, c.risk, c.args, got, c.want)
+		}
+	}
+}
+
 func TestChildMayUse(t *testing.T) {
 	if !subagent.ChildMayUse(subagent.AccessReadOnly, "read_file", "read-only") || subagent.ChildMayUse(subagent.AccessReadOnly, "write_file", "draft") {
 		t.Fatal("read-only access offers only read-only tools")

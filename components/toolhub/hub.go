@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/kernel"
 	"github.com/Phong95/aec-agent-go/kernel/ordered"
 )
@@ -150,6 +151,24 @@ func (h *ToolHub) Get(name string) (Definition, bool) {
 		return Definition{}, false
 	}
 	return e.def.Clone(), true
+}
+
+// CallRisk returns the risk of one call of the tool registered under name (A-209): the
+// handler's RiskFor of args when it implements CallRisker, else the definition's Risk.
+// It runs nothing; a subagent's tool scope uses it to judge a call before the policy
+// (a read-only child may list artifacts but not update one). false when no tool of that
+// name is registered.
+func (h *ToolHub) CallRisk(name string, args kernel.Arguments) (Risk, bool) {
+	h.mu.RLock()
+	e, ok := h.tools.Get(name)
+	h.mu.RUnlock()
+	if !ok {
+		return "", false
+	}
+	if r, ok := e.handler.(CallRisker); ok {
+		return r.RiskFor(bytes.Clone(args)), true
+	}
+	return e.def.Risk, true
 }
 
 // GetByNames returns the definitions of the registered tools among names, in the
@@ -297,6 +316,17 @@ func (a Authorized) Risk() Risk {
 		return r.RiskFor(bytes.Clone(a.args))
 	}
 	return a.def.Risk
+}
+
+// SandboxOperation returns the sandbox operation of this call (A-209): the handler's
+// SandboxOperationFor of the authorized arguments when it implements
+// CallSandboxOperator, else the definition's SandboxOperation. Empty means the call needs
+// no sandbox approval.
+func (a Authorized) SandboxOperation() sandboxhub.Operation {
+	if o, ok := a.handler.(CallSandboxOperator); ok {
+		return o.SandboxOperationFor(bytes.Clone(a.args))
+	}
+	return a.def.SandboxOperation
 }
 
 // Arguments returns a fresh copy of the authorized argument bytes.

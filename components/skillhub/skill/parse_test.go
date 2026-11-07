@@ -380,8 +380,9 @@ func TestSkillFormatTheEssentialSkillsAreValid(t *testing.T) {
 	}
 	// Update (A-70): watch-and-react is the fourth essential skill.
 	// Update (A-182): visual-self-check is the fifth.
-	if len(dump.Skills) != 5 {
-		t.Fatalf("the dump holds %d essential skills, want 5", len(dump.Skills))
+	// Update (A-209): artifacts is the sixth.
+	if len(dump.Skills) != 6 {
+		t.Fatalf("the dump holds %d essential skills, want 6", len(dump.Skills))
 	}
 	var names []string
 	parsedAll := make([]skill.Parsed, 0, len(dump.Skills))

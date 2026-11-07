@@ -18,7 +18,8 @@ import (
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
-// This file compares the definitions of all 16 built-in tools with the recorded fixture
+// This file compares the definitions of all 16 built-in tools (Update (A-209): 13 - the
+// artifact tool replaced four) with the recorded fixture
 // builtin-tool-definitions (recorded by tools/wiregen/builtin/definitions.cases.mjs). The handlers are built through the root
 // aliases (aec.New..., workspace.NewTools, artifacts.NewTools), so the test also
 // proves the facade reaches the real tools. A mismatch in any description, schema bound or
@@ -109,9 +110,8 @@ func goHandlers(t *testing.T, o definitionOptions) map[string]toolhub.Handler {
 	for _, h := range artifacts.NewTools(art) {
 		add(h)
 	}
-	for _, h := range []toolhub.Handler{
-		artifacts.NewSaveTool(art), artifacts.NewUpdateTool(art), artifacts.NewReadTool(art), artifacts.NewListTool(art),
-	} {
+	// Update (A-209): one artifact tool.
+	for _, h := range []toolhub.Handler{artifacts.NewTool(art)} {
 		if got, want := encodeDefinition(t, h), encodeDefinition(t, byName[h.Definition().Name]); got != want {
 			t.Errorf("the constructor and the factory build different %s definitions\n ctor: %s\n fact: %s", h.Definition().Name, got, want)
 		}
@@ -215,7 +215,7 @@ func TestBuiltinToolDefinitions(t *testing.T) {
 
 	wantTools := []string{
 		"web_search", "web_extract", "clarify", "read_file", "write_file", "edit_file", "list_files", "search_files",
-		"terminal", "run_code", "save_artifact", "update_artifact", "read_artifact", "list_artifacts", "skill_view", "skill_manage",
+		"terminal", "run_code", "artifact", "skill_view", "skill_manage", // Update (A-209): artifact replaces four tools
 	}
 	for _, name := range wantTools {
 		if !tools[name] {
@@ -228,10 +228,10 @@ func TestBuiltinToolDefinitions(t *testing.T) {
 			got = append(got, name)
 		}
 		slices.Sort(got)
-		t.Errorf("the fixture records %d tools %v, want the 16 built-in tools", len(tools), got)
+		t.Errorf("the fixture records %d tools %v, want the %d built-in tools", len(tools), got, len(wantTools))
 	}
-	if defaults != 16 {
-		t.Errorf("the fixture records %d default-option rows, want one per tool (16)", defaults)
+	if defaults != len(wantTools) { // Update (A-209): 13 tools
+		t.Errorf("the fixture records %d default-option rows, want one per tool (%d)", defaults, len(wantTools))
 	}
 	if manageChecked == 0 {
 		t.Error("the skill_manage allow-listed difference was never asserted")
@@ -241,7 +241,7 @@ func TestBuiltinToolDefinitions(t *testing.T) {
 	if got, want := workspace.ToolNames(), []string{"read_file", "write_file", "edit_file", "list_files", "search_files", "terminal", "run_code"}; !slices.Equal(got, want) {
 		t.Errorf("workspace.ToolNames() = %v, want %v", got, want)
 	}
-	if got, want := artifacts.ToolNames(), []string{"save_artifact", "update_artifact", "read_artifact", "list_artifacts"}; !slices.Equal(got, want) {
+	if got, want := artifacts.ToolNames(), []string{"artifact"}; !slices.Equal(got, want) {
 		t.Errorf("artifacts.ToolNames() = %v, want %v", got, want)
 	}
 }

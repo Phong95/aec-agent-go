@@ -21,7 +21,8 @@ func BuiltInTypes() []subagenttype.Definition {
 				"don't guess. Be thorough but stop when the task is done. Your final reply is your report: lead with the answer, " +
 				"then the evidence (file paths, sources, values), then anything you could not confirm. " +
 				// A-129 item 5: a deliverable is saved, not pasted - the parent would otherwise write it out again.
-				"When the task produces a deliverable (a page, a document, a table), save it with save_artifact and report its " +
+				// A-209: save_artifact is now the artifact tool's "save" action.
+				`When the task produces a deliverable (a page, a document, a table), save it with the artifact tool (action "save") and report its ` +
 				"name and a short summary instead of pasting its content.",
 			Access: subagent.AccessReadOnly,
 		},
@@ -33,7 +34,8 @@ func BuiltInTypes() []subagenttype.Definition {
 				"concluding. Prefer primary sources (standards bodies, manufacturers, official documents). Your final reply is your " +
 				"report: the findings as short bullets, each with its source URL or file path, then open questions or conflicts " +
 				"between sources.",
-			Tools:  []string{"web_search", "web_extract", "read_file", "list_files", "search_files", "read_artifact", "list_artifacts"},
+			// A-209: read_artifact + list_artifacts are now the artifact tool (artifact files are read with read_file).
+			Tools:  []string{"web_search", "web_extract", "read_file", "list_files", "search_files", "artifact"},
 			Access: subagent.AccessReadOnly,
 		},
 	}

@@ -3,12 +3,14 @@ package aec_test
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/Phong95/aec-agent-go/components/llmhub"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
+	"github.com/Phong95/aec-agent-go/components/toolhub/builtin/artifacts"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
@@ -80,14 +82,15 @@ func TestDelegatedTools_TheChildGetsTheHiddenToolAndSaveArtifact(t *testing.T) {
 			mu.Unlock()
 			return typesReply("report"), nil
 		},
-		tools: []typeTool{deepSearch, {name: "save_artifact", risk: toolhub.RiskDraft}, {name: "write_file", risk: toolhub.RiskDraft}},
+		tools: []typeTool{deepSearch, {name: "artifact", risk: toolhub.RiskDraft}, {name: "write_file", risk: toolhub.RiskDraft}},
 	})
 	s.chat(t)
 	mu.Lock()
 	defer mu.Unlock()
 	slices.Sort(childTools)
 	// A-129 item 5: the read-only general-purpose child may save a deliverable, but write no other file.
-	if want := []string{"deep_search", "save_artifact"}; !slices.Equal(childTools, want) {
+	// A-209: save_artifact is the artifact tool's "save" action.
+	if want := []string{"artifact", "deep_search"}; !slices.Equal(childTools, want) {
 		t.Fatalf("child tools = %v, want %v", childTools, want)
 	}
 }
@@ -110,5 +113,51 @@ func TestDelegatedTools_AChildNeverGetsAToolMarkedNever(t *testing.T) {
 	defer mu.Unlock()
 	if !slices.Equal(childTools, []string{"look"}) {
 		t.Fatalf("child tools = %v, want [look]", childTools)
+	}
+}
+
+// TestDelegatedTools_AReadOnlyChildMaySaveAndListArtifactsButNotUpdate (A-209): the scope
+// of a read-only child judges each call on its own risk and arguments - the artifact
+// tool's "save" and "list" run, "update" is refused before the policy.
+func TestDelegatedTools_AReadOnlyChildMaySaveAndListArtifactsButNotUpdate(t *testing.T) {
+	var mu sync.Mutex
+	var results []string
+	step := 0
+	calls := []string{
+		`{"action":"save","name":"a.md","type":"text/markdown","content":"hi"}`,
+		`{"action":"update","name":"a.md","content":"bye"}`,
+		`{"action":"list"}`,
+	}
+	s := setupTypes(t, typesOptions{
+		delegate: []map[string]any{{"subagent": "general-purpose", "task": "save a report"}},
+		// registered below; the agent's tool list is read on every call
+		parentTools: []string{"artifact"},
+		child: func(_ context.Context, msgs []kernel.Message, _ llmhub.ModelOptions) (kernel.ModelResponse, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if step > 0 {
+				for _, r := range resultsOf(msgs) {
+					results = append(results, r.Content)
+				}
+			}
+			if step == len(calls) {
+				return typesReply("report"), nil
+			}
+			step++
+			return typesToolUse([]kernel.ToolCall{{ID: "tc-art-" + strconv.Itoa(step), Name: "artifact", Arguments: kernel.Arguments(calls[step-1])}}), nil
+		},
+	})
+	if err := s.core.UseTool(artifacts.NewTool(artifacts.Options{})); err != nil {
+		t.Fatal(err)
+	}
+	s.chat(t)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(results) != 3 {
+		t.Fatalf("results = %q, want three", results)
+	}
+	const denied = "is not available to you as a subagent"
+	if strings.Contains(results[0], denied) || !strings.Contains(results[1], denied) || strings.Contains(results[2], denied) {
+		t.Errorf("results = %q, want save and list in scope and update denied", results)
 	}
 }

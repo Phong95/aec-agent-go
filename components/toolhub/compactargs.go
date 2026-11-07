@@ -25,7 +25,7 @@ type ContentWritten struct {
 // WithContentReference (A-129) returns the call's arguments with a large inline
 // "content" replaced by a short reference to where it was written, for
 // Output.CompactArguments. A tool that wrote its content to a file (write_file,
-// save_artifact, update_artifact) returns this, so later model requests carry the
+// save_artifact, update_artifact - A-209: artifact save / update) returns this, so later model requests carry the
 // reference instead of the whole text again. The other keys keep their order. Nil
 // when there is nothing worth replacing.
 func WithContentReference(args kernel.Arguments, written ContentWritten) kernel.Arguments {

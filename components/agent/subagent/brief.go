@@ -48,18 +48,51 @@ func IsChildExcludedTool(name string) bool { return slices.Contains(childExclude
 // already used is refused) at their own paths, so children running side by side never
 // overwrite each other's files or the parent's - and a child can save a deliverable and
 // report its name instead of pasting it into its report, which the parent would re-emit.
-var readOnlyChildWrites = []string{"save_artifact"}
+// Update (A-209): save_artifact is now the artifact tool's "save" action, so this maps a
+// tool to the writing actions a read-only child may call; its read-only actions ("list")
+// pass on the call's own risk.
+var readOnlyChildWrites = map[string][]string{"artifact": {"save"}}
 
 // ChildMayUse reports whether a child with access may use a tool with this name and risk
 // ("read-only", "draft", "consequential"): every tool but the excluded ones for
 // AccessWrite, only the read-only ones for AccessReadOnly (childToolScope of core/ts,
 // without the toolhub types this leaf cannot import).
 // (Update (A-129 item 5): save_artifact for AccessReadOnly too.)
+// (Update (A-209): the artifact tool for AccessReadOnly too, which then judges each call
+// with ChildMayCall.)
 func ChildMayUse(access Access, name, risk string) bool {
 	if IsChildExcludedTool(name) {
 		return false
 	}
-	return access == AccessWrite || risk == "read-only" || slices.Contains(readOnlyChildWrites, name)
+	_, writes := readOnlyChildWrites[name]
+	return access == AccessWrite || risk == "read-only" || writes
+}
+
+// ChildMayCall reports whether a child with access may make this one call (A-209): the
+// call's own risk (toolhub.CallRisker, e.g. the artifact tool's "list" is read-only) and
+// its arguments. A read-only child may make a read-only call, and a writing call only
+// through an action listed for the tool in readOnlyChildWrites (the artifact tool's
+// "save", not "update"). ChildMayUse is the listing side: whether the child sees the
+// tool at all.
+func ChildMayCall(access Access, name, risk string, args kernel.Arguments) bool {
+	if IsChildExcludedTool(name) {
+		return false
+	}
+	if access == AccessWrite || risk == "read-only" {
+		return true
+	}
+	actions, ok := readOnlyChildWrites[name]
+	if !ok {
+		return false
+	}
+	var call struct {
+		Action any `json:"action"`
+	}
+	if err := args.Decode(&call); err != nil {
+		return false
+	}
+	action, isString := call.Action.(string)
+	return isString && slices.Contains(actions, strings.ToLower(jsstr.Trim(action)))
 }
 
 // ValidateRequest returns the request checked and trimmed, or an *Error with

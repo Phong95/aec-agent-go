@@ -31,7 +31,8 @@ type Origin struct {
 	// SessionID is the session the version was written in, when it was written
 	// during a chat turn.
 	SessionID string `json:"sessionId,omitempty"`
-	// Tool is the tool that produced it, e.g. "save_artifact". Empty when written
+	// Tool is the tool that produced it, e.g. "save_artifact" (A-209: "artifact" from now
+	// on). Empty when written
 	// through the SDK directly.
 	Tool string `json:"tool,omitempty"`
 	// SandboxPath is the logical sandbox path of the file this version tracked.

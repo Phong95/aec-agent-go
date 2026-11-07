@@ -59,6 +59,9 @@ func typeTools(t subagenttype.Type, parentTools []string) []string {
 	wanted := t.Tools
 	if wanted == nil {
 		wanted = parentTools
+	} else {
+		// A-209: a type may still list renamed tools (read_artifact & co. -> artifact).
+		wanted = toolhub.RenamedToolNames(wanted)
 	}
 	out := []string{}
 	for _, name := range wanted {
@@ -129,7 +132,7 @@ func runTypeTurn(ctx context.Context, d childLoopDeps, parent profile.AgentProfi
 		Interaction: func(string) toolhub.InteractionHandler { return turn.interaction },
 		// A-135: the parent session's approval mode.
 		ApprovalMode: approvalMode,
-		ToolScope:    func(string) func(toolhub.Definition) bool { return scope },
+		ToolScope:    func(string) agentloop.ToolScope { return scope },
 		Secrets:      secrets,
 	}, loopOpts...)
 	if err != nil {

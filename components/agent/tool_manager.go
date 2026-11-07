@@ -39,6 +39,7 @@ type ToolManager struct {
 var (
 	_ agentloop.Tools        = (*ToolManager)(nil)
 	_ agentloop.SessionTools = (*ToolManager)(nil)
+	_ agentloop.CallRisks    = (*ToolManager)(nil)
 )
 
 // ToolManagerOption configures a ToolManager (A-106).
@@ -159,6 +160,13 @@ func (m *ToolManager) Authorize(ctx context.Context, name string, args kernel.Ar
 		allowed = append(allowed, granted...)
 	}
 	return m.hub.Authorize(ctx, name, args, tc, allowed)
+}
+
+// CallRisk (A-209, agentloop.CallRisks) is the risk of one call of the tool registered
+// under name, before it is authorized (toolhub.ToolHub.CallRisk): a subagent's tool
+// scope judges the call with it. It does not check the allowlist; the policy does.
+func (m *ToolManager) CallRisk(name string, args kernel.Arguments) (toolhub.Risk, bool) {
+	return m.hub.CallRisk(name, args)
 }
 
 // SetAllowedTools replaces the allowlist (for example after a PATCH update); names

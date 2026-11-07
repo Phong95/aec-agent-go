@@ -126,7 +126,7 @@ type ArtifactErrorCode string
 const (
 	// ArtifactCodeNotFound: no artifact with that id/name for this agent.
 	ArtifactCodeNotFound ArtifactErrorCode = "not_found"
-	// ArtifactCodeNameConflict: save_artifact used a name this agent already owns; update_artifact is the way to change it.
+	// ArtifactCodeNameConflict: save_artifact used a name this agent already owns; update_artifact is the way to change it. (A-209: the artifact tool's save / update actions.)
 	ArtifactCodeNameConflict ArtifactErrorCode = "name_conflict"
 	// ArtifactCodeInvalidArgument: malformed name, type or reference.
 	ArtifactCodeInvalidArgument ArtifactErrorCode = "invalid_argument"

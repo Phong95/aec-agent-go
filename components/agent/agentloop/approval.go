@@ -39,9 +39,12 @@ func effectiveRisk(def toolhub.Definition) toolhub.Risk {
 // callDefinition is the definition the approval gate and the retry rule judge for this
 // call (A-101): the tool's definition with the call's own risk (toolhub.Authorized.Risk,
 // e.g. http_request GET is read-only, POST consequential).
+// Update (A-209): and the call's own sandbox operation (toolhub.Authorized.SandboxOperation,
+// e.g. artifact list needs no sandbox approval, save is fs.write).
 func callDefinition(auth toolhub.Authorized) toolhub.Definition {
 	def := auth.Definition()
 	def.Risk = auth.Risk()
+	def.SandboxOperation = auth.SandboxOperation()
 	return def
 }
 

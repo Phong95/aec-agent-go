@@ -7,6 +7,9 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Phong95/aec-agent-go/aecmock"
@@ -22,6 +25,16 @@ import (
 // its inputs, the result or error the view scripts, the expected output, the
 // calls the tool made on the view and the events it emitted. This replay scripts the same
 // view in Go, runs the Go tool and compares everything.
+//
+// Update (A-209): the recorder (tools/wiregen) is gone. The corpus was transformed by a
+// script to the one artifact tool: each case's tool became "artifact" with its action
+// first in the arguments, the texts took the new labels, hints and notes, the
+// read_artifact cases were dropped (their file states carry over as list status cases),
+// and the list cases script the one-byte reads list makes for each file's status
+// (view.reads, by artifact id). The script's text rules were checked against a
+// re-recording of every case from the TS artifact tool over the same scripted view, and
+// the new cases are that recording. list reads the statuses concurrently, so the read
+// calls are compared in artifact id order.
 //
 // The inputs handed to the view are compared as JSON values, not as bytes: artifact.SaveInput
 // and artifact.UpdateInput are Phase 5 contracts whose field order is their own (UpdateInput
@@ -44,6 +57,15 @@ type wireView struct {
 	SessionID *string         `json:"sessionId"`
 	Result    json.RawMessage `json:"result"`
 	Error     *wireError      `json:"error"`
+	// Reads (A-209) is the scripted result or error of a read of each artifact id; an
+	// id with no entry fails the read.
+	Reads map[string]wireRead `json:"reads"`
+}
+
+// wireRead is the scripted answer to one read (A-209).
+type wireRead struct {
+	Result json.RawMessage `json:"result"`
+	Error  *wireError      `json:"error"`
 }
 
 type wireEvent struct {
@@ -165,6 +187,8 @@ type stubView struct {
 	sessionID string
 	result    json.RawMessage
 	err       error
+	reads     map[string]wireRead
+	mu        sync.Mutex // A-209: list reads the statuses concurrently
 	calls     []map[string]any
 }
 
@@ -181,6 +205,8 @@ func (v *stubView) record(op string, input any, sb sandboxhub.View, opts any) {
 	if sb != nil {
 		call["sandboxId"] = sb.ID()
 	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	v.calls = append(v.calls, call)
 }
 
@@ -211,7 +237,14 @@ func (v *stubView) Update(_ context.Context, in artifact.UpdateInput, sb sandbox
 func (v *stubView) Read(_ context.Context, ref artifact.Ref, sb sandboxhub.View, o artifact.ReadOptions) (artifact.Read, error) {
 	v.record("read", ref, sb, o)
 	var r artifact.Read
-	err := v.decode(&r)
+	scripted, ok := v.reads[ref.ID]
+	switch {
+	case !ok:
+		return r, errors.New("the case scripts no read")
+	case scripted.Error != nil:
+		return r, errorFor(*scripted.Error)
+	}
+	err := json.Unmarshal(scripted.Result, &r)
 	return r, err
 }
 
@@ -261,7 +294,7 @@ func TestArtifactToolsMatchGolden(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			h := handlerFor(t, c.Tool, optionsFrom(t, c.Options))
 
-			view := &stubView{t: t, result: c.View.Result}
+			view := &stubView{t: t, result: c.View.Result, reads: c.View.Reads}
 			if c.View.SessionID != nil {
 				view.sessionID = *c.View.SessionID
 			}
@@ -319,6 +352,10 @@ func TestArtifactToolsMatchGolden(t *testing.T) {
 			for _, call := range view.calls {
 				gotCalls = append(gotCalls, call)
 			}
+			sortReads(gotCalls)
+			if want, ok := wantCalls.([]any); ok {
+				sortReads(want)
+			}
 			if !reflect.DeepEqual(gotCalls, wantCalls) {
 				t.Errorf("view calls differ from TS\n got: %v\nwant: %v", gotCalls, wantCalls)
 			}
@@ -334,5 +371,35 @@ func TestArtifactToolsMatchGolden(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// sortReads orders the read calls of a call list by artifact id, in place (A-209: list
+// reads the statuses concurrently, so their order is not the order of the list).
+func sortReads(calls []any) {
+	idOf := func(c any) (string, bool) {
+		m, ok := c.(map[string]any)
+		if !ok || m["op"] != "read" {
+			return "", false
+		}
+		in, _ := m["input"].(map[string]any)
+		id, _ := in["id"].(string)
+		return id, true
+	}
+	var at []int
+	var reads []any
+	for i, c := range calls {
+		if _, ok := idOf(c); ok {
+			at = append(at, i)
+			reads = append(reads, c)
+		}
+	}
+	slices.SortStableFunc(reads, func(a, b any) int {
+		x, _ := idOf(a)
+		y, _ := idOf(b)
+		return strings.Compare(x, y)
+	})
+	for k, i := range at {
+		calls[i] = reads[k]
 	}
 }

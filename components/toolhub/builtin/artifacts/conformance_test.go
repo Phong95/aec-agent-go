@@ -39,13 +39,14 @@ func TestArtifactToolsConformance(t *testing.T) {
 		factory func(Options) toolhub.Handler
 		args    string
 	}{
-		{"save_artifact", func(o Options) toolhub.Handler { return NewSaveTool(o) }, `{"name":"a.md","type":"text/markdown","content":"hello"}`},
-		{"update_artifact", func(o Options) toolhub.Handler { return NewUpdateTool(o) }, `{"name":"a.md","content":"bye"}`},
-		{"read_artifact", func(o Options) toolhub.Handler { return NewReadTool(o) }, `{"name":"a.md"}`},
-		{"list_artifacts", func(o Options) toolhub.Handler { return NewListTool(o) }, `{}`},
+		// Update (A-209): one artifact tool, run once per action (read is gone).
+		{"artifact save", func(o Options) toolhub.Handler { return NewTool(o) }, `{"action":"save","name":"a.md","type":"text/markdown","content":"hello"}`},
+		{"artifact update", func(o Options) toolhub.Handler { return NewTool(o) }, `{"action":"update","name":"a.md","content":"bye"}`},
+		{"artifact list", func(o Options) toolhub.Handler { return NewTool(o) }, `{"action":"list"}`},
+		{"artifact with a bad action", func(o Options) toolhub.Handler { return NewTool(o) }, `{"action":"read","name":"a.md"}`},
 	}
-	if len(cases) != len(ToolNames()) {
-		t.Fatalf("the table has %d tools, ToolNames has %d: keep them in step", len(cases), len(ToolNames()))
+	if len(cases) != len(Actions())+1 {
+		t.Fatalf("the table has %d cases, want one per action plus a bad one", len(cases))
 	}
 	for _, c := range cases {
 		args, err := kernel.NewArguments([]byte(c.args))
@@ -92,8 +93,8 @@ func TestArtifactCorpusCoversEveryTool(t *testing.T) {
 		if defs[name] < 3 {
 			t.Errorf("%s has %d definition variants in the corpus, want at least 3 (default and two option variants)", name, defs[name])
 		}
-		if cases[name] < 20 {
-			t.Errorf("%s has %d cases in the corpus, want at least 20", name, cases[name])
+		if cases[name] < 150 { // Update (A-209): the cases of the four tools before it
+			t.Errorf("%s has %d cases in the corpus, want at least 150", name, cases[name])
 		}
 	}
 	for name := range cases {
@@ -106,13 +107,13 @@ func TestArtifactCorpusCoversEveryTool(t *testing.T) {
 // TestToolNames: the tool names in order, a fresh copy on every call, and the
 // names of the handlers NewTools builds.
 func TestToolNames(t *testing.T) {
-	want := []string{"save_artifact", "update_artifact", "read_artifact", "list_artifacts"}
+	want := []string{"artifact"} // Update (A-209): one tool
 	if got := ToolNames(); !slices.Equal(got, want) {
 		t.Fatalf("ToolNames() = %v, want %v", got, want)
 	}
 	first := ToolNames()
 	first[0] = "changed"
-	if second := ToolNames(); second[0] != "save_artifact" {
+	if second := ToolNames(); second[0] != "artifact" {
 		t.Fatalf("ToolNames returned a shared slice: a change leaked into %v", second)
 	}
 	tools := NewTools(Options{})
