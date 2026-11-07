@@ -34,13 +34,81 @@ type ToolManager struct {
 
 	mu      sync.RWMutex
 	allowed []string
+	// dynamic (A-213) is the tools that come and go at runtime (the agent's MCP tools);
+	// nil means none.
+	dynamic DynamicToolSource
+}
+
+// DynamicToolSource (A-213) is tools that come and go at runtime rather than from the
+// tool hub - the agent's MCP tools (McpTools). They are always the agent's: they are not
+// in the profile's allowlist.
+type DynamicToolSource interface {
+	// Owns reports whether the name is one of the source's tools (offered now or not).
+	Owns(name string) bool
+	// Get returns a tool by name, also one not offered in the current list (a deferred
+	// MCP tool).
+	Get(name string) (toolhub.Handler, bool)
+	// List returns the tools to offer the model in the session ("" = no session).
+	List(sessionID string) []toolhub.Handler
 }
 
 var (
 	_ agentloop.Tools        = (*ToolManager)(nil)
 	_ agentloop.SessionTools = (*ToolManager)(nil)
 	_ agentloop.CallRisks    = (*ToolManager)(nil)
+	_ agentloop.ToolLookup   = (*ToolManager)(nil)
 )
+
+// SetDynamicSource sets the dynamic tool source (A-213): the agent wires its McpTools
+// after building both. Nil removes it.
+func (m *ToolManager) SetDynamicSource(source DynamicToolSource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dynamic = source
+}
+
+// dynamicSource returns the dynamic tool source, or nil.
+func (m *ToolManager) dynamicSource() DynamicToolSource {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.dynamic
+}
+
+// IsDynamic (A-213) reports whether the tool comes from the dynamic source (MCP): allowed
+// without being in the allowlist.
+func (m *ToolManager) IsDynamic(name string) bool {
+	d := m.dynamicSource()
+	return d != nil && d.Owns(name)
+}
+
+// withDynamic is defs plus the dynamic source's tools for sessionID.
+func (m *ToolManager) withDynamic(defs []toolhub.Definition, sessionID string) []toolhub.Definition {
+	d := m.dynamicSource()
+	if d == nil {
+		return defs
+	}
+	for _, h := range d.List(sessionID) {
+		defs = append(defs, h.Definition())
+	}
+	return defs
+}
+
+// Lookup (A-213, agentloop.ToolLookup) returns the definition of one of the session's
+// tools by name - a dynamic one also when the list leaves it out.
+func (m *ToolManager) Lookup(sessionID, name string) (toolhub.Definition, bool) {
+	if d := m.dynamicSource(); d != nil && d.Owns(name) {
+		h, ok := d.Get(name)
+		if !ok {
+			return toolhub.Definition{}, false
+		}
+		return h.Definition(), true
+	}
+	allowed := m.allowlist()
+	if !slices.Contains(allowed, name) && !slices.Contains(m.grantsBeyond(allowed, sessionID), name) {
+		return toolhub.Definition{}, false
+	}
+	return m.hub.Get(name)
+}
 
 // ToolManagerOption configures a ToolManager (A-106).
 type ToolManagerOption func(*ToolManager)
@@ -90,7 +158,8 @@ func (m *ToolManager) ListFor(sessionID string) []toolhub.Definition {
 	if granted := m.grantsBeyond(allowed, sessionID); len(granted) > 0 {
 		allowed = append(allowed, granted...)
 	}
-	return m.hub.GetByNames(allowed)
+	// A-213: and the agent's MCP tools for the session.
+	return m.withDynamic(m.hub.GetByNames(allowed), sessionID)
 }
 
 // allowlist returns a copy of the current allowlist.
@@ -102,14 +171,20 @@ func (m *ToolManager) allowlist() []string {
 
 // List returns the definitions of the registered tools among the allowlist, in the
 // allowlist's order. Names that match no registered tool are ignored.
+// A-213: then the dynamic source's tools (the agent's MCP tools, no session).
 func (m *ToolManager) List() []toolhub.Definition {
-	return m.hub.GetByNames(m.allowlist())
+	return m.withDynamic(m.hub.GetByNames(m.allowlist()), "")
 }
 
 // Has reports whether the agent may use the tool: the name is in the allowlist AND a
 // tool of that name is registered. The skill manager uses it to hide a skill whose
 // required tools the agent lacks.
 func (m *ToolManager) Has(name string) bool {
+	// A-213: the agent's MCP tools are its own.
+	if d := m.dynamicSource(); d != nil && d.Owns(name) {
+		_, ok := d.Get(name)
+		return ok
+	}
 	if !slices.Contains(m.allowlist(), name) {
 		return false
 	}
@@ -152,6 +227,18 @@ func (m *ToolManager) ScheduleProblem(name string) string {
 // empty allowlist stays "no restriction" for the policy.
 func (m *ToolManager) Authorize(ctx context.Context, name string, args kernel.Arguments, tc toolhub.Context) (toolhub.Authorized, toolhub.Decision, error) {
 	allowed := m.allowlist()
+	// A-213: an MCP tool is authorized through the hub's policy too, with its name added
+	// to the allowlist (an empty allowlist stays "no restriction").
+	if d := m.dynamicSource(); d != nil && d.Owns(name) {
+		h, ok := d.Get(name)
+		if !ok {
+			return toolhub.Authorized{}, toolhub.Decision{}, &notAvailableError{name: name}
+		}
+		if len(allowed) > 0 {
+			allowed = append(allowed, name)
+		}
+		return m.hub.AuthorizeHandler(ctx, h, args, tc, allowed)
+	}
 	granted := m.grantsBeyond(allowed, tc.SessionID)
 	if !slices.Contains(allowed, name) && !slices.Contains(granted, name) {
 		return toolhub.Authorized{}, toolhub.Decision{}, &notAvailableError{name: name}
@@ -166,6 +253,17 @@ func (m *ToolManager) Authorize(ctx context.Context, name string, args kernel.Ar
 // under name, before it is authorized (toolhub.ToolHub.CallRisk): a subagent's tool
 // scope judges the call with it. It does not check the allowlist; the policy does.
 func (m *ToolManager) CallRisk(name string, args kernel.Arguments) (toolhub.Risk, bool) {
+	// A-213: an MCP tool's risk is its definition's (readOnlyHint = read-only).
+	if d := m.dynamicSource(); d != nil && d.Owns(name) {
+		h, ok := d.Get(name)
+		if !ok {
+			return "", false
+		}
+		if r, isRisker := h.(toolhub.CallRisker); isRisker {
+			return r.RiskFor(args), true
+		}
+		return h.Definition().Risk, true
+	}
 	return m.hub.CallRisk(name, args)
 }
 

@@ -362,6 +362,43 @@ func (h *SecretHub) deleteLocked(ctx context.Context, ownerAgentID, name string)
 	return existing.Info, nil
 }
 
+// IsSecretValue reports whether value is the value of one of the owner's secrets or of a
+// global secret (A-215) - the VariableHub refuses to store such a value in a variable (the
+// model sees variables). It opens each of those secrets; one that can't be opened is
+// skipped.
+func (h *SecretHub) IsSecretValue(ctx context.Context, value, ownerAgentID string) (bool, error) {
+	if value == "" {
+		return false, nil
+	}
+	st, err := h.store()
+	if err != nil {
+		return false, err
+	}
+	var candidates []secret.Stored
+	if ownerAgentID != "" {
+		own, err := st.List(ctx, ownerAgentID)
+		if err != nil {
+			return false, err
+		}
+		candidates = append(candidates, own...)
+	}
+	globals, err := st.List(ctx, "")
+	if err != nil {
+		return false, err
+	}
+	candidates = append(candidates, globals...)
+	for _, s := range candidates {
+		plain, err := h.Open(ctx, s.Value, AAD(s.OwnerAgentID, s.Name))
+		if err != nil {
+			continue // can't be opened (an old key): it can't be compared either
+		}
+		if plain == value {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // DeleteByOwner deletes every secret an agent owns (the agent is being deleted). An empty
 // id deletes nothing.
 func (h *SecretHub) DeleteByOwner(ctx context.Context, agentID string) error {

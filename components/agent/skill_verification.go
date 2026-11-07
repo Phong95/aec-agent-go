@@ -74,6 +74,7 @@ type verificationDeps struct {
 	hub       *persistence.PersistenceHub
 	open      func(ctx context.Context, sessionID string) (*Conversation, bool, error)
 	secrets   *secretManager
+	variables *variableManager
 	logger    *slog.Logger
 }
 
@@ -160,6 +161,10 @@ func runVerification(ctx context.Context, d verificationDeps, parent profile.Age
 		ctxOpts = append(ctxOpts, WithSecretIndex(func(ctx context.Context) (string, bool) { return d.secrets.buildIndex(ctx, false) }))
 		secrets.Secrets = d.secrets
 	}
+	if d.variables != nil {
+		ctxOpts = append(ctxOpts, WithVariableIndex(func(ctx context.Context) (string, bool) { return d.variables.buildIndex(ctx, false) }))
+		secrets.Variables = d.variables
+	}
 	var loopOpts []agentloop.Option
 	if d.logger != nil {
 		loopOpts = append(loopOpts, agentloop.WithLogger(d.logger))
@@ -175,6 +180,7 @@ func runVerification(ctx context.Context, d verificationDeps, parent profile.Age
 		Sandbox:     sandboxes,
 		Interaction: func(string) toolhub.InteractionHandler { return nobody{} },
 		Secrets:     secrets.Secrets,
+		Variables:   secrets.Variables,
 	}, loopOpts...)
 	if err != nil {
 		return failed("the replay failed: "+err.Error(), learning.Verification{})

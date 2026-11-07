@@ -5,6 +5,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/grouphub/group"
+	"github.com/Phong95/aec-agent-go/components/mcphub/mcpserver"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
@@ -521,6 +522,18 @@ type SecretChangedPayload struct {
 	ValueChanged *bool `json:"valueChanged,omitempty"`
 }
 
+// VariableChangedPayload is the payload of the VariableCreated, VariableUpdated and
+// VariableDeleted kinds (A-215): a variable was created, changed or deleted. No session:
+// emitted with SessionID "".
+type VariableChangedPayload struct {
+	Name string `json:"name"`
+	// OwnerAgentID is the owning agent; "" = a global variable.
+	OwnerAgentID string `json:"ownerAgentId,omitempty"`
+	// ValueChanged is set on variable:updated only: true when the value changed (not just
+	// the description).
+	ValueChanged *bool `json:"valueChanged,omitempty"`
+}
+
 // SecretUsedPayload is the payload of the SecretUsed kind: a tool was handed a secret's
 // value.
 type SecretUsedPayload struct {
@@ -649,4 +662,90 @@ type SkillLearningSkillUsedPayload struct {
 type SkillLearningCallCounts struct {
 	ToolCalls   int `json:"toolCalls"`
 	FailedCalls int `json:"failedCalls"`
+}
+
+// ---------------------------------------------------------------------------
+// MCP servers (A-208) - mcp-server:changed from the McpHub, mcp:* from each agent's MCP
+// manager; all with SessionID "".
+// ---------------------------------------------------------------------------
+
+// McpServerChangedPayload is the payload of the McpServerChanged kind: a custom MCP
+// server was created, updated or deleted in the McpHub.
+type McpServerChangedPayload struct {
+	ServerID string `json:"serverId"`
+	// Change is "created", "updated" or "deleted".
+	Change string `json:"change"`
+}
+
+// McpConnectedPayload is the payload of the McpConnected kind: an agent's connection to
+// an MCP server finished its handshake and discovery (also after a reconnect).
+type McpConnectedPayload struct {
+	AgentID         string                   `json:"agentId"`
+	ServerID        string                   `json:"serverId"`
+	ServerName      string                   `json:"serverName"`
+	ProtocolVersion string                   `json:"protocolVersion"`
+	ServerInfo      mcpserver.Implementation `json:"serverInfo"`
+	Capabilities    mcpserver.Capabilities   `json:"capabilities"`
+	Tools           []mcpserver.Tool         `json:"tools"`
+	Resources       []mcpserver.Resource     `json:"resources"`
+	Prompts         []mcpserver.Prompt       `json:"prompts"`
+	// Reconnected is true when this connection replaced one that was lost.
+	Reconnected bool `json:"reconnected"`
+}
+
+// McpDisconnectedPayload is the payload of the McpDisconnected kind: an agent's
+// connection to an MCP server ended.
+type McpDisconnectedPayload struct {
+	AgentID  string `json:"agentId"`
+	ServerID string `json:"serverId"`
+	// Reason is "closed" (the agent closed it, or the server was disabled / removed) or
+	// what broke it.
+	Reason string `json:"reason"`
+	// WillReconnect is true when the manager tries again (the connection was lost, not
+	// closed on purpose).
+	WillReconnect bool `json:"willReconnect"`
+}
+
+// McpFailedPayload is the payload of the McpFailed kind: connecting, discovery, a health
+// check or a refresh failed.
+type McpFailedPayload struct {
+	AgentID  string `json:"agentId"`
+	ServerID string `json:"serverId"`
+	// Phase is "connect", "discover", "health" or "refresh".
+	Phase string `json:"phase"`
+	Error string `json:"error"`
+	// WillRetry is true when the manager tries again later.
+	WillRetry bool `json:"willRetry"`
+	// NeedsAuth is true when the server refused the connection (401 / 403): it needs a
+	// sign-in (status needs_auth). A-214.
+	NeedsAuth bool `json:"needsAuth,omitempty"`
+}
+
+// McpAuthChangedPayload is the payload of the McpAuthChanged kind: an MCP server was
+// signed in (OAuth), or its sign-in was dropped (A-214). It never carries tokens.
+type McpAuthChangedPayload struct {
+	ServerID string `json:"serverId"`
+	SignedIn bool   `json:"signedIn"`
+}
+
+// McpToolsChangedPayload is the payload of the McpToolsChanged kind: the server's tool
+// list changed (notifications/tools/list_changed), already re-read.
+type McpToolsChangedPayload struct {
+	AgentID  string           `json:"agentId"`
+	ServerID string           `json:"serverId"`
+	Tools    []mcpserver.Tool `json:"tools"`
+}
+
+// McpResourcesChangedPayload is the payload of the McpResourcesChanged kind.
+type McpResourcesChangedPayload struct {
+	AgentID   string               `json:"agentId"`
+	ServerID  string               `json:"serverId"`
+	Resources []mcpserver.Resource `json:"resources"`
+}
+
+// McpPromptsChangedPayload is the payload of the McpPromptsChanged kind.
+type McpPromptsChangedPayload struct {
+	AgentID  string             `json:"agentId"`
+	ServerID string             `json:"serverId"`
+	Prompts  []mcpserver.Prompt `json:"prompts"`
 }

@@ -72,7 +72,7 @@ var layerTable = map[string][]string{
 	"kernel":                {"internal/jsonx", "internal/nilcheck", "kernel/ordered"},
 	// Phase 12 (12-02): events, agent and memorysystem log a recovered panic through
 	// internal/redact.Panic (10-SECURITY UF-1).
-	"components/events":                       {"kernel", "internal/jsonx", "internal/redact", "components/grouphub/group", "components/agent/skilllearning/learning"}, // A-106: the group:* payloads carry group.Message; A-166: the skill-learning:* payloads carry learning types
+	"components/events":                       {"kernel", "internal/jsonx", "internal/redact", "components/grouphub/group", "components/agent/skilllearning/learning", "components/mcphub/mcpserver"}, // A-106: the group:* payloads carry group.Message; A-166: the skill-learning:* payloads carry learning types; A-208: the mcp:* payloads carry mcpserver types
 	"components/agent/skilllearning/learning": {"components/skillhub/skill"},
 	"components/trace":                        {"kernel", "internal/jsonx", "kernel/ordered"},
 	"components/sandboxhub":                   {"kernel", "components/events", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "kernel/ordered"},
@@ -115,8 +115,27 @@ var layerTable = map[string][]string{
 	// Secrets, its Error and the rules: names, hosts, placeholders, redaction), shared by
 	// persistence, profile, toolhub, agentloop, agent, the built-in tools and the root;
 	// secrethub is the hub AgentCore owns (sealing, SecretHub providers, CRUD, reveal, rotation).
-	"components/secrethub/secret":            {"kernel", "internal/jsonx", "internal/jsstr"},
-	"components/secrethub":                   {"kernel", "components/secrethub/secret", "components/persistence", "components/events", "internal/jsstr", "internal/nilcheck"},
+	"components/secrethub/secret": {"kernel", "internal/jsonx", "internal/jsstr"},
+	"components/secrethub":        {"kernel", "components/secrethub/secret", "components/persistence", "components/events", "internal/jsstr", "internal/nilcheck"},
+	// A-215: variables - variable is the type-only leaf the hub shares with its stores, the
+	// profile and the tool context; variablehub keeps the owner rules over the store.
+	"components/variablehub/variable": {"kernel", "internal/jsonx", "internal/jsstr"},
+	"components/variablehub":          {"kernel", "components/variablehub/variable", "components/persistence", "components/events", "internal/nilcheck"},
+	// A-208: MCP servers. mcpserver is the contract (Definition, Server, Config, the tools /
+	// resources / prompts, Connections, its Error), shared by persistence, profile, events,
+	// agent and the root; mcpclient is the JSON-RPC client and the streamable HTTP transport;
+	// stdio is the opt-in stdio transport (it starts a host process, see process_test.go);
+	// mcphub is the library AgentCore owns and the registry of transports.
+	// internal/mcptest is the fake MCP server of the MCP tests (stdio helper process and HTTP).
+	// A-214: mcpoauth is the OAuth sign-in of the HTTP servers (discovery, registration,
+	// browser and device flows, refresh), owned by the mcphub; mcptest also has a fake
+	// OAuth authorization server.
+	"internal/mcptest":                       {"components/mcphub/mcpclient", "components/mcphub/mcpserver", "internal/jsonx"},
+	"components/mcphub/mcpserver":            {"kernel"},
+	"components/mcphub/mcpclient":            {"components/mcphub/mcpserver", "internal/jsonx"},
+	"components/mcphub/stdio":                {"components/mcphub/mcpclient", "components/mcphub/mcpserver", "internal/jsonx"},
+	"components/mcphub/mcpoauth":             {"components/events", "components/mcphub/mcpclient", "components/mcphub/mcpserver", "components/persistence", "internal/jsonx", "internal/nilcheck"},
+	"components/mcphub":                      {"kernel", "components/events", "components/mcphub/mcpclient", "components/mcphub/mcpoauth", "components/mcphub/mcpserver", "components/persistence", "internal/nilcheck"},
 	"components/subagenthub":                 {"kernel", "components/subagenthub/subagenttype", "components/agent/subagent", "components/persistence", "components/events", "internal/jsstr", "internal/nilcheck"},
 	"components/channelplatformhub":          {"kernel", "components/channelplatformhub/channel"},
 	"components/channelplatformhub/telegram": {"components/channelplatformhub/channel", "internal/jsonx"},
@@ -127,16 +146,16 @@ var layerTable = map[string][]string{
 	"components/channelplatformhub/slack":               {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
 	"components/channelplatformhub/discord":             {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
 	"components/channelplatformhub/teams":               {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
-	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret", "components/agent/skilllearning/learning"},                        // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets
-	"components/toolhub":                                {"kernel", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "internal/jsonx", "kernel/ordered", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"}, // Update (A-70 agent tools): toolhub.Context.Triggers is a trigger.Triggers; A-105: toolhub.Context.Subagents; A-101: toolhub.Context.Secrets
+	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret", "components/agent/skilllearning/learning", "components/mcphub/mcpserver", "components/variablehub/variable"}, // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets; A-208: AgentProfile.Mcp; A-215: AgentProfile.Variables
+	"components/toolhub":                                {"kernel", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "internal/jsonx", "kernel/ordered", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/variablehub/variable"},         // Update (A-70 agent tools): toolhub.Context.Triggers is a trigger.Triggers; A-105: toolhub.Context.Subagents; A-101: toolhub.Context.Secrets; A-215: toolhub.Context.Variables
 	"components/llmhub":                                 {"kernel", "components/toolhub", "internal/jsonx", "internal/jsstr", "internal/viewkit", "internal/redact", "kernel/ordered"},
-	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning"}, // A-166: SkillProposalStore; A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore; A-106: GroupStore, GroupMessageStore
+	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning", "components/mcphub/mcpserver", "components/variablehub/variable"}, // A-215: VariableStore; A-166: SkillProposalStore; A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore; A-106: GroupStore, GroupMessageStore; A-208: McpServerStore
 	"components/skillhub":                               {"kernel", "components/skillhub/skill", "components/persistence", "components/events", "kernel/ordered", "internal/nilcheck"},
 	"components/artifacthub":                            {"kernel", "components/artifacthub/artifact", "components/sandboxhub", "components/persistence", "components/events", "internal/jsstr", "internal/nilcheck"},
 	// Phase 9: agentloop is the OTAR loop. It talks to the rest of the SDK only
 	// through its consumer-side ports, so it imports neither persistence nor a
 	// concrete tool hub; aecmock and conformance sit above it.
-	"components/agent/agentloop": {"kernel", "internal/redact", "components/events", "components/trace", "components/toolhub", "components/llmhub", "components/agent/profile", "components/agent/memorysystem/memory", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "components/agent/job", "components/agent/subagent", "components/secrethub/secret"}, // Update (A-70 agent tools): agentloop.Deps.Triggers, handed to the tools; A-105: agentloop.Deps.Subagents; A-101: agentloop.Deps.Secrets
+	"components/agent/agentloop": {"kernel", "internal/redact", "components/events", "components/trace", "components/toolhub", "components/llmhub", "components/agent/profile", "components/agent/memorysystem/memory", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/variablehub/variable"}, // Update (A-70 agent tools): agentloop.Deps.Triggers, handed to the tools; A-105: agentloop.Deps.Subagents; A-101: agentloop.Deps.Secrets; A-215: agentloop.Deps.Variables
 	"aecmock":                    {"components/channelplatformhub/channel", "kernel", "components/toolhub", "components/llmhub", "components/persistence", "components/sandboxhub", "components/agent/agentloop", "components/agent/profile", "components/agent/memorysystem/memory", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/viewkit"},
 	"conformance":                {"kernel", "components/events", "components/toolhub", "components/llmhub", "components/persistence", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/agent/profile", "components/sandboxhub", "kernel/ordered", "components/agent/agentloop", "components/trace", "conformance/internal/check", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning"},
 	"conformance/internal/check": {},
@@ -176,10 +195,16 @@ var layerTable = map[string][]string{
 		// A-101: the secret hub (Deps.SecretHub) and its contract, which the agent's secret
 		// manager implements.
 		"components/secrethub", "components/secrethub/secret",
+		// A-215: the variable hub (Deps.VariableHub) and its contract, which the agent's
+		// variable manager implements.
+		"components/variablehub", "components/variablehub/variable",
 		// A-136: the slash-command contracts the agent's command manager implements.
 		"components/agent/command",
 		// A-166: the skill learner and its contracts.
 		"components/agent/skilllearning", "components/agent/skilllearning/learning",
+		// A-208: the MCP server library (Deps.McpHub), its client and contract, which the
+		// agent's MCP manager implements.
+		"components/mcphub", "components/mcphub/mcpclient", "components/mcphub/mcpserver",
 	},
 	"components/orchestration": {"components/agent", "components/agent/profile", "kernel"},
 	// Phase 10 (10-04): builtin/skills holds skill_view and the workspace copy of a skill.
@@ -196,7 +221,7 @@ var layerTable = map[string][]string{
 	// host-access guarded (hostAccessGuarded).
 	"internal/toolkit":                     {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsonx", "internal/jsstr"},
 	"components/toolhub/builtin/clarify":   {"kernel", "components/toolhub", "kernel/ordered", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
-	"components/toolhub/builtin/workspace": {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret"}, // A-101: the secrets parameter of terminal / run_code
+	"components/toolhub/builtin/workspace": {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret", "components/variablehub/variable"}, // A-101: the secrets parameter of terminal / run_code; A-215: and variables
 	"components/toolhub/builtin/artifacts": {"kernel", "components/toolhub", "components/artifacthub/artifact", "components/sandboxhub", "components/events", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
 	// A-69: builtin/scheduling holds schedule_job and list_scheduled_jobs. It reaches the
 	// agent's jobs only through toolhub.Context.ScheduledJobs; host-access guarded.
@@ -205,7 +230,7 @@ var layerTable = map[string][]string{
 	// through the agent's sandbox (host-access guarded).
 	// Update (A-210): preview and service (the same imports).
 	"components/toolhub/builtin/preview": {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsstr", "internal/toolkit"},
-	"components/toolhub/builtin/web":     {"kernel", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret"}, // A-101: http_request puts the agent's secrets in
+	"components/toolhub/builtin/web":     {"kernel", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret", "components/variablehub/variable"}, // A-101: http_request puts the agent's secrets in; A-215: and its variables
 	// A-70: builtin/triggers holds manage_trigger and list_triggers. It reaches the agent's
 	// triggers only through toolhub.Context.Triggers; host-access guarded.
 	// Update (A-126): builtin/jobs holds manage_job and list_jobs; it reaches the agent's
@@ -218,6 +243,8 @@ var layerTable = map[string][]string{
 	// A-101: builtin/secrets holds list_secrets and manage_secret; it reaches the agent's
 	// secrets only through toolhub.Context.Secrets; host-access guarded.
 	"components/toolhub/builtin/secrets": {"kernel", "components/toolhub", "components/secrethub/secret", "kernel/ordered", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
+	// A-215: the variable tool.
+	"components/toolhub/builtin/variables": {"kernel", "components/toolhub", "components/variablehub/variable", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
 	// Phase 10 (10-02): memorysystem is the memory system (L5): the
 	// extraction, indexing, retrieval and consolidation pipeline. It reaches the model
 	// through a consumer port (Model), so it imports neither agent, agentloop, aecmock
@@ -250,10 +277,14 @@ var layerTable = map[string][]string{
 		"components/subagenthub", "components/subagenthub/subagenttype",
 		// A-101: AgentCore owns the secret hub (SecretHub, UseSecretHubProvider).
 		"components/secrethub",
+		// A-215: AgentCore owns the variable hub (VariableHub).
+		"components/variablehub",
 		// A-136: AgentCore.UseCommand takes a command.Spec.
 		"components/agent/command",
 		// A-106: AgentCore owns the group hub (Groups, UseGroupRunner).
 		"components/grouphub",
+		// A-208: AgentCore owns the MCP server library (McpHub, UseMcp).
+		"components/mcphub", "components/mcphub/mcpserver",
 	},
 	// A-106: group chats. group is the type-only leaf the hub shares with its stores and
 	// the event payloads; grouphub runs the turns over the agents (agent.Agent.ChatStream)

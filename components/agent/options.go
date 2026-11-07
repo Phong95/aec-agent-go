@@ -24,10 +24,25 @@ type options struct {
 	// promptJobClock is the clock of the prompt-job scheduler; nil means time.Now. Only
 	// the test hook of export_test.go sets it.
 	promptJobClock func() time.Time
+	// mcpReconnect and mcpHealth (A-208) tune the MCP manager; nil means the defaults.
+	mcpReconnect *McpReconnectPolicy
+	mcpHealth    *time.Duration
 }
 
 // Option changes how New builds an Agent. Options are applied in order.
 type Option func(*options)
+
+// WithMcpReconnectPolicy (A-208) sets how the agent's MCP manager tries again after a
+// lost connection or a failed try (default DefaultMcpReconnect).
+func WithMcpReconnectPolicy(p McpReconnectPolicy) Option {
+	return func(o *options) { o.mcpReconnect = &p }
+}
+
+// WithMcpHealthCheckInterval (A-208) sets how often the agent's MCP manager pings a
+// connected server (default DefaultMcpHealthInterval); 0 turns the health checks off.
+func WithMcpHealthCheckInterval(d time.Duration) Option {
+	return func(o *options) { o.mcpHealth = &d }
+}
 
 // WithLoopOptions passes options to agentloop.New, for example a persist timeout
 // or the parallel tool bound. They are applied after the logger of Deps.

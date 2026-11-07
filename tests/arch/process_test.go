@@ -58,6 +58,12 @@ func osStartProcessCalls(filename string, src []byte) ([]string, error) {
 	return hits, nil
 }
 
+// processExecExempt are the module-relative directory prefixes outside the sandbox
+// backends that may start a process: the opt-in MCP stdio transport (A-208), whose job
+// is to start the MCP server a host registered as a child process. Nothing in the SDK
+// imports it; a host that allows stdio MCP servers registers it on the McpHub.
+var processExecExempt = []string{"components/mcphub/stdio/"}
+
 // processExecImports reports an os/exec, syscall or plugin import, and a use of
 // os.StartProcess, in src, unless the file belongs to one of the two sandbox
 // backends (hostAccessExempt), the only code of the SDK that may start a process
@@ -65,7 +71,7 @@ func osStartProcessCalls(filename string, src []byte) ([]string, error) {
 // without os/exec, so the import ban alone would leave that route open (re-review
 // RR-02 of Phase 5).
 func processExecImports(file string, src []byte) ([]string, error) {
-	for _, prefix := range hostAccessExempt {
+	for _, prefix := range append(append([]string(nil), hostAccessExempt...), processExecExempt...) {
 		if strings.HasPrefix(file, prefix) {
 			return nil, nil
 		}

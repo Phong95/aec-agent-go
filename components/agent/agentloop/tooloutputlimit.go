@@ -91,6 +91,12 @@ func lastUTF16(s string, n int) string {
 // narrow the request instead.
 func (l *Loop) limitOutput(ctx context.Context, run *toolRun, call kernel.ToolCall, result kernel.ToolResult) kernel.ToolResult {
 	limit := profile.ResolveLoopConfig(l.deps.Profile().LoopConfig).MaxToolResultChars
+	// A-213: a tool may raise its own limit (an MCP tool's _meta["anthropic/maxResultSizeChars"]).
+	if lookup, ok := l.deps.Tools.(ToolLookup); ok && limit > 0 {
+		if def, found := lookup.Lookup(run.tc.SessionID, call.Name); found && def.MaxResultChars > limit {
+			limit = def.MaxResultChars
+		}
+	}
 	if limit <= 0 || kernel.UTF16Len(result.Content) <= limit {
 		return result
 	}

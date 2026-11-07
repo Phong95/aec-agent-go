@@ -56,6 +56,8 @@ func (t *TerminalTool) Definition() toolhub.Definition {
 				toolhub.Property{Name: "timeout_seconds", Schema: toolhub.JSONSchema{Type: "number", Description: "Kill the command after this many seconds (max " + seconds(t.opts.maxTimeoutMs) + ")"}},
 				// A-101: secrets as environment variables.
 				secretsProperty(),
+				// A-215: variables as environment variables.
+				variablesProperty(),
 			),
 			Required: []string{"command"},
 		},
@@ -92,7 +94,8 @@ func (t *TerminalTool) Execute(ctx context.Context, args kernel.Arguments, tc to
 	}
 	rawCwd, _ := a.String("cwd")
 	cwd := jsstr.Trim(rawCwd)
-	secretVars, failed := secretEnv(ctx, "terminal", a, tc)
+	// A-215: variables too; a secret of the same name wins.
+	secretVars, failed := commandEnv(ctx, "terminal", a, tc)
 	if failed != nil {
 		return *failed, nil
 	}

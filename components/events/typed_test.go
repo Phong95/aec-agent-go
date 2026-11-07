@@ -13,6 +13,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/grouphub/group"
+	"github.com/Phong95/aec-agent-go/components/mcphub/mcpserver"
 	"github.com/Phong95/aec-agent-go/internal/wiretest"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
@@ -132,6 +133,10 @@ func lifecycleSamples() []sample {
 		mk("SecretUpdated", events.SecretUpdated, events.SecretChangedPayload{Name: "WEATHER_KEY", ValueChanged: boolPtr(true)}),
 		mk("SecretDeleted", events.SecretDeleted, events.SecretChangedPayload{Name: "WEATHER_KEY"}),
 		mk("SecretUsed", events.SecretUsed, events.SecretUsedPayload{Name: "WEATHER_KEY", OwnerAgentID: agentID, AgentID: agentID, Tool: "http_request", Host: "api.example.com"}),
+		// A-215: the variable kinds.
+		mk("VariableCreated", events.VariableCreated, events.VariableChangedPayload{Name: "API_BASE", OwnerAgentID: agentID}),
+		mk("VariableUpdated", events.VariableUpdated, events.VariableChangedPayload{Name: "API_BASE", ValueChanged: boolPtr(true)}),
+		mk("VariableDeleted", events.VariableDeleted, events.VariableChangedPayload{Name: "API_BASE"}),
 		// A-135: a session's approval mode.
 		mk("SessionApprovalModeChanged", events.SessionApprovalModeChanged, events.SessionApprovalModeChangedPayload{AgentID: agentID, SessionID: "s-1", Mode: kernel.ApprovalModeYolo}),
 		// A-136: a session's settings changed, and a slash command ran.
@@ -167,6 +172,20 @@ func lifecycleSamples() []sample {
 		mk("SkillLearningRejected", events.SkillLearningRejected, events.SkillLearningReviewedPayload{AgentID: agentID, ProposalID: "p1", Action: learning.ActionCreate, SkillName: "door-export", Reason: "too specific"}),
 		mk("SkillLearningSkillUpdated", events.SkillLearningSkillUpdated, events.SkillLearningSkillUpdatedPayload{AgentID: agentID, ProposalID: "p1", Action: learning.ActionRetire, SkillName: "door-export"}),
 		mk("SkillLearningSkillUsed", events.SkillLearningSkillUsed, events.SkillLearningSkillUsedPayload{AgentID: agentID, SkillName: "door-export", Smooth: true, Health: 4, ToolCalls: 2, LearnedFrom: &events.SkillLearningCallCounts{ToolCalls: 6, FailedCalls: 2}}),
+		// A-208: the MCP kinds.
+		mk("McpServerChanged", events.McpServerChanged, events.McpServerChangedPayload{ServerID: "files", Change: "deleted"}),
+		mk("McpConnected", events.McpConnected, events.McpConnectedPayload{
+			AgentID: agentID, ServerID: "files", ServerName: "Files", ProtocolVersion: "2025-06-18",
+			ServerInfo: mcpserver.Implementation{Name: "fake", Version: "1"}, Capabilities: mcpserver.Capabilities{Tools: &mcpserver.ListChanged{ListChanged: true}},
+			Tools: []mcpserver.Tool{{Name: "echo", InputSchema: map[string]any{"type": "object"}}}, Resources: []mcpserver.Resource{{URI: "file:///a", Name: "a"}}, Prompts: []mcpserver.Prompt{{Name: "greet"}}, Reconnected: true,
+		}),
+		mk("McpDisconnected", events.McpDisconnected, events.McpDisconnectedPayload{AgentID: agentID, ServerID: "files", Reason: "closed"}),
+		mk("McpFailed", events.McpFailed, events.McpFailedPayload{AgentID: agentID, ServerID: "files", Phase: "connect", Error: "boom", WillRetry: true}),
+		mk("McpToolsChanged", events.McpToolsChanged, events.McpToolsChangedPayload{AgentID: agentID, ServerID: "files", Tools: []mcpserver.Tool{{Name: "echo", InputSchema: map[string]any{"type": "object"}}}}),
+		mk("McpResourcesChanged", events.McpResourcesChanged, events.McpResourcesChangedPayload{AgentID: agentID, ServerID: "files", Resources: []mcpserver.Resource{{URI: "file:///a", Name: "a"}}}),
+		mk("McpPromptsChanged", events.McpPromptsChanged, events.McpPromptsChangedPayload{AgentID: agentID, ServerID: "files", Prompts: []mcpserver.Prompt{{Name: "greet"}}}),
+		// A-214: a server's OAuth sign-in changed.
+		mk("McpAuthChanged", events.McpAuthChanged, events.McpAuthChangedPayload{ServerID: "files", SignedIn: true}),
 	}
 }
 
@@ -284,8 +303,8 @@ func sdkEventTypeValues(t *testing.T) []string {
 
 func TestKindNames(t *testing.T) {
 	got := events.KindNames()
-	if len(got) != 61 {
-		t.Fatalf("KindNames has %d entries, want 61", len(got))
+	if len(got) != 72 {
+		t.Fatalf("KindNames has %d entries, want 72", len(got))
 	}
 	seen := map[string]bool{}
 	for _, n := range got {

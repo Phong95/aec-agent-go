@@ -19,6 +19,8 @@ import (
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/grouphub"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
+	"github.com/Phong95/aec-agent-go/components/mcphub"
+	"github.com/Phong95/aec-agent-go/components/mcphub/mcpserver"
 	"github.com/Phong95/aec-agent-go/components/orchestration"
 	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
@@ -29,6 +31,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/subagenthub/subagenttype"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/components/trace"
+	"github.com/Phong95/aec-agent-go/components/variablehub"
 	"github.com/Phong95/aec-agent-go/internal/nilcheck"
 	"github.com/Phong95/aec-agent-go/internal/redact"
 	"github.com/Phong95/aec-agent-go/kernel"
@@ -72,7 +75,16 @@ type AgentCore struct {
 	// without the model seeing them. It seals values with envelope encryption under the SecretHub
 	// provider (UseSecretHubProvider) into PersistenceHub.Secrets; hosts also seal their own
 	// credential columns with it.
-	secrets   *secrethub.SecretHub
+	secrets *secrethub.SecretHub
+	// variables is the global hub for variables (A-215) - settings that are not secret
+	// (URLs, ids, regions), global and per agent, in PersistenceHub.Variables. Tools fill
+	// {{var:NAME}} from it; a value that equals a secret's is refused.
+	variables *variablehub.VariableHub
+	// mcp is the global library of MCP servers (A-208) - app servers (UseMcp) and custom
+	// ones created at runtime (PersistenceHub.McpServers) - and the transports agents reach
+	// them through. Agents enable servers by id (profile.Mcp.Servers); each agent's MCP
+	// manager owns its connections (StartMcp).
+	mcp       *mcphub.McpHub
 	agents    *orchestration.Orchestration
 	trace     *trace.Service
 	sandboxes *sandboxhub.SandboxHub
@@ -94,6 +106,9 @@ type AgentCore struct {
 	channels        *channelplatformhub.ChannelPlatformHub
 	channelRunner   channel.TurnRunner
 	channelsStarted bool
+	// mcpStarted is set by StartMcp (A-208): every agent spawned afterwards connects its
+	// MCP servers too. Guarded by mu.
+	mcpStarted bool
 	// subagentRunner runs the child turns of every agent (A-105; nil means the child
 	// agent's own Chat); guarded by mu.
 	subagentRunner subagent.Runner
@@ -156,6 +171,18 @@ func NewAgentCore(opts ...AgentCoreOption) (*AgentCore, error) {
 	// (warned once). Resolved on every call too; Delete publishes secret:deleted.
 	c.secrets = secrethub.NewSecretHub(func() persistence.SecretStore { return c.PersistenceHub().Secrets },
 		secrethub.WithLogger(c.logger), secrethub.WithEvents(c.events))
+	// A-215: variables, read from the store on use; a secret's value can't become one.
+	// Delete publishes variable:deleted.
+	c.variables = variablehub.NewVariableHub(func() persistence.VariableStore { return c.PersistenceHub().Variables },
+		variablehub.WithLogger(c.logger), variablehub.WithEvents(c.events),
+		variablehub.WithSecretValueCheck(c.secrets.IsSecretValue))
+	// A-208: custom MCP servers are read from the store on use (UsePersistence swaps it);
+	// Create, Update and Delete publish mcp-server:changed.
+	// A-214: their OAuth sign-ins too, sealed with the SecretHub.
+	c.mcp = mcphub.NewMcpHub(func() persistence.McpServerStore { return c.PersistenceHub().McpServers },
+		mcphub.WithLogger(c.logger), mcphub.WithEvents(c.events),
+		mcphub.WithAuthStore(func() persistence.McpAuthStore { return c.PersistenceHub().McpAuth }),
+		mcphub.WithSealer(c.secrets))
 	c.channels = channelplatformhub.New()
 	c.agents = orchestration.New(c.spawnFactory)
 	c.trace = o.trace
@@ -220,6 +247,20 @@ func NewAgentCore(opts ...AgentCoreOption) (*AgentCore, error) {
 	events.SubscribeCtx(c.events, events.SecretDeleted, func(ctx context.Context, _ kernel.Event, p events.SecretChangedPayload) {
 		if p.OwnerAgentID == "" {
 			c.removeGlobalSecret(ctx, p.Name)
+		}
+	})
+	// A-215: a deleted GLOBAL variable is dropped from every agent that used it - a
+	// subscriber of variable:deleted, which the hub publishes before Delete returns.
+	events.SubscribeCtx(c.events, events.VariableDeleted, func(ctx context.Context, _ kernel.Event, p events.VariableChangedPayload) {
+		if p.OwnerAgentID == "" {
+			c.removeGlobalVariable(ctx, p.Name)
+		}
+	})
+	// A-208: a deleted MCP server is dropped from every agent that used it - a subscriber of
+	// mcp-server:changed, which the hub publishes before Delete returns.
+	events.SubscribeCtx(c.events, events.McpServerChanged, func(ctx context.Context, _ kernel.Event, p events.McpServerChangedPayload) {
+		if p.Change == "deleted" {
+			c.removeMcpServer(ctx, p.ServerID)
 		}
 	})
 	// A-105: a deleted agent is no longer anyone's subagent - a subscriber of agent:removed,
@@ -313,6 +354,70 @@ func (c *AgentCore) removeGlobalSecret(ctx context.Context, name string) {
 		saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), skillDeleteSaveTimeout)
 		if err := c.PersistenceHub().Agents.Save(saveCtx, a.Profile()); err != nil {
 			c.logger.Warn("secrets: could not save an agent after deleting a secret it used", "agent", a.ID(), "secret", name, "error", err)
+		}
+		cancel()
+	}
+}
+
+// removeGlobalVariable is the variable:deleted subscriber for a global variable (A-215):
+// every live agent that had it in AgentProfile.Variables.Use loses it - and its variables
+// config is cleared (nil) when that was the last one - and its profile is saved through
+// the CURRENT persistence hub. A failed save is logged and does not fail the delete. A
+// panic is recovered and logged: the subscriber runs inside VariableHub.Delete.
+func (c *AgentCore) removeGlobalVariable(ctx context.Context, name string) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.logger.Error("variables: panic while dropping a deleted variable from the agents", "variable", name, "panic", redact.Panic(r))
+		}
+	}()
+	for _, a := range c.agents.List() {
+		p := a.Profile()
+		if p.Variables == nil || !slices.Contains(p.Variables.Use, name) {
+			continue
+		}
+		cfg := p.Variables.Clone()
+		cfg.Use = slices.DeleteFunc(cfg.Use, func(n string) bool { return n == name })
+		if len(cfg.Use) == 0 {
+			cfg = nil
+		}
+		a.UpdateVariables(cfg)
+		saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), skillDeleteSaveTimeout)
+		if err := c.PersistenceHub().Agents.Save(saveCtx, a.Profile()); err != nil {
+			c.logger.Warn("variables: could not save an agent after deleting a variable it used", "agent", a.ID(), "variable", name, "error", err)
+		}
+		cancel()
+	}
+}
+
+// removeMcpServer is the mcp-server:changed subscriber for a deleted server (A-208):
+// every live agent that had it in AgentProfile.Mcp.Servers loses it - and its MCP config
+// is cleared (nil) when that was the last one - and its profile is saved through the
+// CURRENT persistence hub. A failed save is logged and does not fail the delete; the ctx
+// is the one Delete published with, without its cancellation, bounded per agent by
+// skillDeleteSaveTimeout. A panic is recovered and logged: the subscriber runs inside
+// McpHub.Delete.
+func (c *AgentCore) removeMcpServer(ctx context.Context, id string) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.logger.Error("mcp: panic while dropping a deleted MCP server from the agents", "server", id, "panic", redact.Panic(r))
+		}
+	}()
+	for _, a := range c.agents.List() {
+		p := a.Profile()
+		if p.Mcp == nil || !slices.Contains(p.Mcp.Servers, id) {
+			continue
+		}
+		cfg := p.Mcp.Clone()
+		cfg.Servers = slices.DeleteFunc(cfg.Servers, func(s string) bool { return s == id })
+		if len(cfg.Servers) == 0 {
+			cfg = nil
+		}
+		saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), skillDeleteSaveTimeout)
+		if err := a.UpdateMcp(saveCtx, cfg); err != nil {
+			c.logger.Warn("mcp: could not apply an agent's MCP servers after deleting one", "agent", a.ID(), "server", id, "error", err)
+		}
+		if err := c.PersistenceHub().Agents.Save(saveCtx, a.Profile()); err != nil {
+			c.logger.Warn("mcp: could not save an agent after deleting an MCP server it used", "agent", a.ID(), "server", id, "error", err)
 		}
 		cancel()
 	}
@@ -430,8 +535,12 @@ func (c *AgentCore) spawnFactory(ctx context.Context, p profile.AgentProfile) (*
 		SubagentScopes: c.groups.Scopes(),
 		// A-101: the secrets the agent's tools use (its own and the global ones it enables).
 		SecretHub: c.secrets,
+		// A-215: the variables the agent's tools use (its own and the global ones it enables).
+		VariableHub: c.variables,
 		// A-136: the host's slash commands, read on every call.
 		HostCommands: c.hostCommandList,
+		// A-208: the MCP server library and transports.
+		McpHub: c.mcp,
 	}, p)
 }
 
@@ -473,6 +582,11 @@ func (c *AgentCore) Groups() *grouphub.Hub { return c.groups }
 // (UseSecretHubProvider) into PersistenceHub.Secrets. Hosts manage global secrets through it, and
 // seal and rotate their own credential columns with it.
 func (c *AgentCore) SecretHub() *secrethub.SecretHub { return c.secrets }
+
+// VariableHub returns the hub of variables (A-215): settings that are not secret (URLs, ids,
+// regions), global or an agent's own, in PersistenceHub.Variables. Hosts manage global
+// variables through it.
+func (c *AgentCore) VariableHub() *variablehub.VariableHub { return c.variables }
 
 // SandboxHub returns the hub of sandboxes: the shared sandbox, the
 // provider registry and the policies. An agent's own sandbox is managed by the
@@ -533,7 +647,47 @@ func (c *AgentCore) UsePersistence(h *persistence.PersistenceHub) error {
 	c.skills.Reload()
 	// A-105: and custom subagent types.
 	c.subagentTypes.Reload()
+	// A-208: and custom MCP servers.
+	c.mcp.Reload()
 	return nil
+}
+
+// McpHub returns the global library of MCP servers (A-208): app servers (UseMcp), custom
+// ones (Create / Update / Delete, stored in PersistenceHub.McpServers) and the transports
+// agents reach them through (RegisterTransport; http is built in, stdio is the opt-in
+// mcphub/stdio package).
+func (c *AgentCore) McpHub() *mcphub.McpHub { return c.mcp }
+
+// UseMcp registers an app MCP server (A-208): a stdio command or a streamable HTTP url.
+// Read-only at runtime; agents enable it via profile.Mcp.Servers and connect on StartMcp.
+// It returns a *mcpserver.Error ("invalid_argument", "already_exists"). A stdio server
+// needs the stdio transport registered (McpHub().RegisterTransport).
+func (c *AgentCore) UseMcp(def mcpserver.Definition) (mcpserver.Server, error) {
+	return c.mcp.Register(def)
+}
+
+// StartMcp connects every live agent's MCP servers (A-208); from then on every agent
+// spawned with SpawnAgent connects its servers too. It returns once each server
+// connected or failed its first try (a failed one keeps retrying). Call it once the host
+// is ready (secrets provider set, MCP servers and transports registered). The errors are
+// joined.
+func (c *AgentCore) StartMcp(ctx context.Context) error {
+	c.mu.Lock()
+	c.mcpStarted = true
+	c.mu.Unlock()
+	agents := c.agents.List()
+	errs := make([]error, len(agents))
+	var wg sync.WaitGroup
+	for i, a := range agents {
+		wg.Go(func() {
+			if err := a.StartMcp(ctx); err != nil {
+				c.logger.Error("mcp: could not start an agent's MCP servers", "agent", a.ID(), "error", err)
+				errs[i] = err
+			}
+		})
+	}
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // UseLLMProvider registers an LLM provider; the first one registered is the primary.
@@ -786,6 +940,7 @@ func (c *AgentCore) SpawnAgent(ctx context.Context, p profile.AgentProfile) (*ag
 	c.mu.RLock()
 	started := c.jobsStarted
 	channelsStarted := c.channelsStarted
+	mcpStarted := c.mcpStarted
 	c.mu.RUnlock()
 	if started {
 		if err := a.StartJobs(ctx); err != nil {
@@ -796,6 +951,12 @@ func (c *AgentCore) SpawnAgent(ctx context.Context, p profile.AgentProfile) (*ag
 	if channelsStarted {
 		if err := a.StartChannels(ctx); err != nil {
 			c.logger.Error("channels: could not start an agent's channels", "agent", p.ID, "error", err)
+		}
+	}
+	// After StartMcp, a new (or rebuilt) agent connects its MCP servers at once (A-208).
+	if mcpStarted {
+		if err := a.StartMcp(ctx); err != nil {
+			c.logger.Error("mcp: could not start an agent's MCP servers", "agent", p.ID, "error", err)
 		}
 	}
 	return a, nil
@@ -871,6 +1032,10 @@ func (c *AgentCore) RemoveAgent(ctx context.Context, id string) error {
 	// Its own secrets go with it (A-101); global secrets stay. Best effort, logged.
 	if err := c.secrets.DeleteByOwner(ctx, id); err != nil {
 		c.logger.Warn("secrets: could not delete the secrets of a removed agent", "agent", id, "error", err)
+	}
+	// Its own variables too (A-215); global variables stay. Best effort, logged.
+	if err := c.variables.DeleteByOwner(ctx, id); err != nil {
+		c.logger.Warn("variables: could not delete the variables of a removed agent", "agent", id, "error", err)
 	}
 	// The shared-sandbox folder and the artifacts are released by the agent:removed
 	// subscribers of the sandbox hub and the artifact hub, with this ctx.

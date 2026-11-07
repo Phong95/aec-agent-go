@@ -293,6 +293,33 @@ func (h *ToolHub) Authorize(ctx context.Context, name string, args kernel.Argume
 	return Authorized{hub: h, gen: gen, handler: e.handler, def: e.def.Clone(), args: snapshot, tc: tc, used: new(atomic.Bool)}, decision, nil
 }
 
+// AuthorizeHandler (A-213) is Authorize for a tool that is not registered in the hub - a
+// tool that comes and goes at runtime (an agent's MCP tools): the hub's policy checks the
+// call against h's definition and allowedTools, and only an allowed call gets an
+// Authorized for h.
+func (h *ToolHub) AuthorizeHandler(ctx context.Context, handler Handler, args kernel.Arguments, tc Context, allowedTools []string) (Authorized, Decision, error) {
+	if handler == nil {
+		return Authorized{}, Decision{}, &hubError{msg: "Tool not available for this agent", sentinel: ErrNotFound}
+	}
+	def := handler.Definition()
+	h.mu.RLock()
+	policy := h.policy
+	gen := h.gen
+	h.mu.RUnlock()
+	if policy == nil {
+		policy = fallbackPolicy
+	}
+	if tc.Emit == nil {
+		tc.Emit = func(string, any) {}
+	}
+	snapshot := bytes.Clone(args)
+	decision := checkPolicy(ctx, policy, def.Name, bytes.Clone(snapshot), tc, def.Clone(), allowedTools)
+	if !decision.Allowed {
+		return Authorized{}, decision, nil
+	}
+	return Authorized{hub: h, gen: gen, handler: handler, def: def.Clone(), args: snapshot, tc: tc, used: new(atomic.Bool)}, decision, nil
+}
+
 // checkPolicy calls the policy and turns a panic into a denial (fail closed).
 func checkPolicy(ctx context.Context, policy Policy, name string, args kernel.Arguments, tc Context, def Definition, allowedTools []string) (d Decision) {
 	defer func() {
@@ -327,6 +354,16 @@ func (a Authorized) SandboxOperation() sandboxhub.Operation {
 		return o.SandboxOperationFor(bytes.Clone(a.args))
 	}
 	return a.def.SandboxOperation
+}
+
+// Approval returns the approval of this call (A-213): the handler's ApprovalFor of the
+// authorized arguments when it implements CallApprover; "" means the call is gated by
+// its risk.
+func (a Authorized) Approval() ToolApproval {
+	if ap, ok := a.handler.(CallApprover); ok {
+		return ap.ApprovalFor(bytes.Clone(a.args))
+	}
+	return ""
 }
 
 // Arguments returns a fresh copy of the authorized argument bytes.

@@ -175,7 +175,9 @@ func checkType(key string, value any, schema JSONSchema) Decision {
 			return Deny(fmt.Sprintf(`Argument "%s" must be integer, got %s`, key, actualType))
 		}
 	default:
-		if expectedJS(schema.Type) != actualType {
+		// A-213: a type the check doesn't know (none, or an MCP tool's anyOf) is left to
+		// the tool.
+		if expected := expectedJS(schema.Type); expected != "" && expected != actualType {
 			return Deny(fmt.Sprintf(`Argument "%s" must be %s, got %s`, key, schema.Type, actualType))
 		}
 	}
@@ -254,6 +256,7 @@ func isIntegerNumber(n string) bool {
 // expectedJS maps a schema type to the typeof name a value of that type has.
 // An unknown schema type maps to "", which never equals a typeof result (the JS
 // undefined), so no value ever satisfies it.
+// Update (A-213): checkType lets such a type through instead (left to the tool).
 func expectedJS(schemaType string) string {
 	switch schemaType {
 	case "string", "number", "boolean":

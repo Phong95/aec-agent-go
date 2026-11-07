@@ -20,11 +20,13 @@ import (
 	"github.com/Phong95/aec-agent-go/components/artifacthub/artifact"
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
+	"github.com/Phong95/aec-agent-go/components/mcphub/mcpserver"
 	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/subagenthub"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/internal/nilcheck"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
@@ -98,9 +100,18 @@ type Agent struct {
 	// secrets (A-101) is the agent's secrets - its own and the global ones it enabled;
 	// values reach tools only.
 	secrets *secretManager
+	// variables (A-215) is the agent's variables - its own and the global ones it enabled.
+	variables *variableManager
 	// commands (A-136) is the agent's slash commands: the built-ins (working through the
 	// managers above), the host's and the agent's own.
 	commands *commandManager
+	// mcp (A-208) is the agent's MCP connections - to the McpHub servers in its profile,
+	// opened by StartMcp; their background work derives from the lifetime context and
+	// Dispose closes them.
+	mcp *mcpManager
+	// mcpTools (A-213) is the MCP servers' tools as agent tools (the tool manager's
+	// dynamic source).
+	mcpTools *McpTools
 	// jobTurn serializes the turns of the default prompt-job runner (runJobTurn): a load
 	// of the run's session and the chat on it are one step. Capacity one.
 	// -> Superseded (A-97): removed. The default runner chats in the run's session
@@ -250,10 +261,12 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	// Chat. It hears job and channel events on the bus only. Nothing is armed or claimed
 	// until StartJobs.
 	a.jobs = newJobManager(jobManagerDeps{
-		agentID:  own.ID,
-		bus:      deps.Events,
-		store:    deps.PersistenceHub.Jobs,
-		sessions: deps.PersistenceHub.Sessions,
+		agentID: own.ID,
+		bus:     deps.Events,
+		// A-215: {{var:NAME}} in a prompt job's prompt.
+		fillVariables: func(ctx context.Context, text string) (string, error) { return a.variables.Fill(ctx, text) },
+		store:         deps.PersistenceHub.Jobs,
+		sessions:      deps.PersistenceHub.Sessions,
 		runner: func() job.Runner {
 			if deps.JobRunner != nil {
 				if r := deps.JobRunner(); r != nil {
@@ -308,6 +321,47 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		canManage: func() bool { return a.tools.Has("secret") },
 		logger:    deps.Logger,
 	})
+	// A-215: the agent's variables - its own and the global ones it enabled.
+	a.variables = newVariableManager(variableManagerDeps{
+		agentID:   own.ID,
+		profile:   a.Profile,
+		hub:       deps.VariableHub,
+		canManage: func() bool { return a.tools.Has("variable") },
+		logger:    deps.Logger,
+	})
+	// A-208: MCP servers - connections to the McpHub servers in profile.Mcp, opened by
+	// StartMcp; {{secret:NAME}} in their headers / env come from the agent's secrets. It
+	// announces connections and capability changes on the bus (mcp:*) only.
+	a.mcp = newMcpManager(mcpManagerDeps{
+		agentID: own.ID,
+		profile: a.Profile,
+		hub:     deps.McpHub,
+		bus:     deps.Events,
+		secrets: a.secrets,
+		// A-215: {{var:NAME}} in headers / env too.
+		variables: a.variables,
+		lifetime:  lifetime, //nolint:contextcheck // the lifetime derives from Background on purpose (10-SECURITY UF-3)
+		logger:    deps.Logger,
+		policy:    o.mcpReconnect,
+		health:    o.mcpHealth,
+	})
+	// A-213: each connected server's tools become agent tools (mcp__<server>__<tool>),
+	// built from the MCP manager's mcp:* events; the tool manager offers them with the
+	// profile's tools.
+	a.mcpTools = NewMcpTools(McpToolsDeps{
+		AgentID:             own.ID,
+		Bus:                 deps.Events,
+		Mcp:                 a.mcp,
+		Config:              a.mcpConfig,
+		ContextWindowTokens: a.contextWindowTokens,
+	})
+	a.tools.SetDynamicSource(a.mcpTools)
+	// A New that fails below leaves no subscriber behind.
+	defer func() {
+		if !built {
+			a.mcpTools.Dispose()
+		}
+	}()
 
 	// A-105: subagents - this agent as a parent (spawn_subagent) and as somebody's child.
 	// Children are other agents of the host (Deps.Agents); child turns go through the
@@ -341,6 +395,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 			logger: deps.Logger,
 			// A-101: a type child uses its parent's secrets.
 			secrets: a.secrets,
+			// A-215: and its variables.
+			variables: a.variables,
 			// A-135: a type child's approvals use its parent session's approval mode.
 			approvalMode: a.approvalModeFor,
 		},
@@ -382,12 +438,20 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	ctxOpts = append(ctxOpts, WithSecretIndex(func(ctx context.Context) (string, bool) {
 		return a.secrets.buildIndex(ctx, a.secrets.d.canManage())
 	}))
+	// A-215: the agent's variables (names, descriptions, values), with the secrets.
+	ctxOpts = append(ctxOpts, WithVariableIndex(func(ctx context.Context) (string, bool) {
+		return a.variables.buildIndex(ctx, a.variables.d.canManage())
+	}))
 	// A-159: the folders on the user's computer the session works in, when it has a runner.
 	if a.sandboxes != nil {
 		ctxOpts = append(ctxOpts, WithWorkspaceIndex(func(_ context.Context, session kernel.Session) (string, bool) {
 			return a.sandboxes.RunnerFoldersIndex(session.ID)
 		}))
 	}
+	// A-213: the MCP servers' state and instructions, and the tools tool_search can load.
+	ctxOpts = append(ctxOpts, WithMcpIndex(func(_ context.Context, session kernel.Session) (string, bool) {
+		return a.mcpTools.Index(session.ID)
+	}))
 	a.ctxMgr = NewContextManager(own, ctxOpts...)
 	// A-97: the cap is read on every turn, so UpdateLoopConfig applies to the next one.
 	// The runs' context ends with the lifetime one, so the cancel of a failed New (above)
@@ -439,7 +503,7 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 				models: a.models, chat: a.models, toolHub: deps.ToolHub, sandboxes: deps.SandboxHub,
 				bus: deps.Events, trace: deps.Trace, hub: deps.PersistenceHub,
 				open:    a.conv.Open,
-				secrets: a.secrets, logger: deps.Logger,
+				secrets: a.secrets, variables: a.variables, logger: deps.Logger,
 			}, a.Profile(), req)
 		},
 	}
@@ -509,6 +573,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		// A-101: for the tools that use secrets; tool results and errors are redacted
 		// through it.
 		Secrets: a.secrets,
+		// A-215: for the tools that use variables ({{var:NAME}}, variables, the variable tool).
+		Variables: a.variables,
 	}, loopOpts...)
 	if err != nil {
 		return nil, err
@@ -1085,6 +1151,17 @@ func (a *Agent) UpdateSubagents(c *subagent.Config) {
 	a.mu.Unlock()
 }
 
+// UpdateMcp replaces the MCP servers the agent uses (A-208). Once StartMcp ran, the
+// servers added connect and the ones removed close before it returns. c is copied and
+// nil means none. It does not persist the profile.
+func (a *Agent) UpdateMcp(ctx context.Context, c *mcpserver.Config) error {
+	c = c.Clone()
+	a.mu.Lock()
+	a.profile.Mcp = c
+	a.mu.Unlock()
+	return a.mcp.sync(ctx)
+}
+
 // UpdateSecrets replaces which global secrets the agent may use (A-101); it applies to
 // the next tool call. c is copied and nil means only its own. It does not persist the
 // profile.
@@ -1233,12 +1310,57 @@ func (a *Agent) Subagents() subagent.Subagents { return a.subagents }
 func (a *Agent) Secrets() secret.Secrets { return a.secrets }
 
 // ---------------------------------------------------------------------------
+// Variables (A-215) - settings that are not secret, like GitHub Actions' vars
+// ---------------------------------------------------------------------------
+
+// Variables returns this agent's variables: its own and the global ones it enabled, with
+// values, and its own variables' CRUD.
+func (a *Agent) Variables() variable.Variables { return a.variables }
+
+// UpdateVariables replaces which global variables the agent may use (nil = only its own);
+// it applies to the next tool call.
+func (a *Agent) UpdateVariables(c *variable.Config) {
+	c = c.Clone()
+	a.mu.Lock()
+	a.profile.Variables = c
+	a.mu.Unlock()
+}
+
+// ---------------------------------------------------------------------------
 // Channels (A-100) - chat apps (Telegram, your own app...) users talk to this agent through
 // ---------------------------------------------------------------------------
 
 // Channels returns the agent's channels: connect, edit, approve senders, send. They are
 // kept in the persistence hub's ChannelStore.
 func (a *Agent) Channels() channel.Channels { return a.channels }
+
+// Mcp returns the agent's MCP connections (A-208): their state, tools / resources /
+// prompts, and calls.
+func (a *Agent) Mcp() mcpserver.Connections { return a.mcp }
+
+// McpToolList returns the agent's MCP tools (A-213): their names, servers, approval, and
+// whether tool search defers them.
+func (a *Agent) McpToolList() []mcpserver.AgentTool { return a.mcpTools.Describe() }
+
+// mcpConfig is the profile's MCP config (A-213), read on every use; UpdateMcp replaces
+// the pointer, never the value behind it.
+func (a *Agent) mcpConfig() *mcpserver.Config {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.profile.Mcp
+}
+
+// contextWindowTokens is the profile's context window (A-213: tool search's auto threshold).
+func (a *Agent) contextWindowTokens() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.profile.Compactor.ContextWindowTokens
+}
+
+// StartMcp connects the MCP servers in the profile (A-208); it returns once each one
+// connected or failed its first try (a failed one keeps retrying in the background).
+// AgentCore.StartMcp does it for every agent. Idempotent; after Dispose it does nothing.
+func (a *Agent) StartMcp(ctx context.Context) error { return a.mcp.start(ctx) }
 
 // StartChannels connects the agent's stored, enabled channels. Call it once the host is
 // ready to run turns (tools registered, platforms and runner set);
@@ -1382,6 +1504,12 @@ func (a *Agent) dispose(ctx context.Context, removeData bool) error {
 	if err := a.learner.Dispose(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	// A-208: closes its MCP connections (stdio servers are stopped, HTTP sessions deleted).
+	if err := a.mcp.dispose(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	// A-213: unsubscribes the MCP tools from the mcp:* events.
+	a.mcpTools.Dispose()
 	// A running job is waited for. A run still executing would
 	// outlive the agent (and goleak), so it is waited for until ctx ends, and it runs
 	// under the lifetime context, which is cancelled last. Not from inside a run of

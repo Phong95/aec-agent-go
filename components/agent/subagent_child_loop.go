@@ -17,6 +17,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/subagenthub/subagenttype"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/components/trace"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
@@ -37,6 +38,9 @@ type childLoopDeps struct {
 	// secrets (A-101) is the parent's secrets - a type child uses the secrets its parent may
 	// use (never manage_secret). Nil means none.
 	secrets *secretManager
+	// variables (A-215) is the parent's variables - a type child uses the variables its
+	// parent may use (never the variable tool). Nil means none.
+	variables *variableManager
 	// approvalMode (A-135) is a session's approval mode - a type child uses its parent
 	// session's. Nil means always ask.
 	approvalMode func(ctx context.Context, sessionID string) (kernel.ApprovalMode, error)
@@ -115,6 +119,11 @@ func runTypeTurn(ctx context.Context, d childLoopDeps, parent profile.AgentProfi
 		ctxOpts = append(ctxOpts, WithSecretIndex(func(ctx context.Context) (string, bool) { return d.secrets.buildIndex(ctx, false) }))
 		secrets = d.secrets
 	}
+	var variables variable.Variables
+	if d.variables != nil {
+		ctxOpts = append(ctxOpts, WithVariableIndex(func(ctx context.Context) (string, bool) { return d.variables.buildIndex(ctx, false) }))
+		variables = d.variables
+	}
 	var approvalMode func(context.Context, string) (kernel.ApprovalMode, error)
 	if d.approvalMode != nil {
 		approvalMode = func(ctx context.Context, _ string) (kernel.ApprovalMode, error) {
@@ -135,6 +144,7 @@ func runTypeTurn(ctx context.Context, d childLoopDeps, parent profile.AgentProfi
 		ApprovalMode: approvalMode,
 		ToolScope:    func(string) agentloop.ToolScope { return scope },
 		Secrets:      secrets,
+		Variables:    variables,
 	}, loopOpts...)
 	if err != nil {
 		return subagent.TurnResult{}, err

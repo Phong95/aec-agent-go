@@ -283,7 +283,7 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 	// let the call through (gated), later attempts of this call do not ask again.
 	if pre != nil && pre.err == nil {
 		// A-101: a tool whose risk depends on the call (http_request GET vs POST) says so per call.
-		if denied := e.gateCall(ctx, run, call, tc, callDefinition(pre.auth), span); denied != nil {
+		if denied := e.gateCall(ctx, run, call, tc, callDefinition(pre.auth), pre.auth.Approval(), span); denied != nil {
 			span.End(obj("error", "approval-denied"))
 			return *denied
 		}

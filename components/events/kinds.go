@@ -111,6 +111,14 @@ var (
 	SecretDeleted = Kind[SecretChangedPayload]{Name: "secret:deleted"}
 	SecretUsed    = Kind[SecretUsedPayload]{Name: "secret:used"}
 
+	// A-215: emitted by the variablehub.VariableHub (WithEvents) with SessionID "", published
+	// with the call's ctx and awaited. Built-in subscriber of variable:deleted: AgentCore,
+	// which drops a deleted GLOBAL variable from every agent's AgentProfile.Variables.Use
+	// (saved through the current persistence hub) before Delete returns.
+	VariableCreated = Kind[VariableChangedPayload]{Name: "variable:created"}
+	VariableUpdated = Kind[VariableChangedPayload]{Name: "variable:updated"}
+	VariableDeleted = Kind[VariableChangedPayload]{Name: "variable:deleted"}
+
 	// A-135: a session's approval mode was set (Agent.SetApprovalMode, through the
 	// conversation manager), with that session's id. No built-in subscribers (hosts).
 	SessionApprovalModeChanged = Kind[SessionApprovalModeChangedPayload]{Name: "session:approval-mode"}
@@ -155,6 +163,29 @@ var (
 	SkillLearningRejected        = Kind[SkillLearningReviewedPayload]{Name: "skill-learning:rejected"}
 	SkillLearningSkillUpdated    = Kind[SkillLearningSkillUpdatedPayload]{Name: "skill-learning:skill-updated"}
 	SkillLearningSkillUsed       = Kind[SkillLearningSkillUsedPayload]{Name: "skill-learning:skill-used"}
+
+	// A-208: MCP servers. The mcphub.McpHub (WithEvents) publishes mcp-server:changed with
+	// SessionID "" when a custom server was created, updated or deleted (with the call's
+	// ctx, awaited); each agent's MCP manager subscribes to it (reconnects or closes its
+	// connection) and AgentCore drops a deleted server from every agent's profile. Each MCP
+	// manager emits mcp:* with SessionID "" (not awaited): connected (handshake and
+	// discovery done, with the server's tools / resources / prompts), disconnected
+	// (WillReconnect says whether it tries again), error (connect / discover / health /
+	// refresh failed), and tools-changed / resources-changed / prompts-changed after a
+	// list_changed notification was re-read. A-142 builds agent tools from them.
+	McpServerChanged    = Kind[McpServerChangedPayload]{Name: "mcp-server:changed"}
+	McpConnected        = Kind[McpConnectedPayload]{Name: "mcp:connected"}
+	McpDisconnected     = Kind[McpDisconnectedPayload]{Name: "mcp:disconnected"}
+	McpFailed           = Kind[McpFailedPayload]{Name: "mcp:error"}
+	McpToolsChanged     = Kind[McpToolsChangedPayload]{Name: "mcp:tools-changed"}
+	McpResourcesChanged = Kind[McpResourcesChangedPayload]{Name: "mcp:resources-changed"}
+	McpPromptsChanged   = Kind[McpPromptsChangedPayload]{Name: "mcp:prompts-changed"}
+
+	// A-214: the McpHub's OAuth emits mcp-server:auth-changed with SessionID "" (not
+	// awaited) when a server was signed in or its sign-in was dropped (signed out, or a
+	// refresh the server refused); each MCP manager reconnects that server. An mcp:error
+	// with NeedsAuth means the server wants a sign-in.
+	McpAuthChanged = Kind[McpAuthChangedPayload]{Name: "mcp-server:auth-changed"}
 )
 
 // KindNames returns the 32 event type strings in their canonical order.
@@ -168,6 +199,9 @@ var (
 // (Update (A-136): 47, with session:updated and command:executed.)
 // (Update (A-106): 54, with the seven group kinds.)
 // (Update (A-166): 60, with the six skill-learning kinds.)
+// (Update (A-208): 68, with the seven MCP kinds.)
+// (Update (A-214): 69, with mcp-server:auth-changed.)
+// (Update (A-215): 72, with the three variable kinds.)
 // The slice is fresh on every call.
 func KindNames() []string {
 	return []string{
@@ -215,6 +249,9 @@ func KindNames() []string {
 		SecretUpdated.Name,
 		SecretDeleted.Name,
 		SecretUsed.Name,
+		VariableCreated.Name,
+		VariableUpdated.Name,
+		VariableDeleted.Name,
 		SessionApprovalModeChanged.Name,
 		SessionUpdated.Name,
 		SandboxRunnerChanged.Name,
@@ -232,5 +269,13 @@ func KindNames() []string {
 		SkillLearningRejected.Name,
 		SkillLearningSkillUpdated.Name,
 		SkillLearningSkillUsed.Name,
+		McpServerChanged.Name,
+		McpConnected.Name,
+		McpDisconnected.Name,
+		McpFailed.Name,
+		McpToolsChanged.Name,
+		McpResourcesChanged.Name,
+		McpPromptsChanged.Name,
+		McpAuthChanged.Name,
 	}
 }

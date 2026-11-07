@@ -7,8 +7,10 @@ import (
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
+	"github.com/Phong95/aec-agent-go/components/mcphub/mcpserver"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/internal/clonecheck"
 )
 
@@ -57,6 +59,16 @@ func fullProfile() profile.AgentProfile {
 		},
 		// A-101: the global secrets it may use.
 		Secrets: &secret.Config{Use: []string{"WEATHER_KEY"}},
+		// A-215
+		Variables: &variable.Config{Use: []string{"API_BASE"}},
+		// A-208: the MCP servers it connects to.
+		Mcp: &mcpserver.Config{
+			Servers: []string{"files"},
+			// A-213
+			Permissions:         &mcpserver.Permissions{Allow: []string{"mcp__files"}, Ask: []string{"mcp__files__write"}, Deny: []string{"mcp__files__rm"}},
+			ToolSearch:          mcpserver.ToolSearchOn,
+			ToolSearchThreshold: ptrFloat(5),
+		},
 		// A-166: skill learning.
 		SkillLearning: &learning.Config{
 			Enabled: true, Mode: learning.ModeAuto, MinToolCalls: &concurrent, MinFailedCalls: &keep, VerdictWaitMinutes: &maxIter,
@@ -78,3 +90,5 @@ func TestAgentProfileCloneKeepsNil(t *testing.T) {
 		t.Fatalf("nil fields must stay nil: %#v", got)
 	}
 }
+
+func ptrFloat(v float64) *float64 { return &v }

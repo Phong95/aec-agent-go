@@ -60,6 +60,9 @@ func (l *Loop) buildToolContext(r *runState) toolhub.Context {
 	if !nilcheck.IsNil(l.deps.Secrets) {
 		tc.Secrets = l.deps.Secrets
 	}
+	if !nilcheck.IsNil(l.deps.Variables) {
+		tc.Variables = l.deps.Variables
+	}
 	tc.Emit = func(eventType string, payload any) {
 		r.bus.Emit(kernel.Event{Type: eventType, SessionID: r.sessionID, Payload: payload})
 	}

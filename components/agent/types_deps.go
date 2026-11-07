@@ -13,6 +13,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
+	"github.com/Phong95/aec-agent-go/components/mcphub"
 	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub"
@@ -20,6 +21,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/subagenthub"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/components/trace"
+	"github.com/Phong95/aec-agent-go/components/variablehub"
 )
 
 // Deps is what an Agent needs from the AgentCore that spawns it. LLMHub, ToolHub,
@@ -95,10 +97,18 @@ type Deps struct {
 	// SecretHub (A-101) is the host's secrets - sealed keys the agent's tools use without
 	// the model seeing them (AgentCore passes its own). Optional: nil means no secrets.
 	SecretHub *secrethub.SecretHub
+	// VariableHub (A-215) is the host's variables - settings that are not secret, filled in
+	// for {{var:NAME}} and `variables` (AgentCore passes its own). Optional: nil means no
+	// variables.
+	VariableHub *variablehub.VariableHub
 	// HostCommands (A-136) returns the host's slash commands (AgentCore.UseCommand), read
 	// on every call so a command added after the agent was spawned applies. Optional: nil
 	// means none.
 	HostCommands func() []command.HostCommand
+	// McpHub (A-208) is the library of MCP server definitions the agent's servers
+	// (AgentProfile.Mcp.Servers) resolve from, and the transports it connects through -
+	// AgentCore passes its own. Optional: nil means the agent has no MCP servers.
+	McpHub *mcphub.McpHub
 }
 
 // SubagentHost is the agents a parent can reach (A-105): orchestration.Orchestration,

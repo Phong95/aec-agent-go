@@ -422,7 +422,7 @@ func (e *executor) authorize(ctx context.Context, run *toolRun, call kernel.Tool
 		if denied := e.checkPlanMode(ctx, run, call, callDefinition(auth)); denied != nil {
 			return toolhub.Authorized{}, &attemptOutcome{content: denied.Content, isError: boolPtr(true), final: true}, nil
 		}
-		if denied := e.gateCall(ctx, run, call, tc, callDefinition(auth), pre.span); denied != nil {
+		if denied := e.gateCall(ctx, run, call, tc, callDefinition(auth), auth.Approval(), pre.span); denied != nil {
 			return toolhub.Authorized{}, &attemptOutcome{content: denied.Content, isError: boolPtr(true), final: true}, nil
 		}
 		pre.gated = true

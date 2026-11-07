@@ -556,7 +556,9 @@ func TestHubOffersNoDirectExecution(t *testing.T) {
 				t.Errorf("method %s returns something executable: %s", m.Name, p)
 			}
 			// Only Authorize may hand out the sanctioned Authorized.
-			if m.Type.Out(j) == authorizedType && m.Name != "Authorize" {
+			// A-213: and AuthorizeHandler, which runs the policy on a handler the caller
+			// already holds (an agent's MCP tool) - it reaches no registered handler.
+			if m.Type.Out(j) == authorizedType && m.Name != "Authorize" && m.Name != "AuthorizeHandler" {
 				t.Errorf("method %s returns toolhub.Authorized, only Authorize may", m.Name)
 			}
 		}

@@ -52,20 +52,25 @@ func callDefinition(auth toolhub.Authorized) toolhub.Definition {
 // the user's approval, asks when it does, and records the outcome on the dispatch
 // span (risk, approval, approvalSandbox). It returns the denial result, or nil when
 // the call may run (no gate applies, or the user approved).
-func (e *executor) gateCall(ctx context.Context, run *toolRun, call kernel.ToolCall, tc toolhub.Context, def toolhub.Definition, span trace.SpanHandle) *kernel.ToolResult {
-	g := e.approvalGate(ctx, def, tc)
+//
+// A-213: approval is the call's own approval (toolhub.Authorized.Approval, an MCP tool's
+// permission rules); "" means the call is gated by its risk. ToolApprovalAlways asks even
+// in YOLO mode and for a pre-approved call.
+func (e *executor) gateCall(ctx context.Context, run *toolRun, call kernel.ToolCall, tc toolhub.Context, def toolhub.Definition, approvalOf toolhub.ToolApproval, span trace.SpanHandle) *kernel.ToolResult {
+	g := e.approvalGate(ctx, def, tc, approvalOf)
 	if g == nil {
 		return nil
 	}
+	always := approvalOf == toolhub.ToolApprovalAlways
 	// A-135: a session in YOLO mode runs the call without asking (read now, so a switch
 	// during the turn applies to its next call).
 	// A-106: a call the user already agreed to for the session (a group lead's hand-offs)
 	// runs too.
 	var approval approvalResult
 	switch {
-	case e.deps.PreApproved != nil && e.deps.PreApproved(tc.SessionID, call.Name):
+	case !always && e.deps.PreApproved != nil && e.deps.PreApproved(tc.SessionID, call.Name):
 		approval = approvalResult{trace: obj("approved", true, "auto", "pre-approved")}
-	case e.approvalMode(ctx, tc.SessionID) == kernel.ApprovalModeYolo:
+	case !always && e.approvalMode(ctx, tc.SessionID) == kernel.ApprovalModeYolo:
 		approval = e.autoApprove(run, def, call, g)
 	default:
 		approval = e.requestApproval(ctx, run, def, call, tc, g)
@@ -92,8 +97,12 @@ func (e *executor) gateCall(ctx context.Context, run *toolRun, call kernel.ToolC
 //
 // A tool that declares no Risk is gated like a consequential one (fail closed):
 // nobody said it is safe to run unattended. Every built-in tool declares its Risk.
-func (e *executor) approvalGate(ctx context.Context, def toolhub.Definition, tc toolhub.Context) *gate {
+func (e *executor) approvalGate(ctx context.Context, def toolhub.Definition, tc toolhub.Context, approvalOf toolhub.ToolApproval) *gate {
 	consequential := effectiveRisk(def) == toolhub.RiskConsequential
+	// A-213: a tool that decides its approval itself (MCP tools) says so instead of its risk.
+	if approvalOf != "" {
+		consequential = approvalOf != toolhub.ToolApprovalNever
+	}
 	op := def.SandboxOperation
 	if op == "" || tc.GetSandbox == nil || nilcheck.IsNil(e.deps.Sandbox) {
 		return consequentialGate(consequential, nil)

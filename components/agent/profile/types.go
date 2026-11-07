@@ -12,8 +12,10 @@ import (
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
 	"github.com/Phong95/aec-agent-go/components/agent/skilllearning/learning"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
+	"github.com/Phong95/aec-agent-go/components/mcphub/mcpserver"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/internal/jsonx"
 )
 
@@ -123,6 +125,11 @@ type AgentProfile struct {
 	// Secrets (A-101) is the global secrets this agent may use (it can always use its
 	// own). Nil = only its own.
 	Secrets *secret.Config `json:"secrets,omitempty"`
+	// Variables (A-215) is the global variables this agent may use (it can always use its
+	// own). Nil = only its own.
+	Variables *variable.Config `json:"variables,omitempty"`
+	// Mcp (A-208) is the MCP servers (McpHub ids) this agent connects to. Nil = none.
+	Mcp *mcpserver.Config `json:"mcp,omitempty"`
 }
 
 // MarshalJSON encodes the profile in its stable wire form. Nil Tools and Skills

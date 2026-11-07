@@ -12,6 +12,7 @@ package toolhub
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"iter"
 	"slices"
 	"sync/atomic"
@@ -19,10 +20,12 @@ import (
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 
 	"github.com/Phong95/aec-agent-go/components/artifacthub/artifact"
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
 	"github.com/Phong95/aec-agent-go/components/skillhub/skill"
+	"github.com/Phong95/aec-agent-go/internal/jsonx"
 	"github.com/Phong95/aec-agent-go/kernel"
 	"github.com/Phong95/aec-agent-go/kernel/ordered"
 )
@@ -55,6 +58,23 @@ type JSONSchema struct {
 	Items       *JSONSchema `json:"items,omitempty"`
 	Enum        []string    `json:"enum,omitzero"`
 	Description string      `json:"description,omitempty"`
+	// Raw (A-213), when set, is what the schema encodes as instead of the fields above:
+	// the full JSON Schema of an MCP tool (anyOf, defaults, nested shapes), which the
+	// subset can't hold. The fields above stay the policy's view of it. It is never
+	// decoded (a decoded schema has no Raw).
+	Raw json.RawMessage `json:"-"`
+}
+
+// jsonSchemaFields is JSONSchema without its MarshalJSON, for the plain encoding.
+type jsonSchemaFields JSONSchema
+
+// MarshalJSON writes Raw when it is set, else the fields (A-213). It goes through
+// jsonx.Marshal, so the bytes are the ones the fields encoded to before.
+func (s JSONSchema) MarshalJSON() ([]byte, error) {
+	if len(s.Raw) > 0 {
+		return jsonx.NormalizeLineSeparators(s.Raw), nil
+	}
+	return jsonx.Marshal(jsonSchemaFields(s))
 }
 
 // Clone returns a deep copy: Properties and Items are pointers, so a plain
@@ -69,6 +89,7 @@ func (s JSONSchema) Clone() JSONSchema {
 	}
 	out.Required = slices.Clone(s.Required)
 	out.Enum = slices.Clone(s.Enum)
+	out.Raw = bytes.Clone(s.Raw)
 	return out
 }
 
@@ -271,6 +292,32 @@ type Definition struct {
 	// (model.Manager.AcceptsImages; a model that reports nothing counts as able). False
 	// means always offered. Declared after Subagent, the key order of core/ts.
 	NeedsVision bool `json:"needsVision,omitempty"`
+	// MaxResultChars (A-213): this tool's results may be longer than
+	// LoopConfig.MaxToolResultChars before they are cut (an MCP tool's
+	// _meta["anthropic/maxResultSizeChars"]). It only raises the limit; 0 means none.
+	// Declared after NeedsVision, the key order of core/ts.
+	MaxResultChars int `json:"maxResultChars,omitempty"`
+}
+
+// ToolApproval (A-213) is whether a call needs the user's approval, for tools that decide
+// it themselves (MCP tools, by the agent's permission rules) instead of by their risk.
+type ToolApproval string
+
+// The values of ToolApproval (A-213).
+const (
+	// ToolApprovalNever: runs without asking (a sandbox may still ask for its operation).
+	ToolApprovalNever ToolApproval = "never"
+	// ToolApprovalAsk: asks, unless the session is in YOLO mode or the call was pre-approved.
+	ToolApprovalAsk ToolApproval = "ask"
+	// ToolApprovalAlways: asks on every call, YOLO and pre-approval included.
+	ToolApprovalAlways ToolApproval = "always"
+)
+
+// CallApprover is the optional part of a Handler that decides the approval of one call
+// itself (A-213, ToolHandler.approvalFor of core/ts) instead of by its risk
+// (consequential = ask, anything else = never).
+type CallApprover interface {
+	ApprovalFor(args kernel.Arguments) ToolApproval
 }
 
 // Clone returns a deep copy of the definition: the schema (including its
@@ -377,6 +424,10 @@ type Context struct {
 	// terminal, run_code) resolve {{secret:NAME}} / secrets: [...] through it; list_secrets
 	// and manage_secret use it too. Nil outside an agent.
 	Secrets secret.Secrets
+	// Variables (A-215) is the agent's variables - http_request fills {{var:NAME}} through
+	// it, terminal / run_code pass variables: [...] as environment variables, the variable
+	// tool lists and writes them. Nil outside an agent, or when the host has no VariableHub.
+	Variables variable.Variables
 	// Emit publishes an event. ToolHub.Authorize replaces a nil Emit with a no-op, so
 	// a handler may always call it.
 	Emit func(eventType string, payload any)

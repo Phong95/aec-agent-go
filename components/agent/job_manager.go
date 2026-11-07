@@ -52,6 +52,10 @@ type jobManagerDeps struct {
 	sessions persistence.SessionStore
 	// runner is resolved on every run: the host's runner, or the agent's default one.
 	runner func() job.Runner
+	// fillVariables (A-215) fills {{var:NAME}} in a prompt job's prompt with the agent's
+	// variables before the turn runs; a name the agent can't use stays as written. Nil
+	// means none.
+	fillVariables func(ctx context.Context, text string) (string, error)
 	// capacity is the agent's running turns and its cap (0 = none): job runs leave room
 	// for chats. Nil means no cap.
 	capacity func() (running, maxTurns int)
@@ -1491,7 +1495,7 @@ func (m *jobManager) process(runCtx context.Context, entry *activeJobRun) {
 	})
 	rc := job.RunContext{
 		AgentID: m.d.agentID, JobID: t.ID, JobName: t.Name, RunID: run.ID, Cause: run.Cause, Attempt: run.Attempts,
-		SessionID: sessionID, Prompt: job.RenderPromptWithHistory(*t, evs, history),
+		SessionID: sessionID, Prompt: m.fillPromptVariables(runCtx, job.RenderPromptWithHistory(*t, evs, history)),
 	}
 	var outcome toolRunOutcome
 	var failure error
@@ -2076,4 +2080,18 @@ func ptr[T any](v T) *T { return &v }
 // randomFloat is the default jitter source.
 func randomFloat() float64 {
 	return rand.Float64() //nolint:gosec // retry jitter, not a secret
+}
+
+// fillPromptVariables is the prompt with {{var:NAME}} filled in (A-215); on an error the
+// prompt is kept as it is (the turn still runs).
+func (m *jobManager) fillPromptVariables(ctx context.Context, prompt string) string {
+	if m.d.fillVariables == nil || !strings.Contains(prompt, "{{") {
+		return prompt
+	}
+	filled, err := m.d.fillVariables(ctx, prompt)
+	if err != nil {
+		m.d.logger.Warn("jobs: could not fill the variables of a job prompt", "agent", m.d.agentID, "error", err)
+		return prompt
+	}
+	return filled
 }

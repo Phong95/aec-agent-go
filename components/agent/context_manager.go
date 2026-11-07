@@ -51,9 +51,17 @@ type ContextManager struct {
 	// they are for, where they may be used - never values) on every PrepareMessages. Nil
 	// means none.
 	secretIndex func(ctx context.Context) (string, bool)
+	// variableIndex (A-215) resolves the agent's variables (<available_variables>: names,
+	// descriptions, values) on every PrepareMessages; it goes with the secret index (the
+	// same section of the context breakdown). Nil means none.
+	variableIndex func(ctx context.Context) (string, bool)
 	// workspaceIndex (A-159) resolves the folders on the user's computer the turn's
 	// session works in (<workspace_folders>) on every PrepareMessages. Nil means none.
 	workspaceIndex func(ctx context.Context, session kernel.Session) (string, bool)
+	// mcpIndex (A-213) resolves the agent's MCP servers (<mcp_servers>: state,
+	// instructions, deferred tool names) on every PrepareMessages, for the turn's session.
+	// Nil means none.
+	mcpIndex func(ctx context.Context, session kernel.Session) (string, bool)
 
 	mu          sync.RWMutex
 	middlewares []agentloop.Middleware
@@ -101,6 +109,18 @@ func WithSecretIndex(f func(ctx context.Context) (string, bool)) ContextOption {
 	}
 }
 
+// WithVariableIndex sets the source of the variable index (A-215): the agent's variables,
+// appended after the secret index in the same section. It is called on every
+// PrepareMessages with the ctx of the model call; the bool is false (or the text empty)
+// when there is none. A nil function is ignored.
+func WithVariableIndex(f func(ctx context.Context) (string, bool)) ContextOption {
+	return func(c *ContextManager) {
+		if f != nil {
+			c.variableIndex = f
+		}
+	}
+}
+
 // WithWorkspaceIndex sets the source of the workspace index (A-159): the folders on the
 // user's computer the turn's session works in, appended after the secret index and
 // counted as part of the system prompt in the context breakdown. It is called on every
@@ -110,6 +130,19 @@ func WithWorkspaceIndex(f func(ctx context.Context, session kernel.Session) (str
 	return func(c *ContextManager) {
 		if f != nil {
 			c.workspaceIndex = f
+		}
+	}
+}
+
+// WithMcpIndex sets the source of the MCP index (A-213): the agent's MCP servers, their
+// instructions and the tools tool_search can load, appended after the workspace index and
+// counted as part of the system prompt in the context breakdown. It is called on every
+// PrepareMessages with the ctx of the model call and the turn's session; the bool is
+// false (or the text empty) when the agent has no MCP servers. A nil function is ignored.
+func WithMcpIndex(f func(ctx context.Context, session kernel.Session) (string, bool)) ContextOption {
+	return func(c *ContextManager) {
+		if f != nil {
+			c.mcpIndex = f
 		}
 	}
 }
@@ -208,14 +241,34 @@ func (c *ContextManager) Prepare(ctx context.Context, msgs []kernel.Message, mc 
 			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextAgents, Text: index})
 		}
 	}
+	// A-215: the variable index goes with the secret index (one "secrets" section).
+	var secretsText string
 	if c.secretIndex != nil {
 		if index, ok := c.secretIndex(ctx); ok && index != "" {
-			system = withIndex(system, index)
-			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSecrets, Text: index})
+			secretsText = index
 		}
+	}
+	if c.variableIndex != nil {
+		if index, ok := c.variableIndex(ctx); ok && index != "" {
+			if secretsText != "" {
+				secretsText += "\n\n" + index
+			} else {
+				secretsText = index
+			}
+		}
+	}
+	if secretsText != "" {
+		system = withIndex(system, secretsText)
+		sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSecrets, Text: secretsText})
 	}
 	if c.workspaceIndex != nil {
 		if index, ok := c.workspaceIndex(ctx, mc.Session); ok && index != "" {
+			system = withIndex(system, index)
+			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSystemPrompt, Text: index})
+		}
+	}
+	if c.mcpIndex != nil {
+		if index, ok := c.mcpIndex(ctx, mc.Session); ok && index != "" {
 			system = withIndex(system, index)
 			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSystemPrompt, Text: index})
 		}

@@ -7,6 +7,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
@@ -105,6 +106,13 @@ type ScopeCall struct {
 // before the policy runs. Without it, the scope sees the definition's Risk.
 type CallRisks interface {
 	CallRisk(name string, args kernel.Arguments) (toolhub.Risk, bool)
+}
+
+// ToolLookup is the optional part of Tools that finds one of the session's tools by name,
+// also one the tool list leaves out (A-213: an MCP tool tool search defers), found by
+// type assertion. The output limit reads the tool's MaxResultChars from it.
+type ToolLookup interface {
+	Lookup(sessionID, name string) (toolhub.Definition, bool)
 }
 
 // listTools is the session's tools: SessionTools.ListFor when t has it, List otherwise.
@@ -294,4 +302,7 @@ type Deps struct {
 	// every tool result and tool error is passed through its Redact before anyone sees it
 	// (the model, the conversation, traces, events, the UI). Nil means none.
 	Secrets secret.Secrets
+	// Variables (A-215) is the agent's variables, handed to tools as
+	// toolhub.Context.Variables. Nil means none.
+	Variables variable.Variables
 }

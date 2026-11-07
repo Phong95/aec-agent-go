@@ -15,6 +15,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
+	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/internal/jsstr"
 	"github.com/Phong95/aec-agent-go/internal/nilcheck"
 	"github.com/Phong95/aec-agent-go/internal/toolkit"
@@ -230,6 +231,13 @@ func (t *HTTPRequestTool) Execute(ctx context.Context, args kernel.Arguments, tc
 		return fail("the body is larger than " + strconv.Itoa(t.maxBodyBytes) + " bytes"), nil
 	}
 
+	// A-215: variables first - every {{var:NAME}} in the url, the header values and the body
+	// - so a variable may hold the base URL, or a {{secret:NAME}} (filled and checked below
+	// like any).
+	if failed, ok := fillVariables(ctx, tc, &rawURL, headers, body); !ok {
+		return fail(failed), nil
+	}
+
 	// Secrets: every {{secret:NAME}} in the url, the header values and the body.
 	texts := []string{rawURL}
 	for _, h := range headers {
@@ -422,4 +430,47 @@ func jsNumberText(n json.Number) string {
 		return string(n)
 	}
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+// fillVariables fills {{var:NAME}} in the url, the header values and the body in place
+// (A-215). It returns the reason and false when a name is unknown or the agent has no
+// variables (nothing is sent then).
+func fillVariables(ctx context.Context, tc toolhub.Context, rawURL *string, headers []httpHeader, body *string) (string, bool) {
+	texts := []string{*rawURL}
+	for _, h := range headers {
+		texts = append(texts, h.value)
+	}
+	if body != nil {
+		texts = append(texts, *body)
+	}
+	var names []string
+	for _, t := range texts {
+		for _, n := range variable.PlaceholderNames(t) {
+			if !slices.Contains(names, n) {
+				names = append(names, n)
+			}
+		}
+	}
+	if len(names) == 0 {
+		return "", true
+	}
+	if nilcheck.IsNil(tc.Variables) {
+		return "this agent has no variables", false
+	}
+	values, err := tc.Variables.Resolve(ctx, names)
+	if err != nil {
+		var ve *variable.Error
+		if errors.As(err, &ve) {
+			return ve.Message, false
+		}
+		return err.Error(), false
+	}
+	*rawURL = variable.FillPlaceholders(*rawURL, values)
+	for i := range headers {
+		headers[i].value = variable.FillPlaceholders(headers[i].value, values)
+	}
+	if body != nil {
+		*body = variable.FillPlaceholders(*body, values)
+	}
+	return "", true
 }

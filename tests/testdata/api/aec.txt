@@ -34,6 +34,7 @@ method (*AgentCore) HandleJobWebhook(ctx context.Context, jobID string, req job.
 method (*AgentCore) Initialize(ctx context.Context) error
 method (*AgentCore) LLMHub() *llmhub.LLMHub
 method (*AgentCore) ListAgents() []*agent.Agent
+method (*AgentCore) McpHub() *mcphub.McpHub
 method (*AgentCore) PersistenceHub() *persistence.PersistenceHub
 method (*AgentCore) RemoveAgent(ctx context.Context, id string) error
 method (*AgentCore) SandboxHub() *sandboxhub.SandboxHub
@@ -42,6 +43,7 @@ method (*AgentCore) SkillHub() *skillhub.SkillHub
 method (*AgentCore) SpawnAgent(ctx context.Context, p profile.AgentProfile) (*agent.Agent, error)
 method (*AgentCore) StartChannels(ctx context.Context) error
 method (*AgentCore) StartJobs(ctx context.Context) error
+method (*AgentCore) StartMcp(ctx context.Context) error
 method (*AgentCore) SubagentHub() *subagenthub.SubagentHub
 method (*AgentCore) ToolHub() *toolhub.ToolHub
 method (*AgentCore) Trace() *trace.Service
@@ -51,6 +53,7 @@ method (*AgentCore) UseCommand(spec command.Spec, opts command.RegisterOptions) 
 method (*AgentCore) UseGroupRunner(r grouphub.MemberRunner)
 method (*AgentCore) UseJobRunner(r job.Runner)
 method (*AgentCore) UseLLMProvider(p llmhub.Provider) error
+method (*AgentCore) UseMcp(def mcpserver.Definition) (mcpserver.Server, error)
 method (*AgentCore) UsePersistence(h *persistence.PersistenceHub) error
 method (*AgentCore) UseSandboxProvider(p sandboxhub.Provider) error
 method (*AgentCore) UseSecretHubProvider(p secrethub.SecretHubProvider)
@@ -58,6 +61,7 @@ method (*AgentCore) UseSkill(pkg skill.Package) error
 method (*AgentCore) UseSubagentRunner(r subagent.Runner)
 method (*AgentCore) UseSubagentType(def subagenttype.Definition) error
 method (*AgentCore) UseTool(t toolhub.Handler) error
+method (*AgentCore) VariableHub() *variablehub.VariableHub
 method (AgentConfig) Format(f fmt.State, _ rune)
 method (AgentConfig) GoString() string
 method (AgentConfig) LogValue() slog.Value

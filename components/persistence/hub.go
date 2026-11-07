@@ -20,6 +20,9 @@ import (
 // (Update (A-101): thirteen, with Secrets.)
 // (Update (A-106): fifteen, with Groups and GroupMessages.)
 // (Update (A-166): sixteen, with SkillProposals.)
+// (Update (A-208): seventeen, with McpServers.)
+// (Update (A-214): eighteen, with McpAuth.)
+// (Update (A-215): nineteen, with Variables.)
 //
 // The two message slots are distinct instances: Messages is the full history and
 // CompactedMessages is the compacted LLM working set.
@@ -72,6 +75,17 @@ type PersistenceHub struct {
 	// learned skills' health records (A-166). Written by each agent's skill learner. The
 	// in-memory default keeps nothing across a restart.
 	SkillProposals SkillProposalStore
+	// McpServers holds the custom MCP server definitions created at runtime (A-208; app
+	// servers live only in the mcphub.McpHub). Write through the McpHub. The in-memory
+	// default keeps nothing across a restart.
+	McpServers McpServerStore
+	// McpAuth holds the OAuth sign-ins of MCP servers (A-214), sealed by the McpHub. Write
+	// through McpHub.OAuth. The in-memory default keeps nothing across a restart.
+	McpAuth McpAuthStore
+	// Variables holds variables (A-215) - settings that are not secret, global or owned by
+	// an agent. Write through the variablehub.VariableHub. The in-memory default keeps
+	// nothing across a restart.
+	Variables VariableStore
 }
 
 // Option sets one store slot of a PersistenceHub.
@@ -137,6 +151,21 @@ func WithGroupMessages(s GroupMessageStore) Option {
 // WithSkillProposals sets the skill proposal store (A-166).
 func WithSkillProposals(s SkillProposalStore) Option {
 	return func(h *PersistenceHub) { h.SkillProposals = s }
+}
+
+// WithMcpServers sets the custom MCP server store (A-208).
+func WithMcpServers(s McpServerStore) Option {
+	return func(h *PersistenceHub) { h.McpServers = s }
+}
+
+// WithMcpAuth sets the MCP sign-in store (A-214).
+func WithMcpAuth(s McpAuthStore) Option {
+	return func(h *PersistenceHub) { h.McpAuth = s }
+}
+
+// WithVariables sets the variable store (A-215).
+func WithVariables(s VariableStore) Option {
+	return func(h *PersistenceHub) { h.Variables = s }
 }
 
 // NewPersistenceHub returns a hub whose slots are the given stores. Every slot that is not
@@ -207,6 +236,15 @@ func (h *PersistenceHub) FillDefaults() *PersistenceHub {
 	}
 	if nilcheck.IsNil(h.SkillProposals) {
 		h.SkillProposals = NewMemorySkillProposalStore()
+	}
+	if nilcheck.IsNil(h.McpServers) {
+		h.McpServers = NewMemoryMcpServerStore()
+	}
+	if nilcheck.IsNil(h.McpAuth) {
+		h.McpAuth = NewMemoryMcpAuthStore()
+	}
+	if nilcheck.IsNil(h.Variables) {
+		h.Variables = NewMemoryVariableStore()
 	}
 	return h
 }

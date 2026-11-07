@@ -72,5 +72,7 @@ func (p AgentProfile) Clone() AgentProfile {
 	p.Memory = p.Memory.Clone()
 	p.Subagents = p.Subagents.Clone()
 	p.Secrets = p.Secrets.Clone()
+	p.Variables = p.Variables.Clone()
+	p.Mcp = p.Mcp.Clone()
 	return p
 }
