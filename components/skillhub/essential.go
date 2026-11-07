@@ -27,7 +27,12 @@ var essentialFS embed.FS
 // Update (A-209): artifacts is appended - when and how to save, update and find
 // artifacts; it needs the artifact tool (which replaced save_artifact, update_artifact,
 // read_artifact, list_artifacts).
-var essentialSkillNames = [...]string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check", "artifacts"}
+// Update (A-210): live-preview is appended - show pages, apps and dev servers next to the
+// chat and make public links; it needs preview (which, with service, replaced the eight
+// preview tools).
+// Update (A-211): jobs is appended - which kind of job to make and how (moved out of
+// manage_job's description); it needs the job tool, which replaced manage_job and list_jobs.
+var essentialSkillNames = [...]string{"skill-creator", "plan", "web-research", "watch-and-notify", "visual-self-check", "artifacts", "live-preview", "jobs"}
 
 // EssentialSkillNames returns the names of the essential skills - the default
 // profile.skills for a new agent. Every call returns a fresh slice.

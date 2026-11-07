@@ -34,7 +34,9 @@ const (
 // childExcludedTools are the tools a child never gets, whatever its access: no nesting,
 // no questions to the user, no lasting self-changes (CHILD_EXCLUDED_TOOLS of core/ts).
 // (Update (A-101): manage_secret too - a subagent type uses its parent's secrets.)
-var childExcludedTools = []string{"spawn_subagent", "clarify", "manage_job", "skill_manage", "manage_secret"}
+// Update (A-211): "job" replaces manage_job (list_jobs is its list action now).
+// Update (A-212): "secret" replaces manage_secret (list_secrets is its list action now).
+var childExcludedTools = []string{"spawn_subagent", "clarify", "job", "skill_manage", "secret"}
 
 // ChildExcludedTools returns the tools a child never gets, whatever its access, as a
 // fresh slice.

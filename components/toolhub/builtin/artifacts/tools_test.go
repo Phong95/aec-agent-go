@@ -291,8 +291,16 @@ func TestArtifactTools(t *testing.T) {
 				t.Errorf("%s is renamed to %q, want artifact", name, renamed[name])
 			}
 		}
-		if len(renamed) != len(RetiredToolNames()) {
-			t.Errorf("RenamedTools = %v, want only the retired artifact tools", renamed)
+		// Update (A-210): the map also holds the retired preview tools, so count the ones
+		// that became artifact.
+		toArtifact := 0
+		for _, current := range renamed {
+			if current == "artifact" {
+				toArtifact++
+			}
+		}
+		if toArtifact != len(RetiredToolNames()) {
+			t.Errorf("RenamedTools = %v, want only the retired artifact tools mapped to artifact", renamed)
 		}
 	})
 

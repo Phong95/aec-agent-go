@@ -35,7 +35,7 @@ func setup(t *testing.T) rig {
 		t.Fatal(err)
 	}
 	tools := map[string]toolhub.Handler{}
-	for _, h := range NewTools() {
+	for _, h := range NewTools(Options{}) {
 		tools[h.Definition().Name] = h
 	}
 	return rig{
@@ -73,12 +73,13 @@ func (r rig) installViewer(t *testing.T) {
 
 func TestDefinitions(t *testing.T) {
 	var names []string
-	for _, h := range NewTools() {
+	for _, h := range NewTools(Options{}) {
 		d := h.Definition()
 		names = append(names, d.Name)
 		wantRisk, wantOp := toolhub.RiskReadOnly, sandboxhub.OperationFSRead
 		// A-124 phase 2: starting and stopping a service runs a command.
-		if d.Name == "start_service" || d.Name == "stop_service" {
+		// Update (A-210): the service tool states that worst case; preview is read-only.
+		if d.Name == "service" {
 			wantRisk, wantOp = toolhub.RiskDraft, sandboxhub.OperationExec
 		}
 		if d.Risk != wantRisk || d.SandboxOperation != wantOp {
@@ -87,6 +88,47 @@ func TestDefinitions(t *testing.T) {
 	}
 	if strings.Join(names, ",") != strings.Join(ToolNames(), ",") {
 		t.Fatalf("names = %v, want %v", names, ToolNames())
+	}
+}
+
+// A-210: risk and sandbox operation follow the call.
+func TestCallRisks(t *testing.T) {
+	preview := NewPreviewTool(Options{})
+	for args, want := range map[string]toolhub.Risk{
+		`{"path":"x"}`:                 toolhub.RiskReadOnly,
+		`{"path":"x","public":true}`:   toolhub.RiskConsequential,
+		`{"path":"x","public":"true"}`: toolhub.RiskConsequential,
+		`{"path":"x","public":false}`:  toolhub.RiskReadOnly,
+	} {
+		if got := preview.RiskFor(kernel.Arguments(args)); got != want {
+			t.Errorf("preview %s: risk %q, want %q", args, got, want)
+		}
+	}
+	service := NewServiceTool()
+	for _, action := range []string{"list", "logs"} {
+		args := kernel.Arguments(`{"action":"` + action + `"}`)
+		if service.RiskFor(args) != toolhub.RiskReadOnly || service.SandboxOperationFor(args) != sandboxhub.OperationFSRead {
+			t.Errorf("service %s: %q %q", action, service.RiskFor(args), service.SandboxOperationFor(args))
+		}
+	}
+	for _, action := range []string{"start", "stop", "nope"} {
+		args := kernel.Arguments(`{"action":"` + action + `"}`)
+		if service.RiskFor(args) != toolhub.RiskDraft || service.SandboxOperationFor(args) != sandboxhub.OperationExec {
+			t.Errorf("service %s: %q %q", action, service.RiskFor(args), service.SandboxOperationFor(args))
+		}
+	}
+}
+
+// A-210: every old preview tool name maps to its new tool, and toolhub agrees.
+func TestRetiredToolNames(t *testing.T) {
+	renamed := toolhub.RenamedTools()
+	for old, current := range RetiredToolNames() {
+		if renamed[old] != current {
+			t.Errorf("%s is renamed to %q, want %q", old, renamed[old], current)
+		}
+	}
+	if got := toolhub.RenamedToolNames([]string{"list_apps", "start_service", "open_in_app", "service_logs", "terminal"}); strings.Join(got, ",") != "preview,service,terminal" {
+		t.Errorf("RenamedToolNames = %v", got)
 	}
 }
 
@@ -146,23 +188,17 @@ func TestPreviewRefusals(t *testing.T) {
 	}
 }
 
-func TestListApps(t *testing.T) {
+// A-210: list_apps is gone; preview names the apps there are when an app is missing.
+func TestPreviewNamesTheApps(t *testing.T) {
 	r := setup(t)
-	if o := r.run(t, "list_apps", `{}`); !strings.Contains(o.Content, "No apps installed") {
-		t.Fatalf("empty: %s", o.Content)
+	if o := r.run(t, "preview", `{"app":"viewer"}`); !isErr(o) || !strings.Contains(o.Content, "You have no apps") {
+		t.Fatalf("empty: %+v", o)
 	}
 	r.installViewer(t)
 	r.write(t, "apps/broken/app.json", "{ not json")
 	r.write(t, "apps/notes/readme.md", "no manifest: not an app")
-	o := r.run(t, "list_apps", `{}`)
-	if !strings.Contains(o.Content, "ifc-viewer (IFC viewer) "+midDot+" opens .ifc "+midDot+" entry index.html") {
+	if o := r.run(t, "preview", `{"app":"cad"}`); !isErr(o) || !strings.Contains(o.Content, "Your apps: ifc-viewer.") {
 		t.Fatalf("content = %s", o.Content)
-	}
-	if !strings.Contains(o.Content, "broken "+midDot+" broken manifest") || strings.Contains(o.Content, "notes") {
-		t.Fatalf("content = %s", o.Content)
-	}
-	if !strings.HasPrefix(o.Content, "1 app:") {
-		t.Fatalf("count: %s", o.Content)
 	}
 }
 
@@ -170,7 +206,7 @@ func TestOpenInApp(t *testing.T) {
 	r := setup(t)
 	r.installViewer(t)
 	r.write(t, "files/tower a.ifc", "ISO-10303-21;")
-	o := r.run(t, "open_in_app", `{"app":"ifc-viewer","file":"files/tower a.ifc"}`)
+	o := r.run(t, "preview", `{"app":"ifc-viewer","file":"files/tower a.ifc"}`)
 	if isErr(o) || o.Link == nil {
 		t.Fatalf("out = %+v", o)
 	}
@@ -186,7 +222,7 @@ func TestOpenInApp(t *testing.T) {
 		t.Fatalf("model = %q", q.Get("model"))
 	}
 
-	start := r.run(t, "open_in_app", `{"app":"apps/ifc-viewer/"}`)
+	start := r.run(t, "preview", `{"app":"apps/ifc-viewer/"}`)
 	if start.Link == nil || start.Link.URI != "preview://apps/ifc-viewer/index.html" || start.Link.Name != "IFC viewer" {
 		t.Fatalf("start = %+v", start.Link)
 	}
@@ -196,17 +232,20 @@ func TestOpenInAppRefusals(t *testing.T) {
 	r := setup(t)
 	r.installViewer(t)
 	r.write(t, "files/plan.pdf", "%PDF")
-	if o := r.run(t, "open_in_app", `{"app":"cad","file":"files/plan.pdf"}`); !isErr(o) || !strings.Contains(o.Content, "list_apps") {
+	if o := r.run(t, "preview", `{"app":"cad","file":"files/plan.pdf"}`); !isErr(o) || !strings.Contains(o.Content, "Your apps: ifc-viewer.") {
 		t.Fatalf("unknown app: %+v", o)
 	}
-	if o := r.run(t, "open_in_app", `{"app":"ifc-viewer","file":"files/nope.ifc"}`); !isErr(o) {
+	if o := r.run(t, "preview", `{"app":"ifc-viewer","file":"files/nope.ifc"}`); !isErr(o) {
 		t.Fatalf("missing file: %+v", o)
 	}
-	if o := r.run(t, "open_in_app", `{"app":"ifc-viewer","file":"files/plan.pdf"}`); !isErr(o) || !strings.Contains(o.Content, "opens .ifc files") {
+	if o := r.run(t, "preview", `{"app":"ifc-viewer","file":"files/plan.pdf"}`); !isErr(o) || !strings.Contains(o.Content, "opens .ifc files") {
 		t.Fatalf("wrong type: %+v", o)
 	}
-	if o := r.run(t, "open_in_app", `{"app":"../x"}`); !isErr(o) {
+	if o := r.run(t, "preview", `{"app":"../x"}`); !isErr(o) {
 		t.Fatalf("escape: %+v", o)
+	}
+	if o := r.run(t, "preview", `{"app":"ifc-viewer","path":"x"}`); !isErr(o) || !strings.Contains(o.Content, `give "path" or "app", not both`) {
+		t.Fatalf("app and path: %+v", o)
 	}
 }
 
@@ -215,7 +254,7 @@ func TestOpenInAppDefaultOpenURL(t *testing.T) {
 	r.write(t, "apps/v/app.json", `{"entry":"view.html","opens":["ifc"],"openUrl":"view.html#{path}"}`)
 	r.write(t, "apps/v/view.html", "<p>v</p>")
 	r.write(t, "m.ifc", "x")
-	o := r.run(t, "open_in_app", `{"app":"v","file":"m.ifc"}`)
+	o := r.run(t, "preview", `{"app":"v","file":"m.ifc"}`)
 	if o.Link == nil || o.Link.URI != "preview://apps/v/view.html?file=..%2F..%2Fm.ifc" {
 		t.Fatalf("link = %+v", o.Link)
 	}

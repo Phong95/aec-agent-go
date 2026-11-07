@@ -13,6 +13,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
 	"github.com/Phong95/aec-agent-go/components/toolhub/builtin/jobs"
+	"github.com/Phong95/aec-agent-go/components/toolhub/builtin/web"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
@@ -291,7 +292,7 @@ func manageArgs(extra map[string]any) kernel.Arguments {
 
 func manageCall(t *testing.T, a *agent.Agent, args kernel.Arguments) toolhub.Output {
 	t.Helper()
-	out, err := jobs.NewManageTool().Execute(t.Context(), args, toolhub.Context{SessionID: "s1", AgentID: a.ID(), Jobs: a.Jobs()})
+	out, err := jobs.NewTool().Execute(t.Context(), args, toolhub.Context{SessionID: "s1", AgentID: a.ID(), Jobs: a.Jobs()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,5 +358,65 @@ func TestManageJobToolJobs(t *testing.T) {
 		if !strings.Contains(out.Content, c.want) {
 			t.Errorf("%v: %s", c.args, out.Content)
 		}
+	}
+}
+
+// recordingSearch is a web search backend that records the queries (A-212).
+type recordingSearch struct {
+	mu      sync.Mutex
+	queries []string
+}
+
+func (*recordingSearch) Name() string { return "stub" }
+
+func (r *recordingSearch) Search(_ context.Context, q web.SearchQuery) ([]web.SearchResult, error) {
+	r.mu.Lock()
+	r.queries = append(r.queries, q.Query)
+	r.mu.Unlock()
+	return []web.SearchResult{{Title: "Rebar", URL: "https://example.com/rebar", Snippet: "spacing"}}, nil
+}
+
+// A-212: a tool job saved with web_search (before the web tool) runs as the web tool with
+// action search.
+func TestToolJobSavedWithAnOldToolRunsAsTheMergedTool(t *testing.T) {
+	e := newEnv(t)
+	search := &recordingSearch{}
+	if err := e.tools.Register(web.NewTool(web.ToolOptions{Search: web.SearchToolOptions{Provider: search}})); err != nil {
+		t.Fatal(err)
+	}
+	p := testProfile("old-job-agent")
+	p.Tools = []string{"web"}
+	a, err := agent.New(t.Context(), e.deps(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Dispose(context.WithoutCancel(t.Context())) })
+	if err := a.StartJobs(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	j, err := a.Jobs().Create(t.Context(), job.CreateInput{
+		Name: "rebar news", When: everyHour(),
+		Action: &job.Action{Kind: job.ActionTool, Tool: "web_search", Args: map[string]any{"query": "rebar"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := runOnce(t, a.Jobs(), j.ID)
+	if run.Status != job.RunSucceeded {
+		t.Fatalf("run = %+v", run)
+	}
+	search.mu.Lock()
+	queries := search.queries
+	search.mu.Unlock()
+	if len(queries) != 1 || queries[0] != "rebar" {
+		t.Fatalf("queries = %v", queries)
+	}
+	msgs, err := e.hub.Messages.Get(t.Context(), run.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) == 0 || len(msgs[0].ToolCalls) != 1 || msgs[0].ToolCalls[0].Name != "web" ||
+		!strings.Contains(string(msgs[0].ToolCalls[0].Arguments), `"action":"search"`) {
+		t.Fatalf("messages = %+v", msgs)
 	}
 }

@@ -19,7 +19,7 @@ const standUpArgs = `{"action":"create","name":"Stand up","prompt":"Remind the u
 func newSchedulingRig(t *testing.T, host toolhub.InteractionHandler) *interactiveRig {
 	t.Helper()
 	return newInteractiveRig(t, interactiveOptions{
-		provider: &scriptedProvider{toolName: "manage_job", toolArgs: standUpArgs, reply: func(_, res string) string { return "done: " + res }},
+		provider: &scriptedProvider{toolName: "job", toolArgs: standUpArgs, reply: func(_, res string) string { return "done: " + res }},
 		tools:    jobs.NewTools(),
 		access:   &channel.AccessInput{AllowFrom: []string{"owner"}},
 		host:     host,

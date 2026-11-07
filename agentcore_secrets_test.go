@@ -245,7 +245,8 @@ func setupSecrets(t *testing.T, o secretOptions) *secretSetup {
 	zero := 0
 	p := profile.AgentProfile{
 		ID: "agent-a", Name: "Agent A", SystemPrompt: "You are Agent A.", Provider: "fake",
-		Tools:      []string{"http_request", "list_secrets", "manage_secret", "spawn_subagent"},
+		// Update (A-212): the secret tool replaces list_secrets and manage_secret.
+		Tools:      []string{"http_request", "secret", "spawn_subagent"},
 		LoopConfig: &profile.LoopConfig{MaxToolRetries: &zero, RetryBackoffMs: &zero},
 	}
 	if o.edit != nil {
@@ -468,12 +469,12 @@ func TestSecrets_DoesNotFollowARedirectToAnotherHostOnceASecretIsInTheRequest(t 
 func TestSecrets_ManageSecretCreateAsksForApprovalThenForTheValue(t *testing.T) {
 	s := setupSecrets(t, secretOptions{script: func(_ []kernel.Message, n int) kernel.ModelResponse {
 		if n == 1 {
-			return secretToolCalls(secretCall("manage_secret", map[string]any{"action": "create", "name": "CRM_TOKEN", "description": "CRM", "allowed_hosts": []string{"crm.example.com"}}))
+			return secretToolCalls(secretCall("secret", map[string]any{"action": "create", "name": "CRM_TOKEN", "description": "CRM", "allowed_hosts": []string{"crm.example.com"}}))
 		}
 		return typesReply("done")
 	}})
 	sessionID := s.chat(t)
-	if got := s.handler.approvalNames(); !slices.Equal(got, []string{"manage_secret"}) {
+	if got := s.handler.approvalNames(); !slices.Equal(got, []string{"secret"}) {
 		t.Fatalf("approvals = %v", got)
 	}
 	s.handler.mu.Lock()
@@ -502,7 +503,7 @@ func TestSecrets_ManageSecretCreateAsksForApprovalThenForTheValue(t *testing.T) 
 func TestSecrets_ManageSecretCancelledOrNoSecretInput(t *testing.T) {
 	create := func(_ []kernel.Message, n int) kernel.ModelResponse {
 		if n == 1 {
-			return secretToolCalls(secretCall("manage_secret", map[string]any{"action": "create", "name": "K"}))
+			return secretToolCalls(secretCall("secret", map[string]any{"action": "create", "name": "K"}))
 		}
 		return typesReply("done")
 	}
@@ -528,7 +529,7 @@ func TestSecrets_ManageSecretCannotTouchAGlobalSecretAndListShowsMetadataOnly(t 
 		edit: func(p *profile.AgentProfile) { p.Secrets = &secret.Config{Use: []string{"SHARED"}} },
 		script: func(_ []kernel.Message, n int) kernel.ModelResponse {
 			if n == 1 {
-				return secretToolCalls(secretCall("manage_secret", map[string]any{"action": "delete", "name": "SHARED"}), secretCall("list_secrets", map[string]any{}))
+				return secretToolCalls(secretCall("secret", map[string]any{"action": "delete", "name": "SHARED"}), secretCall("secret", map[string]any{"action": "list"}))
 			}
 			return typesReply("done")
 		},
@@ -578,7 +579,7 @@ func TestSecrets_SubagentTypesNeverGetManageSecretAndSeeTheParentsSecrets(t *tes
 				return secretToolCalls(secretCall("spawn_subagent", map[string]any{"subagent": "general-purpose", "task": "look"}))
 			}
 			manage, key := "no-manage", "no key"
-			if strings.Contains(system, "manage_secret") {
+			if strings.Contains(system, "call secret (action create)") {
 				manage = "manage"
 			}
 			if strings.Contains(system, "CHILD_KEY") {

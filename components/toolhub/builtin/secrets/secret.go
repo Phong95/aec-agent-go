@@ -7,16 +7,33 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/toolhub"
+	"github.com/Phong95/aec-agent-go/internal/jsstr"
 	"github.com/Phong95/aec-agent-go/internal/nilcheck"
 	"github.com/Phong95/aec-agent-go/internal/toolkit"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
-// ManageSecretToolName is the tool name of manage_secret, for agent allowlists.
-const ManageSecretToolName = "manage_secret"
+// SecretToolName is the tool name of the secret tool (A-212), for agent allowlists.
+const SecretToolName = "secret"
 
 // manageActions are the actions of manage_secret, in schema order.
-var manageActions = []string{"create", "update", "set_value", "delete"}
+// Update (A-212): the secret tool's - list (was list_secrets), then manage_secret's four.
+var manageActions = []string{"list", "create", "update", "set_value", "delete"}
+
+// Actions returns the actions of the secret tool, in schema order (SECRET_ACTIONS of
+// core/ts), as a fresh slice.
+func Actions() []string { return slices.Clone(manageActions) }
+
+// ActionOf is the call's action, trimmed and lower-cased; "" when it is not one of Actions
+// (secretActionOf of core/ts).
+func ActionOf(args kernel.Arguments) string {
+	raw, _ := toolkit.DecodeArgs(args).String("action")
+	action := strings.ToLower(jsstr.Trim(raw))
+	if slices.Contains(manageActions, action) {
+		return action
+	}
+	return ""
+}
 
 // ManageSecretTool is manage_secret (A-101): it creates, changes and deletes this agent's
 // own secrets.
@@ -29,41 +46,60 @@ var manageActions = []string{"create", "update", "set_value", "delete"}
 // Risk "consequential": every call waits for the user's approval (they see the name, the
 // allowed hosts and tools). Global secrets are managed by people only (the host's UI/API).
 // Subagents never get this tool. It holds no state, so it is safe for concurrent use.
-type ManageSecretTool struct{}
+//
+// Update (A-212): Tool is secret - list_secrets and manage_secret in one tool. "list" (was
+// list_secrets: read-only, the secrets this agent can use, its own and the global ones it
+// enabled, never values) is read-only per call (RiskFor); the definition states the worst
+// case (consequential). Subagents never get it (the child exclusion list).
+type Tool struct{}
 
-var _ toolhub.Handler = (*ManageSecretTool)(nil)
+var (
+	_ toolhub.Handler    = (*Tool)(nil)
+	_ toolhub.CallRisker = (*Tool)(nil)
+)
 
-// NewManageSecretTool returns the manage_secret tool.
-func NewManageSecretTool() *ManageSecretTool { return &ManageSecretTool{} }
+// NewTool returns the secret tool.
+func NewTool() *Tool { return &Tool{} }
 
 // Name returns the plugin name.
-func (*ManageSecretTool) Name() string { return "tool:manage-secret" }
+func (*Tool) Name() string { return "tool:secret" }
 
 // Version returns the plugin version.
-func (*ManageSecretTool) Version() string { return "1.0.0" }
+func (*Tool) Version() string { return "1.0.0" }
+
+// RiskFor is the risk of one call (A-212): list is read-only; every other action (and an
+// unknown one) is consequential.
+func (*Tool) RiskFor(args kernel.Arguments) toolhub.Risk {
+	if ActionOf(args) == "list" {
+		return toolhub.RiskReadOnly
+	}
+	return toolhub.RiskConsequential
+}
 
 // Definition returns the tool definition (a fresh value on every call).
-func (*ManageSecretTool) Definition() toolhub.Definition {
+func (*Tool) Definition() toolhub.Definition {
 	str := func(desc string) toolhub.JSONSchema { return toolhub.JSONSchema{Type: "string", Description: desc} }
 	list := func(desc string) toolhub.JSONSchema {
 		return toolhub.JSONSchema{Type: "array", Items: &toolhub.JSONSchema{Type: "string"}, Description: desc}
 	}
 	return toolhub.Definition{
-		Name: ManageSecretToolName,
-		Description: "Create, change or delete one of your secrets (an API key or token the user wants you to use). " +
-			"create / set_value: the user types the value into a masked field " + emDash + " never ask for it in the chat and never put a value in these arguments. " +
-			"Set allowed_hosts to the API host(s) the key is for (e.g. api.example.com, or *.example.com); a secret with no hosts can't be sent anywhere. " +
-			"allowed_tools defaults to http_request; add terminal or run_code only when a command needs the key as an environment variable.",
+		Name: SecretToolName,
+		Description: "Your secrets (API keys, tokens): use one as {{secret:NAME}} in http_request, or through `secrets` in terminal / run_code; " +
+			"values are never shown. list: what you can use, with the hosts and tools each may go to. create / set_value: the user " +
+			"types the value into a masked field " + emDash + " never ask for it in the chat and never put a value in these arguments. Set " +
+			"allowed_hosts to the API host(s) the key is for (e.g. api.example.com, or *.example.com); a secret with no hosts can't " +
+			"be sent anywhere. allowed_tools defaults to http_request; add terminal or run_code only when a command needs the key " +
+			"as an environment variable. Every action but list asks the user first.",
 		Parameters: toolhub.JSONSchema{
 			Type: "object",
 			Properties: toolhub.NewProperties(
-				toolhub.Property{Name: "action", Schema: toolhub.JSONSchema{Type: "string", Enum: slices.Clone(manageActions), Description: "create, update (description/hosts/tools), set_value (a new value), delete"}},
-				toolhub.Property{Name: "name", Schema: str("Upper-case name, e.g. OPENWEATHER_API_KEY " + emDash + " what you write in {{secret:NAME}}")},
+				toolhub.Property{Name: "action", Schema: toolhub.JSONSchema{Type: "string", Enum: slices.Clone(manageActions), Description: "list, create, update (description/hosts/tools), set_value (a new value) or delete"}},
+				toolhub.Property{Name: "name", Schema: str("Every action but list: upper-case name, e.g. OPENWEATHER_API_KEY " + emDash + " what you write in {{secret:NAME}}")},
 				toolhub.Property{Name: "description", Schema: str("What the key is for (create/update)")},
 				toolhub.Property{Name: "allowed_hosts", Schema: list("Hosts it may be sent to (create/update)")},
 				toolhub.Property{Name: "allowed_tools", Schema: list(`Tools that may use it (create/update), default ["http_request"]`)},
 			),
-			Required: []string{"action", "name"},
+			Required: []string{"action"},
 		},
 		Risk: toolhub.RiskConsequential,
 		// A-137: no lasting changes from a subagent.
@@ -72,24 +108,47 @@ func (*ManageSecretTool) Definition() toolhub.Definition {
 }
 
 // Execute runs one action on one of the agent's own secrets.
-func (t *ManageSecretTool) Execute(ctx context.Context, raw kernel.Arguments, tc toolhub.Context) (toolhub.Output, error) {
+func (t *Tool) Execute(ctx context.Context, raw kernel.Arguments, tc toolhub.Context) (toolhub.Output, error) {
+	action := ActionOf(raw)
+	if action == "" {
+		return toolkit.Fail("secret: action must be one of " + strings.Join(manageActions, ", ")), nil
+	}
+	label := "secret " + action
 	secrets := tc.Secrets
 	if nilcheck.IsNil(secrets) {
-		return toolkit.Fail("manage_secret: this agent has no secret store."), nil
+		return toolkit.Fail(label + ": this agent has no secret store."), nil
+	}
+	if action == "list" {
+		return listSecrets(ctx, secrets), nil
 	}
 	a := toolkit.DecodeArgs(raw)
-	action, _ := a.String("action")
-	if !slices.Contains(manageActions, action) {
-		return toolkit.Fail("manage_secret: action must be one of " + strings.Join(manageActions, ", ")), nil
-	}
 	out, err := t.run(ctx, secrets, action, a, tc)
 	if err != nil {
-		return secretToolError("manage_secret", err), nil
+		return secretToolError(label, err), nil
 	}
 	return out, nil
 }
 
-func (t *ManageSecretTool) run(ctx context.Context, secrets secret.Secrets, action string, a toolkit.Args, tc toolhub.Context) (toolhub.Output, error) {
+// listSecrets is list_secrets (A-101): read-only. The secrets this agent can use: its own
+// and the global ones it enabled, with what each is for and where it may be used. Never
+// values.
+// Update (A-212): the secret tool's list action (list_secrets is gone).
+func listSecrets(ctx context.Context, secrets secret.Secrets) toolhub.Output {
+	list, err := secrets.List(ctx)
+	if err != nil {
+		return secretToolError("secret list", err)
+	}
+	if len(list) == 0 {
+		return toolhub.Text("You have no secrets yet.")
+	}
+	lines := make([]string, 0, len(list))
+	for _, s := range list {
+		lines = append(lines, "- "+describeSecret(s))
+	}
+	return toolhub.Text(strings.Join(lines, "\n"))
+}
+
+func (t *Tool) run(ctx context.Context, secrets secret.Secrets, action string, a toolkit.Args, tc toolhub.Context) (toolhub.Output, error) {
 	rawName, _ := a.String("name")
 	name, err := secret.CheckName(rawName)
 	if err != nil {
@@ -201,3 +260,6 @@ func askValue(ctx context.Context, tc toolhub.Context, req toolhub.SecretRequest
 	}
 	return resp.Value, nil
 }
+
+// emDash is U+2014, written as an escape so this source stays ASCII.
+const emDash = "\u2014"

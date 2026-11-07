@@ -111,3 +111,54 @@ func TestPerCallRiskAndSandboxOperation(t *testing.T) {
 		t.Error("CallRisk of an unregistered tool reports a risk")
 	}
 }
+
+// A-211: CompanionSkills adds a merged tool's skill only for old names, once, and never
+// one the profile has (companionSkills of core/ts).
+func TestCompanionSkills(t *testing.T) {
+	if got := toolhub.CompanionSkills([]string{"save_artifact", "list_artifacts", "open_in_app", "manage_job", "read_file"}, []string{"plan"}, nil); !slices.Equal(got, []string{"artifacts", "live-preview", "jobs"}) {
+		t.Errorf("CompanionSkills = %v", got)
+	}
+	if got := toolhub.CompanionSkills([]string{"manage_job"}, []string{"jobs"}, nil); len(got) != 0 {
+		t.Errorf("CompanionSkills = %v", got)
+	}
+	if got := toolhub.CompanionSkills([]string{"artifact", "preview", "job"}, nil, nil); len(got) != 0 {
+		t.Errorf("already converted: CompanionSkills = %v", got)
+	}
+	if m := toolhub.CompanionSkillsOf(); len(m) != 3 || m["artifact"] != "artifacts" || m["preview"] != "live-preview" || m["job"] != "jobs" {
+		t.Errorf("CompanionSkillsOf = %v", m)
+	}
+}
+
+// A-212: an old name a host still registers stays (RenamedToolNamesKeeping, CompanionSkills
+// with keep), and a stored old call runs as the merged tool's action (RenamedToolCall).
+func TestRenamedKeepingAndCalls(t *testing.T) {
+	keep := func(n string) bool { return n == "web_search" || n == "manage_job" }
+	if got := toolhub.RenamedToolNamesKeeping([]string{"web_search", "list_jobs", "list_secrets"}, keep); !slices.Equal(got, []string{"web_search", "job", "secret"}) {
+		t.Errorf("RenamedToolNamesKeeping = %v", got)
+	}
+	if got := toolhub.CompanionSkills([]string{"manage_job"}, nil, keep); len(got) != 0 {
+		t.Errorf("CompanionSkills = %v", got)
+	}
+	for _, c := range []struct {
+		old, tool, action string
+		args              map[string]any
+	}{
+		{"web_search", "web", "search", map[string]any{"query": "q"}},
+		{"web_extract", "web", "extract", map[string]any{"urls": []any{"u"}}},
+		{"list_jobs", "job", "list", map[string]any{}},
+		{"manage_job", "job", "delete", map[string]any{"action": "delete", "job": "x"}},
+	} {
+		tool, args := toolhub.RenamedToolCall(c.old, c.args)
+		if tool != c.tool || args["action"] != c.action {
+			t.Errorf("RenamedToolCall(%s) = %s %v", c.old, tool, args)
+		}
+	}
+	in := map[string]any{"query": "q"}
+	toolhub.RenamedToolCall("web_search", in)
+	if _, changed := in["action"]; changed {
+		t.Error("RenamedToolCall changed its argument map")
+	}
+	if tool, args := toolhub.RenamedToolCall("terminal", map[string]any{"command": "ls"}); tool != "terminal" || args["command"] != "ls" {
+		t.Errorf("RenamedToolCall(terminal) = %s %v", tool, args)
+	}
+}

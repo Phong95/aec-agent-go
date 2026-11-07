@@ -589,3 +589,27 @@ func TestAgent_SessionSwitchMidTurn(t *testing.T) {
 		t.Fatalf("first session = %+v, %v, want the turn's token usage", stored, err)
 	}
 }
+
+// A-211: a stored profile that still lists old tool names gets the new tools and the
+// skill that took over each merged tool's guidance; one with new names gains nothing.
+func TestConvertedProfileGainsCompanionSkills(t *testing.T) {
+	p := testProfile("old")
+	p.Tools = []string{"manage_job", "list_jobs", "save_artifact", "start_service", "read_file"}
+	p.Skills = []string{"plan"}
+	a, _ := newTestAgent(t, p)
+	if got := a.Profile().Tools; !reflect.DeepEqual(got, []string{"job", "artifact", "service", "read_file"}) {
+		t.Fatalf("Profile().Tools = %v", got)
+	}
+	// start_service became service, which has no companion skill.
+	if got := a.Profile().Skills; !reflect.DeepEqual(got, []string{"plan", "jobs", "artifacts"}) {
+		t.Fatalf("Profile().Skills = %v", got)
+	}
+
+	q := testProfile("current")
+	q.Tools = []string{"job", "artifact"}
+	q.Skills = []string{"plan"}
+	b, _ := newTestAgent(t, q)
+	if got := b.Profile().Skills; !reflect.DeepEqual(got, []string{"plan"}) {
+		t.Fatalf("Profile().Skills = %v", got)
+	}
+}

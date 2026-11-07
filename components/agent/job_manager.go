@@ -598,6 +598,16 @@ func (m *jobManager) Update(ctx context.Context, id string, in job.UpdateInput) 
 	return next, nil
 }
 
+// currentCall is a tool job's stored call as it runs today (A-212): the tool as stored
+// while the agent can run it, else the renamed or merged tool with the old name's action
+// (web_search -> web, action search).
+func (m *jobManager) currentCall(a job.Action) (string, map[string]any) {
+	if m.d.checkTool != nil && m.d.checkTool(a.Tool) == "" {
+		return a.Tool, a.Args
+	}
+	return toolhub.RenamedToolCall(a.Tool, a.Args)
+}
+
 // checkToolAction (A-103): a tool job's tool must be one of the agent's tools and marked
 // schedulable.
 func (m *jobManager) checkToolAction(a *job.Action, id string) error {
@@ -608,7 +618,10 @@ func (m *jobManager) checkToolAction(a *job.Action, id string) error {
 		return jobInvalid("This agent can't run tool jobs", id)
 	}
 	if m.d.checkTool != nil {
-		if problem := m.d.checkTool(a.Tool); problem != "" {
+		// A-212: a job saved with a tool that was renamed or merged (web_search) is checked
+		// as the current one.
+		tool, _ := m.currentCall(*a)
+		if problem := m.d.checkTool(tool); problem != "" {
 			return jobInvalid(problem, id)
 		}
 	}
@@ -1786,13 +1799,16 @@ func (m *jobManager) runToolAction(ctx context.Context, entry *activeJobRun, a j
 	if m.d.runTool == nil {
 		return toolRunOutcome{}, job.NewError("This agent can't run tool jobs", job.CodeInvalidArgument, rc.JobID)
 	}
-	raw, err := jobkit.Marshal(a.Args)
+	// A-212: a job saved with a renamed or merged tool runs as the current tool and action
+	// (web_search {query} -> web {action: "search", query}); the approval matches that call.
+	tool, args := m.currentCall(a)
+	raw, err := jobkit.Marshal(args)
 	if err != nil || string(raw) == "null" {
 		raw = []byte("{}")
 	}
-	call := kernel.ToolCall{ID: fmt.Sprintf("job_%s_%d", rc.RunID, rc.Attempt), Name: a.Tool, Arguments: kernel.Arguments(raw)}
+	call := kernel.ToolCall{ID: fmt.Sprintf("job_%s_%d", rc.RunID, rc.Attempt), Name: tool, Arguments: kernel.Arguments(raw)}
 	entry.mu.Lock()
-	entry.approvedTool, entry.approvedArgs = a.Tool, canonicalJSON(a.Args)
+	entry.approvedTool, entry.approvedArgs = tool, canonicalJSON(args)
 	entry.mu.Unlock()
 	// The writes outlive a stop of the run: a stopped call is still recorded.
 	store := context.WithoutCancel(ctx)

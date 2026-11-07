@@ -184,7 +184,15 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 
 	own := p.Clone()
 	// A-209: a stored profile may still list renamed tools (save_artifact & co. -> artifact).
-	own.Tools = toolhub.RenamedToolNames(own.Tools)
+	// Update (A-211): and it gains the skill that took over each merged tool's guidance
+	// (artifact -> artifacts, preview -> live-preview, job -> jobs). The next save of the
+	// profile has the new names only, so this happens once.
+	// Update (A-212): an old name the host still registers as a tool stays as it is.
+	registered := registeredTool(deps.ToolHub)
+	if gained := toolhub.CompanionSkills(own.Tools, own.Skills, registered); len(gained) > 0 {
+		own.Skills = append(append([]string(nil), own.Skills...), gained...)
+	}
+	own.Tools = toolhub.RenamedToolNamesKeeping(own.Tools, registered)
 	a := &Agent{
 		id: own.ID, profile: own, saveProfile: deps.SaveProfile, cancelLifetime: cancel,
 		toolHub: deps.ToolHub,
@@ -293,10 +301,11 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	// A-101: the agent's secrets - its own and the global ones it enabled; values reach tools
 	// only. Built before the subagent manager, whose subagent types use them too.
 	a.secrets = newSecretManager(secretManagerDeps{
-		agentID:   own.ID,
-		profile:   a.Profile,
-		hub:       deps.SecretHub,
-		canManage: func() bool { return a.tools.Has("manage_secret") },
+		agentID: own.ID,
+		profile: a.Profile,
+		hub:     deps.SecretHub,
+		// Update (A-212): the secret tool (manage_secret is its create / update / ... actions now).
+		canManage: func() bool { return a.tools.Has("secret") },
 		logger:    deps.Logger,
 	})
 
@@ -937,7 +946,7 @@ func (a *Agent) mergeSessionModel(session kernel.Session, opts llmhub.ModelOptio
 // ToolManager. names is copied. It does not persist the profile.
 func (a *Agent) UpdateTools(names []string) {
 	// A-209: an old client may still send renamed tool names.
-	names = toolhub.RenamedToolNames(names)
+	names = toolhub.RenamedToolNamesKeeping(names, registeredTool(a.toolHub))
 	a.mu.Lock()
 	a.profile.Tools = slices.Clone(names)
 	a.mu.Unlock()
@@ -1431,4 +1440,16 @@ func (a *Agent) removeDataAgain(ctx context.Context, removeData bool) error {
 	}
 	a.markDataRemoved()
 	return nil
+}
+
+// registeredTool reports whether hub registers a tool by that name (A-212): an old name a
+// host still uses stays, instead of being converted to a tool it never registered.
+func registeredTool(hub *toolhub.ToolHub) func(string) bool {
+	return func(name string) bool {
+		if hub == nil {
+			return false
+		}
+		_, ok := hub.Get(name)
+		return ok
+	}
 }

@@ -144,7 +144,7 @@ func newestTriggerRun(t *testing.T, a *agent.Agent, id string) job.Run {
 
 func TestTriggerToolCreatesAnAgentMadeTriggerWithCappedLimits(t *testing.T) {
 	r := newTriggerToolsRig(t, nil)
-	out := execTool(t, jobs.NewManageTool(), r.toolContext(nil),
+	out := execTool(t, jobs.NewTool(), r.toolContext(nil),
 		`{"action":"create","name":"diagnose","prompt":"Find out why {{event.subject}} failed.","when":"event","event_types":["job.failed"]}`)
 	if outputIsError(out) {
 		t.Fatalf("create = %+v", out)
@@ -167,7 +167,7 @@ func TestTriggerToolCreatesAnAgentMadeTriggerWithCappedLimits(t *testing.T) {
 
 func TestTriggerToolsNeverShowTheWebhookSecret(t *testing.T) {
 	r := newTriggerToolsRig(t, nil)
-	out := execTool(t, jobs.NewManageTool(), r.toolContext(nil),
+	out := execTool(t, jobs.NewTool(), r.toolContext(nil),
 		`{"action":"create","name":"uploads","prompt":"Report the new model.","when":"webhook","event_types":["model.uploaded"],"subject_path":"data.modelId"}`)
 	tr := r.list(t)[0]
 	if !strings.HasPrefix(tr.Secret, "whsec_") {
@@ -179,7 +179,7 @@ func TestTriggerToolsNeverShowTheWebhookSecret(t *testing.T) {
 	if strings.Contains(outputJSON(t, out), tr.Secret) {
 		t.Fatal("the create output carries the secret")
 	}
-	listed := execTool(t, jobs.NewListTool(), r.toolContext(nil), `{}`)
+	listed := execTool(t, jobs.NewTool(), r.toolContext(nil), `{"action":"list"}`)
 	if !strings.Contains(listed.Content, "uploads") || strings.Contains(outputJSON(t, listed), tr.Secret) {
 		t.Fatalf("list = %s", outputJSON(t, listed))
 	}
@@ -187,7 +187,7 @@ func TestTriggerToolsNeverShowTheWebhookSecret(t *testing.T) {
 
 func TestTriggerToolUpdatesByNameOrIDAndKeepsTheRest(t *testing.T) {
 	r := newTriggerToolsRig(t, nil)
-	manage, tc := jobs.NewManageTool(), r.toolContext(nil)
+	manage, tc := jobs.NewTool(), r.toolContext(nil)
 	execTool(t, manage, tc, `{"action":"create","name":"uploads","prompt":"p","when":"webhook","signature":"github","event_types":["model.uploaded"],"subject_path":"data.modelId"}`)
 	tr := r.list(t)[0]
 
@@ -226,7 +226,7 @@ func TestTriggerToolUpdatesByNameOrIDAndKeepsTheRest(t *testing.T) {
 
 func TestTriggerToolReportsBadCallsAsNonRetryable(t *testing.T) {
 	r := newTriggerToolsRig(t, nil)
-	manage, tc := jobs.NewManageTool(), r.toolContext(nil)
+	manage, tc := jobs.NewTool(), r.toolContext(nil)
 	cases := []string{
 		`{"action":"launch"}`,
 		`{"action":"create","name":"x","prompt":"p"}`,
@@ -245,14 +245,14 @@ func TestTriggerToolReportsBadCallsAsNonRetryable(t *testing.T) {
 	if all := r.list(t); len(all) != 0 {
 		t.Fatalf("triggers = %+v", all)
 	}
-	if out := execTool(t, jobs.NewListTool(), toolhub.Context{SessionID: "s"}, `{}`); !outputIsError(out) {
+	if out := execTool(t, jobs.NewTool(), toolhub.Context{SessionID: "s"}, `{"action":"list"}`); !outputIsError(out) {
 		t.Fatalf("no triggers on the context = %+v", out)
 	}
 }
 
 func TestTriggerToolDeliversHereByDefaultOrNone(t *testing.T) {
 	r := newTriggerToolsRig(t, nil)
-	manage := jobs.NewManageTool()
+	manage := jobs.NewTool()
 	tc := r.toolContext(&job.Delivery{ChannelID: r.ch.ID, Target: "c1", When: job.DeliverAlways})
 	execTool(t, manage, tc, `{"action":"create","name":"a","prompt":"p","when":"event","event_types":["job.failed"],"deliver_when":"on-output"}`)
 	execTool(t, manage, tc, `{"action":"create","name":"b","prompt":"p","when":"event","event_types":["job.failed"],"deliver":"none"}`)
@@ -415,7 +415,7 @@ func TestTriggerDeliveryFollowsWhenAndSendsFailures(t *testing.T) {
 
 func TestTriggerMadeInAChatPostsBackAndItsRunsCannotMakeTriggers(t *testing.T) {
 	r := newTriggerToolsRig(t, &scriptedProvider{
-		toolName: "manage_job",
+		toolName: "job",
 		toolArgs: `{"action":"create","name":"uploads","prompt":"Write a report on the new model.","when":"webhook","event_types":["model.uploaded"]}`,
 		reply:    echoReply,
 	})
@@ -447,7 +447,7 @@ func TestTriggerMadeInAChatPostsBackAndItsRunsCannotMakeTriggers(t *testing.T) {
 		t.Fatalf("triggers = %+v", all)
 	}
 	waitFor(t, "the delivery", func() bool { return len(r.adapter.Sent()) == before+1 })
-	if got := lastText(r.adapter); !strings.Contains(got, `Job "uploads" stopped without finishing: Needs approval: manage_job`) {
+	if got := lastText(r.adapter); !strings.Contains(got, `Job "uploads" stopped without finishing: Needs approval: job`) {
 		t.Fatalf("sent %q", got)
 	}
 }

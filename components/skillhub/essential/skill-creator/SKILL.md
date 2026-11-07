@@ -26,7 +26,7 @@ Work these out from the conversation, or by asking. Use `clarify` if you have it
 1. What should the skill let an agent do, and what is the end result?
 2. When should it trigger? Collect 3–5 example requests a user might make.
 3. What inputs does it expect, and what output should it produce (format, files, where to save them)?
-4. Which steps, rules and pitfalls matter to the user? Which tools does it need (e.g. `web_search`, `terminal`, `read_file`)?
+4. Which steps, rules and pitfalls matter to the user? Which tools does it need (e.g. `web`, `terminal`, `read_file`)?
 
 If the user says "turn this into a skill", extract all of this from the conversation first: the steps you took, the corrections the user made, the output they accepted. Then ask only about the gaps.
 

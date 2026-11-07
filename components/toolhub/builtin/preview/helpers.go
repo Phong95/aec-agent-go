@@ -272,3 +272,30 @@ func relativeURL(fromDir, fileRel string) string {
 	parts = append(parts, to[i:]...)
 	return encodePath(strings.Join(parts, "/"))
 }
+
+// listAppNames is the folder names of the apps in apps/ that have a readable app.json, in
+// listing order (A-210) - what preview names when it is asked for an app that does not
+// exist.
+func listAppNames(ctx context.Context, env sandboxhub.View) ([]string, error) {
+	dir, err := env.Stat(ctx, appsDir)
+	if err != nil {
+		return nil, err
+	}
+	if dir == nil || dir.Type != sandboxhub.EntryDirectory {
+		return nil, nil
+	}
+	listing, err := env.List(ctx, appsDir, sandboxhub.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range listing.Entries {
+		if entry.Type != sandboxhub.EntryDirectory || !validAppName(entry.Name) {
+			continue
+		}
+		if m, problem, err := readManifest(ctx, env, entry.Name); err == nil && problem == "" && m != nil {
+			names = append(names, entry.Name)
+		}
+	}
+	return names, nil
+}

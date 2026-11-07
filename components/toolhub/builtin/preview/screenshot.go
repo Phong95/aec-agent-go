@@ -155,7 +155,7 @@ func (*ScreenshotTool) Definition() toolhub.Definition {
 			Type: "object",
 			Properties: toolhub.NewProperties(
 				toolhub.Property{Name: "path", Schema: str(`The HTML file or folder to capture, e.g. "sites/landing"; with service, the page of the service (default "/")`)},
-				toolhub.Property{Name: "service", Schema: str("Capture a running service (start_service) by its name instead of a file")},
+				toolhub.Property{Name: "service", Schema: str("Capture a running service (the service tool) by its name instead of a file")},
 				toolhub.Property{Name: "viewports", Schema: toolhub.JSONSchema{
 					Type: "array", Items: &toolhub.JSONSchema{Type: "string"},
 					Description: `Viewport sizes as "WIDTHxHEIGHT" in CSS pixels, at most ` + strconv.Itoa(maxViewports) + ` (default "1280x800")`,
@@ -190,8 +190,10 @@ func (t *ScreenshotTool) Execute(ctx context.Context, args kernel.Arguments, tc 
 	a := toolkit.DecodeArgs(args)
 	rawPath, _ := a.String("path")
 	p := jsstr.Trim(rawPath)
+	// Strict-schema models (OpenAI) fill every field: an empty string, 0 or [] means not given.
 	service, hasService := a.String("service")
 	service = jsstr.Trim(service)
+	hasService = hasService && service != ""
 	if hasService && !servicePattern.MatchString(service) {
 		return argError(tool, `"`+service+`" is not a service name`), nil
 	}
@@ -243,7 +245,7 @@ func (t *ScreenshotTool) Execute(ctx context.Context, args kernel.Arguments, tc 
 				}
 			}
 			if found == nil {
-				return argError(tool, `there is no service named "`+service+`" `+emDash+` start it with start_service first`), nil
+				return argError(tool, `there is no service named "`+service+`" `+emDash+` start it with service (action start) first`), nil
 			}
 			if found.Status == sandboxhub.ServiceExited {
 				return argError(tool, `the service "`+service+`" has stopped `+emDash+` start it again first`), nil
@@ -355,7 +357,7 @@ func listed(items []string) string {
 // viewportsArg reads "viewports" (default 1280x800); problem is what is wrong with it.
 func viewportsArg(a toolkit.Args) (viewports []Viewport, problem string) {
 	raw, ok := a.Raw("viewports")
-	if !ok {
+	if !ok || emptyList(raw) {
 		return []Viewport{defaultViewport}, ""
 	}
 	var items []json.RawMessage
@@ -381,7 +383,7 @@ func timesArg(a toolkit.Args) (at []float64, seek, problem string) {
 	seek, _ = a.String("seek")
 	seek = jsstr.Trim(seek)
 	raw, ok := a.Raw("at")
-	if !ok {
+	if !ok || emptyList(raw) {
 		return nil, seek, ""
 	}
 	bad := `"at" must be a list of 1 to ` + strconv.Itoa(maxTimes) + " times in seconds"
@@ -410,4 +412,10 @@ func pageHasDotDot(page string) bool {
 		}
 	}
 	return false
+}
+
+// emptyList reports whether raw is an empty JSON array (a strict-schema model's filler).
+func emptyList(raw json.RawMessage) bool {
+	var items []json.RawMessage
+	return json.Unmarshal(raw, &items) == nil && len(items) == 0
 }

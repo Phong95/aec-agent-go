@@ -35,7 +35,8 @@ func BuiltInTypes() []subagenttype.Definition {
 				"report: the findings as short bullets, each with its source URL or file path, then open questions or conflicts " +
 				"between sources.",
 			// A-209: read_artifact + list_artifacts are now the artifact tool (artifact files are read with read_file).
-			Tools:  []string{"web_search", "web_extract", "read_file", "list_files", "search_files", "artifact"},
+			// Update (A-212): web (search / extract) replaces web_search and web_extract.
+			Tools:  []string{"web", "read_file", "list_files", "search_files", "artifact"},
 			Access: subagent.AccessReadOnly,
 		},
 	}

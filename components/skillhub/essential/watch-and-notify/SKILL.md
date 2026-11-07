@@ -2,7 +2,7 @@
 name: watch-and-notify
 description: Set up standing automation that checks something on a schedule and tells the user only when there is something new, with one job that stays silent otherwise. Use when the user asks to be told or to have something done "whenever", "as soon as", "if ever" or "each time" something appears or changes, e.g. "let me know whenever the news mentions AI", "when a new file shows up, summarise it", "alert me if the price drops below X", "keep an eye on …".
 metadata:
-  requires-tools: manage_job
+  requires-tools: job
 ---
 
 # Watch and Notify
@@ -17,6 +17,8 @@ So the user hears from you only when there is something to report.
 
 ## Choose the right shape first
 
+For any other kind of job (a plain schedule, an event or webhook job, delivery, limits), open the jobs skill.
+
 - **The source can notify** (it sends webhooks): don't poll. Create one job with `when: "webhook"` and tell the user to connect the source from the Jobs page.
 - **"Every morning, send me X"** with no condition: one schedule job that always replies. No `[[SILENT]]` needed.
 - **"When one of my jobs fails, look into it"**: one job with `when: "event"`, `event_types: ["job.failed"]` and `subjects: ["<that job's id>"]`.
@@ -29,14 +31,14 @@ So the user hears from you only when there is something to report.
 
 Work out, asking only about what is missing:
 
-1. **What to watch**: the source (a site, a search, a folder, a feed) and how you read it with your tools (`web_search`, `web_extract`, files…). Runs can't ask for approval, so the job may only use tools that need none.
+1. **What to watch**: the source (a site, a search, a folder, a feed) and how you read it with your tools (`web`, files…). Runs can't ask for approval, so the job may only use tools that need none.
 2. **The condition**: what counts as a match, stated so it can be checked ("a headline or summary mentions AI or artificial intelligence"). Also what counts as new, so the same item isn't reported twice.
 3. **What to do on a match**: just tell the user, or more (summarise, translate, compare, draft something). It goes in the same reply.
 4. **How often**: suggest an interval and say what it costs. Every check is a full turn: every 5 minutes is 288 turns a day, every hour is 24. Use short intervals only when minutes matter.
 
 ### 2. Create the job
 
-Call `manage_job` with:
+Call `job` with:
 
 - `action: "create"`, `name`: "<topic> watch", e.g. "AI news watch".
 - `every_minutes` or `cron`: from step 1.
@@ -64,8 +66,8 @@ The call asks the user for approval. Before it, say in two or three lines what y
 
 ## Changing or stopping
 
-- Use `list_jobs` to find it.
-- Change the source, the condition or what is reported in its prompt (`manage_job` update).
+- Find it with `job` and `action: "list"`.
+- Change the source, the condition or what is reported in its prompt (`job` with `action: "update"`).
 - To stop: `disable` it, or `delete` it when the user wants it gone for good.
 
 ## Pitfalls

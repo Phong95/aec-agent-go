@@ -27,7 +27,7 @@ func TestWatchAndNotifyIsAnEssentialSkillThatNeedsManageJob(t *testing.T) {
 		mustOK(t, err)
 		if parsed.Frontmatter.Name == "watch-and-notify" {
 			pkg = &p
-			if !slices.Equal(parsed.RequiresTools, []string{"manage_job"}) {
+			if !slices.Equal(parsed.RequiresTools, []string{"job"}) {
 				t.Fatalf("requires-tools = %v", parsed.RequiresTools)
 			}
 			if !strings.Contains(parsed.Body, "[[SILENT]]") || !strings.Contains(parsed.Body, "[[FAILED]]") || strings.Contains(parsed.Body, "[[FOUND]]") {
@@ -110,7 +110,7 @@ func TestWatchBrokenCheckFailsAndTheChatHearsWhy(t *testing.T) {
 // model is told so.
 func TestWatchToolDeliverHereOutsideAChatApp(t *testing.T) {
 	r := newTriggerToolsRig(t, nil)
-	out := execTool(t, jobs.NewManageTool(), r.toolContext(nil), `{"action":"create","name":"z","prompt":"p","every_minutes":5,"deliver":"here"}`)
+	out := execTool(t, jobs.NewTool(), r.toolContext(nil), `{"action":"create","name":"z","prompt":"p","every_minutes":5,"deliver":"here"}`)
 	if outputIsError(out) || !strings.Contains(out.Content, "not in a chat app") {
 		t.Fatalf("out = %+v", out)
 	}

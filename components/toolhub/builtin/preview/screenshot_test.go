@@ -159,3 +159,18 @@ func TestParseViewport(t *testing.T) {
 		}
 	}
 }
+
+// Strict-schema models (OpenAI, the ChatGPT subscription) fill every field: "" / 0 / []
+// mean not given.
+func TestScreenshotWithEveryFieldFilled(t *testing.T) {
+	f := &fakeRenderer{}
+	r, tool := screenshotRig(t, f)
+	r.write(t, "games/snake/index.html", "<canvas></canvas>")
+	out := shoot(t, r, tool, `{"at":[],"dark":false,"path":"games/snake/index.html","seek":"","service":"","wait_ms":0,"selector":"","full_page":true,"viewports":["375x812"]}`)
+	if out.isError || len(f.requests) != 1 || f.requests[0].URI != "preview://games/snake/index.html" || !f.requests[0].FullPage {
+		t.Fatalf("out = %+v, requests = %+v", out, f.requests)
+	}
+	if out := shoot(t, r, tool, `{"path":"games/snake/index.html","viewports":[],"at":[]}`); out.isError {
+		t.Fatalf("empty lists: %+v", out)
+	}
+}

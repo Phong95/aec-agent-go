@@ -86,8 +86,12 @@ func goHandlers(t *testing.T, o definitionOptions) map[string]toolhub.Handler {
 		}
 		byName[name] = h
 	}
-	add(web.NewSearchTool(web.SearchToolOptions{DefaultMaxResults: o.DefaultMaxResults, MaxResultsLimit: o.MaxResultsLimit}))
-	add(web.NewExtractTool(web.ExtractToolOptions{MaxUrls: o.MaxUrls, MaxCharsLimit: o.MaxCharsLimit, DefaultMaxChars: o.DefaultMaxChars}))
+	searchOpts := web.SearchToolOptions{DefaultMaxResults: o.DefaultMaxResults, MaxResultsLimit: o.MaxResultsLimit}
+	extractOpts := web.ExtractToolOptions{MaxUrls: o.MaxUrls, MaxCharsLimit: o.MaxCharsLimit, DefaultMaxChars: o.DefaultMaxChars}
+	add(web.NewSearchTool(searchOpts))
+	add(web.NewExtractTool(extractOpts))
+	// Update (A-212): the web tool over the two (the one the servers register).
+	add(web.NewTool(web.ToolOptions{Search: searchOpts, Extract: extractOpts}))
 	add(clarify.NewTool())
 	add(skills.NewViewTool())
 	add(skills.NewManageTool())
@@ -216,6 +220,7 @@ func TestBuiltinToolDefinitions(t *testing.T) {
 	wantTools := []string{
 		"web_search", "web_extract", "clarify", "read_file", "write_file", "edit_file", "list_files", "search_files",
 		"terminal", "run_code", "artifact", "skill_view", "skill_manage", // Update (A-209): artifact replaces four tools
+		"web", // Update (A-212): the web tool over web_search and web_extract
 	}
 	for _, name := range wantTools {
 		if !tools[name] {

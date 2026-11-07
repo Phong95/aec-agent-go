@@ -17,7 +17,22 @@ import (
 )
 
 // actions are the actions of manage_job, in the order of its enum.
-var actions = []string{"create", "update", "enable", "disable", "delete", "run_now"}
+// Update (A-211): the job tool's - manage_job's six, then list (was list_jobs).
+var actions = []string{"create", "update", "enable", "disable", "delete", "run_now", "list"}
+
+// Actions returns the actions of the job tool, in the order of its enum (JOB_ACTIONS of
+// core/ts), as a fresh slice.
+func Actions() []string { return slices.Clone(actions) }
+
+// ActionOf is the call's action, trimmed and lower-cased; "" when it is not one of
+// Actions (jobActionOf of core/ts).
+func ActionOf(args kernel.Arguments) string {
+	action := strings.ToLower(str(toolkit.DecodeArgs(args), "action"))
+	if slices.Contains(actions, action) {
+		return action
+	}
+	return ""
+}
 
 // whens are the values of "when".
 var whens = []string{"schedule", "event", "webhook"}
@@ -50,117 +65,121 @@ var followUps = []string{string(job.FollowUpNever), string(job.FollowUpOnFailure
 // AgentJobMaxRunsPerHour runs an hour and a daily token budget; the user can change any
 // of it on the Jobs page. Build one with NewManageTool. The tool holds no state, so it is
 // safe for concurrent use.
-type ManageTool struct{}
+//
+// Update (A-211): Tool is job - manage_job and list_jobs in one tool (action list,
+// read-only per call via RiskFor). When to make which kind of job, and how, lives in the
+// essential "jobs" skill; the description and the parameter texts are a short reference
+// card. The definition states the worst case (consequential), so the Capabilities page
+// shows "needs approval" and plan mode hides it. Subagents never get it (the child
+// exclusion list). Build one with NewTool.
+type Tool struct{}
 
-var _ toolhub.Handler = (*ManageTool)(nil)
+var (
+	_ toolhub.Handler    = (*Tool)(nil)
+	_ toolhub.CallRisker = (*Tool)(nil)
+)
 
-// NewManageTool returns the manage_job tool.
-func NewManageTool() *ManageTool { return &ManageTool{} }
+// NewTool returns the job tool.
+func NewTool() *Tool { return &Tool{} }
 
 // Name returns the plugin name.
-func (*ManageTool) Name() string { return "tool:manage-job" }
+func (*Tool) Name() string { return "tool:job" }
 
 // Version returns the plugin version.
-func (*ManageTool) Version() string { return "1.0.0" }
+func (*Tool) Version() string { return "1.0.0" }
+
+// RiskFor is the risk of one call (A-211): list is read-only; every other action (and an
+// unknown one) is consequential.
+func (*Tool) RiskFor(args kernel.Arguments) toolhub.Risk {
+	if ActionOf(args) == "list" {
+		return toolhub.RiskReadOnly
+	}
+	return toolhub.RiskConsequential
+}
 
 // Definition returns the tool definition (a fresh value on every call).
-func (*ManageTool) Definition() toolhub.Definition {
+func (*Tool) Definition() toolhub.Definition {
 	str := func(desc string) toolhub.JSONSchema { return toolhub.JSONSchema{Type: "string", Description: desc} }
 	return toolhub.Definition{
-		Name: "manage_job",
-		Description: "Set up work for yourself that runs later without the user in the chat " + emDash + " each run is a full turn with your tools, " +
-			"in a conversation the user can open later. A job runs on a schedule (cron / every_minutes / at), " +
-			`on your own events (when: "event" ` + emDash + " " + strings.Join(job.InternalEventTypes(), ", ") + "; give event_types), " +
-			`or when another system POSTs a signed webhook (when: "webhook", e.g. "model uploaded"). ` +
-			"Actions: create (name, prompt, and a schedule or when) " + middot + " update (job, then fields to change) " + middot + " enable / disable / delete / run_now (job). " +
-			"The prompt must stand on its own: a run does NOT see this conversation, so include every detail it needs. " +
-			`For "tell me when X happens" use ONE schedule job that checks for X and replies with what it found, or exactly [[SILENT]] ` +
-			`when there is nothing new (nothing is posted), or [[FAILED]] <reason> when it could not check; use session_mode "reuse" ` +
-			"so it remembers what it already reported. Never chain a schedule job into an event job just to filter its reply. " +
-			`Use an event job for "when one of my jobs fails, look into it", a webhook job when an outside system can notify. ` +
-			`To run the SAME command or script on a schedule (e.g. "run report.py every 3 hours"), make a tool job: give tool ` +
-			`(e.g. "terminal") and tool_args (its exact arguments) ` + emDash + ` it runs without you, uses no tokens, and its output is the ` +
-			`result (no output = nothing posted). Add follow_up "on-failure" or "always" with a prompt to get a turn after the tool. ` +
-			"Prompts may use {{now}}, {{job.lastRunAt}}, {{job.lastSuccessAt}} and {{job.lastResult}} (the previous result). " +
-			"When asked from a chat app, results are posted back to that chat. Approval-gated tools are denied during runs. " +
-			"Each call asks the user for approval. Use list_jobs to see existing jobs.",
+		Name: "job",
+		Description: "Set up work for yourself that runs later without the user in the chat: each run is a full turn with your tools (or " +
+			"one tool call), in a conversation the user can open later. A job runs on a schedule (cron, every_minutes or at), on " +
+			`your own events (when "event") or on a signed webhook from another system (when "webhook"). Actions: create (name, ` +
+			"prompt, and a schedule or when) " + middot + " update (job, then the fields to change) " + middot + " enable / disable / delete / run_now (job) " +
+			middot + " list. The prompt must stand on its own: a run does not see this conversation. Every action but list asks the user " +
+			`first. The jobs skill says which kind of job to make and how; for "tell me when X happens" see watch-and-notify.`,
 		Parameters: toolhub.JSONSchema{
 			Type: "object",
 			Properties: toolhub.NewProperties(
-				toolhub.Property{Name: "action", Schema: toolhub.JSONSchema{Type: "string", Enum: slices.Clone(actions), Description: "What to do"}},
-				toolhub.Property{Name: "job", Schema: str("update/enable/disable/delete/run_now: the job's name or id")},
+				toolhub.Property{Name: "action", Schema: toolhub.JSONSchema{Type: "string", Enum: slices.Clone(actions), Description: "create, update, enable, disable, delete, run_now or list"}},
+				toolhub.Property{Name: "job", Schema: str("The job's name or id (every action but create and list)")},
 				toolhub.Property{Name: "name", Schema: str("create: a short unique name; update: a new name")},
-				toolhub.Property{Name: "description", Schema: str("create/update: what the job is for, for the user")},
-				toolhub.Property{Name: "prompt", Schema: str("create/update: the full, self-contained instruction you will receive on each run. Event and webhook jobs may use " +
-					"{{event.type}}, {{event.subject}}, {{events.count}}, {{job.name}}; the event data itself is attached separately")},
+				toolhub.Property{Name: "description", Schema: str("What the job is for, for the user")},
+				toolhub.Property{Name: "prompt", Schema: str("The full, self-contained instruction each run receives")},
 				toolhub.Property{Name: "when", Schema: toolhub.JSONSchema{
 					Type: "string", Enum: slices.Clone(whens),
-					Description: `create/update: "schedule" (give cron, every_minutes or at), "event" or "webhook"`,
+					Description: `"schedule" (give cron, every_minutes or at), "event" or "webhook"`,
 				}},
-				toolhub.Property{Name: "cron", Schema: str(`schedule: 5-field cron "minute hour day-of-month month day-of-week", e.g. "0 8 * * 1" = Mondays 08:00, "*/30 9-17 * * 1-5" = every 30 min in office hours`)},
-				toolhub.Property{Name: "timezone", Schema: str(`With cron: IANA timezone, e.g. "Asia/Ho_Chi_Minh". Ask the user if unsure.`)},
-				toolhub.Property{Name: "every_minutes", Schema: toolhub.JSONSchema{Type: "number", Description: "schedule: run every N minutes (at least 1)"}},
-				toolhub.Property{Name: "at", Schema: str(`schedule: run once at this ISO 8601 time with offset, e.g. "2026-10-07T09:00:00+07:00"`)},
-				toolhub.Property{Name: "tool", Schema: str(`create/update, schedule jobs only: run this tool instead of a turn (e.g. "terminal"); it must be one of your tools ` +
-					`that can be scheduled. "none" turns a tool job back into a prompt job`)},
-				toolhub.Property{Name: "tool_args", Schema: str(`With tool: its exact arguments as a JSON object, e.g. {"command": "python report.py"}. They are never changed at run time`)},
+				toolhub.Property{Name: "cron", Schema: str(`5-field cron, e.g. "0 8 * * 1" = Mondays 08:00`)},
+				toolhub.Property{Name: "timezone", Schema: str(`With cron: IANA timezone, e.g. "Asia/Ho_Chi_Minh"`)},
+				toolhub.Property{Name: "every_minutes", Schema: toolhub.JSONSchema{Type: "number", Description: "Run every N minutes (at least 1)"}},
+				toolhub.Property{Name: "at", Schema: str("Run once at this ISO 8601 time with offset")},
+				toolhub.Property{Name: "tool", Schema: str(`Schedule jobs: run this tool instead of a turn; "none" makes it a prompt job again`)},
+				toolhub.Property{Name: "tool_args", Schema: str("With tool: its exact arguments as a JSON object")},
 				toolhub.Property{Name: "follow_up", Schema: toolhub.JSONSchema{
 					Type: "string", Enum: slices.Clone(followUps),
-					Description: `With tool: also run a turn with the prompt after the tool ` + emDash + ` "never" (default), "on-failure" or "always"`,
+					Description: "With tool: also run a turn with the prompt after it",
 				}},
 				toolhub.Property{Name: "session_mode", Schema: toolhub.JSONSchema{
 					Type: "string", Enum: slices.Clone(sessionModes),
-					Description: `create/update: "new" = a new conversation per run (default), "reuse" = every run appends to one conversation`,
+					Description: `"new" conversation per run (default) or "reuse" one`,
 				}},
 				toolhub.Property{Name: "event_types", Schema: toolhub.JSONSchema{
 					Type: "array", Items: &toolhub.JSONSchema{Type: "string"},
-					Description: `event/webhook: event types to accept; "prefix.*" matches a prefix. Required for when "event"`,
+					Description: `event/webhook: event types to accept ("prefix.*" matches a prefix)`,
 				}},
 				toolhub.Property{Name: "subjects", Schema: toolhub.JSONSchema{
-					Type: "array", Items: &toolhub.JSONSchema{Type: "string"}, Description: "event/webhook: only events about these subjects (e.g. one job's id)",
+					Type: "array", Items: &toolhub.JSONSchema{Type: "string"}, Description: "event/webhook: only events about these subjects",
 				}},
 				toolhub.Property{Name: "where", Schema: toolhub.JSONSchema{
 					Type:        "array",
-					Description: `event/webhook: conditions that must all hold, e.g. [{ "path": "data.project", "op": "eq", "value": "tower-a" }]`,
+					Description: "event/webhook: conditions that must all hold",
 					Items: &toolhub.JSONSchema{
 						Type: "object",
 						Properties: toolhub.NewProperties(
 							toolhub.Property{Name: "path", Schema: str(`"type", "subject", "source" or "data.<dot.path>"`)},
 							toolhub.Property{Name: "op", Schema: toolhub.JSONSchema{Type: "string", Enum: []string{"eq", "neq", "in", "exists", "contains"}}},
-							toolhub.Property{Name: "value", Schema: str("eq / neq / contains: the value (numbers compare as text)")},
-							toolhub.Property{Name: "values", Schema: toolhub.JSONSchema{Type: "array", Items: &toolhub.JSONSchema{Type: "string"}, Description: "in: the accepted values"}},
+							toolhub.Property{Name: "value", Schema: toolhub.JSONSchema{Type: "string"}},
+							toolhub.Property{Name: "values", Schema: toolhub.JSONSchema{Type: "array", Items: &toolhub.JSONSchema{Type: "string"}}},
 						),
 						Required: []string{"path", "op"},
 					},
 				}},
 				toolhub.Property{Name: "signature", Schema: toolhub.JSONSchema{
 					Type: "string", Enum: []string{"standard", "github"},
-					Description: `webhook: how deliveries are signed ` + emDash + ` "standard" (Standard Webhooks, default) or "github"`,
+					Description: "webhook: how deliveries are signed (default standard)",
 				}},
-				toolhub.Property{Name: "subject_path", Schema: str(`webhook: where the subject is in the body, e.g. "data.modelId"`)},
-				toolhub.Property{Name: "revision_path", Schema: str(`webhook: a growing revision number in the body, e.g. "data.revision"`)},
+				toolhub.Property{Name: "subject_path", Schema: str("webhook: where the subject is in the body")},
+				toolhub.Property{Name: "revision_path", Schema: str("webhook: a growing revision number in the body")},
 				toolhub.Property{Name: "max_runs_per_hour", Schema: toolhub.JSONSchema{
 					Type:        "number",
-					Description: "event/webhook: at most " + strconv.Itoa(AgentJobMaxRunsPerHour) + " (default " + strconv.Itoa(AgentJobDefaultRunsPerHour) + "). Not used by schedule jobs",
+					Description: "event/webhook: at most " + strconv.Itoa(AgentJobMaxRunsPerHour) + " (default " + strconv.Itoa(AgentJobDefaultRunsPerHour) + ")",
 				}},
 				toolhub.Property{Name: "max_tokens_per_day", Schema: toolhub.JSONSchema{
 					Type:        "number",
-					Description: "event/webhook: daily token budget, at most " + strconv.Itoa(AgentJobMaxTokensPerDay) + " (default " + strconv.Itoa(AgentJobDefaultTokensPerDay) + "). Not used by schedule jobs",
+					Description: "event/webhook: daily token budget, at most " + strconv.Itoa(AgentJobMaxTokensPerDay) + " (default " + strconv.Itoa(AgentJobDefaultTokensPerDay) + ")",
 				}},
 				toolhub.Property{Name: "deliver", Schema: toolhub.JSONSchema{
 					Type: "string", Enum: []string{"here", "home", "none"},
-					Description: `"here" = post each result to the chat app conversation you are in (the default there; in any other conversation ` +
-						`it means "home"), "home" = post to the home chats of the agent's chat app channels (all of them, or those in ` +
-						`deliver_channels; the default outside a chat app), "none" = keep results in each run's conversation`,
+					Description: "Where results are posted: this chat app conversation, the home chats, or nowhere",
 				}},
 				toolhub.Property{Name: "deliver_channels", Schema: toolhub.JSONSchema{
 					Type: "array", Items: &toolhub.JSONSchema{Type: "string"},
-					Description: `Only these channels' home chats get the results (a channel's name or platform, e.g. "telegram"). ` +
-						`Leave it out for all of them. Ask the user when they did not say which`,
+					Description: "With home: only these channels (name or platform)",
 				}},
 				toolhub.Property{Name: "deliver_when", Schema: toolhub.JSONSchema{
 					Type: "string", Enum: slices.Clone(deliveryWhen),
-					Description: "With a delivery: post always (default), only with output, or only on failure",
+					Description: "With a delivery: always (default), on-output or on-failure",
 				}},
 			),
 			Required: []string{"action"},
@@ -174,37 +193,40 @@ func (*ManageTool) Definition() toolhub.Definition {
 // Execute runs one action against the agent's jobs.
 //
 //nolint:gocyclo // one linear pass over the actions, the same steps as core/ts
-func (*ManageTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhub.Context) (toolhub.Output, error) {
+func (*Tool) Execute(ctx context.Context, args kernel.Arguments, tc toolhub.Context) (toolhub.Output, error) {
 	a := toolkit.DecodeArgs(args)
-	action := str(a, "action")
-	if !slices.Contains(actions, action) {
-		return toolkit.Fail(`manage_job: "action" must be one of ` + strings.Join(actions, ", ")), nil
+	action := ActionOf(args)
+	if action == "" {
+		return toolkit.Fail(`job: "action" must be one of ` + strings.Join(actions, ", ")), nil
 	}
-	return withJobs(tc, "manage_job", func(jobs job.Jobs) (toolhub.Output, error) {
+	if action == "list" {
+		return listJobs(ctx, tc), nil
+	}
+	return withJobs(tc, "job "+action, func(jobs job.Jobs) (toolhub.Output, error) {
 		deliverWhen := job.DeliveryWhen(str(a, "deliver_when"))
 		if deliverWhen != "" && !slices.Contains(deliveryWhen, string(deliverWhen)) {
-			return toolkit.Fail("manage_job " + action + `: "deliver_when" must be one of ` + strings.Join(deliveryWhen, ", ")), nil
+			return toolkit.Fail("job " + action + `: "deliver_when" must be one of ` + strings.Join(deliveryWhen, ", ")), nil
 		}
 		deliver := str(a, "deliver")
 		if deliver != "" && deliver != "here" && deliver != "home" && deliver != "none" {
-			return toolkit.Fail("manage_job " + action + `: "deliver" must be "here", "home" or "none"`), nil
+			return toolkit.Fail("job " + action + `: "deliver" must be "here", "home" or "none"`), nil
 		}
 		// A-127: the chats the arguments ask for (every home chat when they name none).
 		deliveries, deliveryGiven, deliveryErr := resolveDeliveries(tc, deliver, strList(a, "deliver_channels"), deliverWhen)
 		if deliveryErr != "" {
-			return toolkit.Fail("manage_job " + action + ": " + deliveryErr), nil
+			return toolkit.Fail("job " + action + ": " + deliveryErr), nil
 		}
 		sessionMode := job.SessionMode(str(a, "session_mode"))
 		if sessionMode != "" && !slices.Contains(sessionModes, string(sessionMode)) {
-			return toolkit.Fail("manage_job " + action + `: "session_mode" must be "new" or "reuse"`), nil
+			return toolkit.Fail("job " + action + `: "session_mode" must be "new" or "reuse"`), nil
 		}
 		limits, limitsErr := limitsArg(a)
 		if limitsErr != "" {
-			return toolkit.Fail("manage_job " + action + ": " + limitsErr), nil
+			return toolkit.Fail("job " + action + ": " + limitsErr), nil
 		}
 		toolAction, toolErr := toolActionArg(a)
 		if toolErr != "" {
-			return toolkit.Fail("manage_job " + action + ": " + toolErr), nil
+			return toolkit.Fail("job " + action + ": " + toolErr), nil
 		}
 		// "here" outside a chat app has nowhere to post: the job keeps its results in its
 		// runs' conversations.
@@ -214,28 +236,28 @@ func (*ManageTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhu
 		if action == "create" {
 			name, prompt := str(a, "name"), str(a, "prompt")
 			if name == "" {
-				return toolkit.Fail(`manage_job create: "name" is required`), nil
+				return toolkit.Fail(`job create: "name" is required`), nil
 			}
 			var tool *toolActionInput
 			if toolAction != nil && !toolAction.prompt {
 				if toolAction.tool == "" {
-					return toolkit.Fail(`manage_job create: "tool_args" and "follow_up" go with "tool"`), nil
+					return toolkit.Fail(`job create: "tool_args" and "follow_up" go with "tool"`), nil
 				}
 				tool = toolAction
 			}
 			// A tool job needs a prompt only for its follow-up turn.
 			if prompt == "" && (tool == nil || tool.followUp != "") {
 				if tool != nil {
-					return toolkit.Fail(`manage_job create: a follow-up needs a "prompt" ` + emDash + ` the message of the turn after the tool`), nil
+					return toolkit.Fail(`job create: a follow-up needs a "prompt" ` + emDash + ` the message of the turn after the tool`), nil
 				}
-				return toolkit.Fail(`manage_job create: "prompt" is required`), nil
+				return toolkit.Fail(`job create: "prompt" is required`), nil
 			}
 			when, hasWhen, whenErr := whenArg(a, nil)
 			if whenErr != "" {
-				return toolkit.Fail("manage_job create: " + whenErr), nil
+				return toolkit.Fail("job create: " + whenErr), nil
 			}
 			if !hasWhen {
-				return toolkit.Fail(`manage_job create: give a schedule (one of "cron", "every_minutes" or "at"), or when "event" or "webhook"`), nil
+				return toolkit.Fail(`job create: give a schedule (one of "cron", "every_minutes" or "at"), or when "event" or "webhook"`), nil
 			}
 			in := job.CreateInput{
 				Name:               name,
@@ -281,14 +303,14 @@ func (*ManageTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhu
 
 		ref := str(a, "job")
 		if ref == "" {
-			return toolkit.Fail("manage_job " + action + `: "job" (the job's name or id) is required`), nil
+			return toolkit.Fail("job " + action + `: "job" (the job's name or id) is required`), nil
 		}
 		existing, err := findJob(ctx, jobs, ref)
 		if err != nil {
 			return toolhub.Output{}, err
 		}
 		if existing == nil {
-			return toolkit.Fail("manage_job " + action + `: you have no job "` + ref + `" ` + emDash + " use list_jobs"), nil
+			return toolkit.Fail("job " + action + `: you have no job "` + ref + `" ` + emDash + ` see action "list"`), nil
 		}
 
 		switch action {
@@ -338,7 +360,7 @@ func (*ManageTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhu
 			}
 			clearAction, nextAction, actionErr := mergeToolAction(toolAction, existing.Action)
 			if actionErr != "" {
-				return toolkit.Fail("manage_job update: " + actionErr), nil
+				return toolkit.Fail("job update: " + actionErr), nil
 			}
 			if clearAction {
 				patch.ClearAction, changed = true, true
@@ -347,7 +369,7 @@ func (*ManageTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhu
 			}
 			when, hasWhen, whenErr := whenArg(a, &existing.When)
 			if whenErr != "" {
-				return toolkit.Fail("manage_job update: " + whenErr), nil
+				return toolkit.Fail("job update: " + whenErr), nil
 			}
 			if hasWhen {
 				patch.When, changed = &when, true
@@ -398,7 +420,7 @@ func (*ManageTool) Execute(ctx context.Context, args kernel.Arguments, tc toolhu
 				}
 			}
 			if !changed {
-				return toolkit.Fail("manage_job update: nothing to change " + emDash + " give a new name, prompt, schedule, when, tool, filter, session_mode, limits or a delivery"), nil
+				return toolkit.Fail("job update: nothing to change " + emDash + " give a new name, prompt, schedule, when, tool, filter, session_mode, limits or a delivery"), nil
 			}
 		}
 		updated, err := jobs.Update(ctx, existing.ID, patch)

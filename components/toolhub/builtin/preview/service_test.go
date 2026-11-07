@@ -37,7 +37,7 @@ func hostSetup(t *testing.T) rig {
 	// Dispose ends every service the case left running.
 	t.Cleanup(func() { _ = hub.Dispose(context.Background()) })
 	tools := map[string]toolhub.Handler{}
-	for _, h := range NewTools() {
+	for _, h := range NewTools(Options{}) {
 		tools[h.Definition().Name] = h
 	}
 	return rig{
@@ -49,7 +49,7 @@ func hostSetup(t *testing.T) rig {
 
 func TestServiceToolsStartListLogsStop(t *testing.T) {
 	r := hostSetup(t)
-	out := r.run(t, "start_service", `{"name":"web","command":`+jsonString(testServer)+`}`)
+	out := r.run(t, "service", `{"action":"start","name":"web","command":`+jsonString(testServer)+`}`)
 	if isErr(out) {
 		t.Fatalf("start_service failed: %s", out.Content)
 	}
@@ -61,26 +61,36 @@ func TestServiceToolsStartListLogsStop(t *testing.T) {
 		t.Fatalf("content = %s", out.Content)
 	}
 
-	list := r.run(t, "list_services", `{}`)
+	list := r.run(t, "service", `{"action":"list"}`)
 	if !regexp.MustCompile(`web ` + midDot + ` listening ` + midDot + ` port \d+`).MatchString(list.Content) {
 		t.Fatalf("list = %s", list.Content)
 	}
-	logs := r.run(t, "service_logs", `{"name":"web"}`)
+	logs := r.run(t, "service", `{"action":"logs","name":"web"}`)
 	if !strings.Contains(logs.Content, "ready") {
 		t.Fatalf("logs = %s", logs.Content)
 	}
 
-	if stopped := r.run(t, "stop_service", `{"name":"web"}`); stopped.Content != "Stopped web." {
+	// A-210: preview shows a page of a running service.
+	page := r.run(t, "preview", `{"service":"web","path":"about"}`)
+	wantPage := kernel.ToolResultLink{URI: "service://web/about", Name: "web", Type: "service"}
+	if page.Link == nil || *page.Link != wantPage || !strings.Contains(page.Content, "web (/about) is live next to the chat.") {
+		t.Fatalf("page = %+v", page)
+	}
+
+	if stopped := r.run(t, "service", `{"action":"stop","name":"web"}`); stopped.Content != "Stopped web." {
 		t.Fatalf("stop = %s", stopped.Content)
 	}
-	if missing := r.run(t, "stop_service", `{"name":"web2"}`); !isErr(missing) {
+	if missing := r.run(t, "service", `{"action":"stop","name":"web2"}`); !isErr(missing) {
 		t.Fatalf("stop of a missing service = %+v", missing)
+	}
+	if gone := r.run(t, "preview", `{"service":"web"}`); !isErr(gone) || !strings.Contains(gone.Content, "has stopped") {
+		t.Fatalf("preview of a stopped service = %+v", gone)
 	}
 }
 
 func TestServiceToolsReportAnExit(t *testing.T) {
 	r := hostSetup(t)
-	out := r.run(t, "start_service", `{"name":"bad","command":`+jsonString(`node -e "console.error('missing module');process.exit(1)"`)+`}`)
+	out := r.run(t, "service", `{"action":"start","name":"bad","command":`+jsonString(`node -e "console.error('missing module');process.exit(1)"`)+`}`)
 	if !isErr(out) || out.Retryable == nil || *out.Retryable {
 		t.Fatalf("out = %+v", out)
 	}
@@ -94,12 +104,26 @@ func TestServiceToolsReportAnExit(t *testing.T) {
 
 func TestServiceToolsWithoutServices(t *testing.T) {
 	r := setup(t)
-	out := r.run(t, "start_service", `{"name":"web","command":"x"}`)
+	out := r.run(t, "service", `{"action":"start","name":"web","command":"x"}`)
 	if !isErr(out) || out.Retryable == nil || *out.Retryable {
 		t.Fatalf("out = %+v", out)
 	}
-	if !strings.Contains(out.Content, "cannot run services") {
+	if !strings.Contains(out.Content, "service start: this agent's sandbox cannot run services") {
 		t.Fatalf("content = %s", out.Content)
+	}
+}
+
+// A-210: an unknown action and missing arguments are problems the model can fix.
+func TestServiceToolRefusals(t *testing.T) {
+	r := setup(t)
+	for args, want := range map[string]string{
+		`{"action":"restart"}`:            `service: "action" must be one of start, stop, list, logs`,
+		`{"action":"start","name":"web"}`: `service start: "command" is required`,
+		`{"action":"logs"}`:               `service logs: "name" is required`,
+	} {
+		if out := r.run(t, "service", args); !isErr(out) || out.Content != want {
+			t.Errorf("%s: %+v", args, out)
+		}
 	}
 }
 

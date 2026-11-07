@@ -183,7 +183,7 @@ func (m *secretManager) buildIndex(ctx context.Context, canManage bool) (string,
 		"- terminal / run_code: list the names in `secrets`; each becomes an environment variable of the same name ($NAME).",
 	}
 	if canManage {
-		lines = append(lines, "- To add a key the user wants you to use, call manage_secret (action create): the user types the value into a masked field "+emDash+" it never passes through the chat.")
+		lines = append(lines, "- To add a key the user wants you to use, call secret (action create): the user types the value into a masked field "+emDash+" it never passes through the chat.")
 	}
 	lines = append(lines, "")
 	if len(secrets) == 0 {

@@ -61,7 +61,8 @@ func typeTools(t subagenttype.Type, parentTools []string) []string {
 		wanted = parentTools
 	} else {
 		// A-209: a type may still list renamed tools (read_artifact & co. -> artifact).
-		wanted = toolhub.RenamedToolNames(wanted)
+		// Update (A-212): an old name the parent still has (a host that registers it) stays.
+		wanted = toolhub.RenamedToolNamesKeeping(wanted, func(name string) bool { return slices.Contains(parentTools, name) })
 	}
 	out := []string{}
 	for _, name := range wanted {

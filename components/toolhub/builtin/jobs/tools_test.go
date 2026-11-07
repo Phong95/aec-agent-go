@@ -104,23 +104,38 @@ func call(t *testing.T, h toolhub.Handler, tc toolhub.Context, args map[string]a
 	return out
 }
 
+// Update (A-211): one job tool, consequential by definition; its list action is read-only
+// per call, and the retired names map to it.
 func TestRisksAndNames(t *testing.T) {
 	tools := jobs.NewTools()
-	if tools[0].Definition().Name != "manage_job" || tools[0].Definition().Risk != toolhub.RiskConsequential {
-		t.Fatal("manage_job must be consequential")
+	if len(tools) != 1 || tools[0].Definition().Name != "job" || tools[0].Definition().Risk != toolhub.RiskConsequential ||
+		tools[0].Definition().Subagent != toolhub.SubagentNever {
+		t.Fatal("job must be consequential and never for subagents")
 	}
-	if tools[1].Definition().Name != "list_jobs" || tools[1].Definition().Risk != toolhub.RiskReadOnly {
-		t.Fatal("list_jobs must be read-only")
+	tool := jobs.NewTool()
+	if tool.RiskFor(kernel.Arguments(`{"action":"list"}`)) != toolhub.RiskReadOnly {
+		t.Fatal("list must be read-only")
 	}
-	if got := jobs.ToolNames(); len(got) != 2 || got[0] != "manage_job" || got[1] != "list_jobs" {
+	for _, action := range []string{"create", "update", "enable", "disable", "delete", "run_now", "nope"} {
+		if tool.RiskFor(kernel.Arguments(`{"action":"`+action+`"}`)) != toolhub.RiskConsequential {
+			t.Fatalf("%s must be consequential", action)
+		}
+	}
+	if got := jobs.ToolNames(); len(got) != 1 || got[0] != "job" {
 		t.Fatalf("names = %v", got)
+	}
+	renamed := toolhub.RenamedTools()
+	for _, old := range jobs.RetiredToolNames() {
+		if renamed[old] != "job" {
+			t.Errorf("%s is renamed to %q, want job", old, renamed[old])
+		}
 	}
 }
 
 func TestCreateEventJobWithCaps(t *testing.T) {
 	f := &fakeJobs{}
 	tc := toolhub.Context{SessionID: "chat-1", Jobs: f}
-	out := call(t, jobs.NewManageTool(), tc, map[string]any{"action": "create", "name": "diagnose", "prompt": "Why?", "when": "event", "event_types": []string{"job.failed"}})
+	out := call(t, jobs.NewTool(), tc, map[string]any{"action": "create", "name": "diagnose", "prompt": "Why?", "when": "event", "event_types": []string{"job.failed"}})
 	if isErr(out) {
 		t.Fatalf("create failed: %s", out.Content)
 	}
@@ -137,12 +152,12 @@ func TestCreateEventJobWithCaps(t *testing.T) {
 func TestWebhookSecretNeverShown(t *testing.T) {
 	f := &fakeJobs{}
 	tc := toolhub.Context{Jobs: f}
-	out := call(t, jobs.NewManageTool(), tc, map[string]any{"action": "create", "name": "uploads", "prompt": "Report.", "when": "webhook", "event_types": []string{"model.uploaded"}})
+	out := call(t, jobs.NewTool(), tc, map[string]any{"action": "create", "name": "uploads", "prompt": "Report.", "when": "webhook", "event_types": []string{"model.uploaded"}})
 	raw, _ := json.Marshal(out)
 	if strings.Contains(string(raw), secret) || !strings.Contains(out.Content, "/webhooks/jobs/"+f.jobs[0].ID) || !strings.Contains(out.Content, "Jobs page") {
 		t.Fatalf("output = %s", raw)
 	}
-	listed := call(t, jobs.NewListTool(), tc, map[string]any{})
+	listed := call(t, jobs.NewTool(), tc, map[string]any{"action": "list"})
 	raw, _ = json.Marshal(listed)
 	if strings.Contains(string(raw), secret) || !strings.Contains(listed.Content, "uploads") {
 		t.Fatalf("list = %s", raw)
@@ -162,7 +177,7 @@ func TestStrictSchemaArguments(t *testing.T) {
 		"subject_path": "", "revision_path": "", "max_runs_per_hour": 4, "max_tokens_per_day": 50000,
 		"deliver": "here", "deliver_when": "on-output",
 	}
-	out := call(t, jobs.NewManageTool(), tc, filled)
+	out := call(t, jobs.NewTool(), tc, filled)
 	if isErr(out) || !strings.Contains(out.Content, "not in a chat app") {
 		t.Fatalf("create = %s", out.Content)
 	}
@@ -172,7 +187,7 @@ func TestStrictSchemaArguments(t *testing.T) {
 	}
 
 	filled["action"], filled["job"], filled["name"], filled["every_minutes"] = "update", "CoinDesk Bitcoin watch", "", 30
-	out = call(t, jobs.NewManageTool(), tc, filled)
+	out = call(t, jobs.NewTool(), tc, filled)
 	if isErr(out) {
 		t.Fatalf("update = %s", out.Content)
 	}
@@ -196,7 +211,7 @@ func TestBadCalls(t *testing.T) {
 		{"action": "delete", "job": "missing"},
 	}
 	for _, args := range cases {
-		out := call(t, jobs.NewManageTool(), tc, args)
+		out := call(t, jobs.NewTool(), tc, args)
 		if !isErr(out) || (out.Retryable != nil && *out.Retryable) {
 			t.Errorf("%v: %+v", args, out)
 		}
@@ -204,7 +219,7 @@ func TestBadCalls(t *testing.T) {
 	if len(f.created) != 0 {
 		t.Fatalf("created %d jobs", len(f.created))
 	}
-	none := call(t, jobs.NewListTool(), toolhub.Context{}, map[string]any{})
+	none := call(t, jobs.NewTool(), toolhub.Context{}, map[string]any{"action": "list"})
 	if !isErr(none) {
 		t.Fatal("list without jobs must fail")
 	}
@@ -224,7 +239,7 @@ func TestDeliverToHomeChats(t *testing.T) {
 		for k, v := range extra {
 			args[k] = v
 		}
-		return call(t, jobs.NewManageTool(), tc, args), f
+		return call(t, jobs.NewTool(), tc, args), f
 	}
 	web := toolhub.Context{JobDeliveryOptions: job.DeliveryOptions{Homes: homes}}
 

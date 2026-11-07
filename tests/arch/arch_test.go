@@ -203,12 +203,14 @@ var layerTable = map[string][]string{
 	// Update (A-126): merged into builtin/jobs below.
 	// A-124: builtin/preview holds preview, list_apps and open_in_app; it reaches files only
 	// through the agent's sandbox (host-access guarded).
+	// Update (A-210): preview and service (the same imports).
 	"components/toolhub/builtin/preview": {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsstr", "internal/toolkit"},
 	"components/toolhub/builtin/web":     {"kernel", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret"}, // A-101: http_request puts the agent's secrets in
 	// A-70: builtin/triggers holds manage_trigger and list_triggers. It reaches the agent's
 	// triggers only through toolhub.Context.Triggers; host-access guarded.
 	// Update (A-126): builtin/jobs holds manage_job and list_jobs; it reaches the agent's
 	// jobs only through toolhub.Context.Jobs; host-access guarded.
+	// Update (A-211): one job tool (manage_job + list_jobs); the same imports.
 	"components/toolhub/builtin/jobs": {"kernel", "components/toolhub", "components/agent/job", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
 	// A-105: builtin/subagents holds spawn_subagent; it reaches the agent's subagents only
 	// through toolhub.Context.Subagents; host-access guarded.
