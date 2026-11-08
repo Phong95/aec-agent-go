@@ -115,11 +115,65 @@ func NewSandboxManager(hub *sandboxhub.SandboxHub, agentID string, selection fun
 // a runner to (a folder on their machine) gets that folder - also while the runner is
 // offline, so its calls fail rather than land in another sandbox. Every other session
 // gets GetSandbox. Only workspace tools ask per session.
+//
+// A-216: a session scoped to folders of the agent's sandbox (SetSessionFolders) gets the
+// agent's view limited to them (sandboxhub.Scope). A runner still wins over the folders.
 func (m *SandboxManager) GetSessionSandbox(ctx context.Context, sessionID string) (sandboxhub.View, error) {
-	if sb, ok := m.hub.Runner(m.agentID, m.sessionOf(sessionID)); ok {
+	session := m.sessionOf(sessionID)
+	if sb, ok := m.hub.Runner(m.agentID, session); ok {
 		return sb.ForAgent(ctx, m.agentID)
 	}
-	return m.GetSandbox(ctx)
+	view, err := m.GetSandbox(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if folders, ok := m.hub.SessionFolders(m.agentID, session); ok {
+		return sandboxhub.Scope(view, folders)
+	}
+	return view, nil
+}
+
+// SetSessionFolders (A-216) scopes the session to folders of the agent's sandbox: its
+// workspace tools then work only in them, the first being the working directory.
+// Relative folders resolve against the agent's working directory. Each one must be a
+// folder inside the agent's roots (path_escape outside, not_found when missing,
+// invalid_path when it is not a directory); the sandbox is started to check them. It
+// returns the canonical folders. The hub keeps them in memory: the host app persists
+// them and restores them (SandboxHub.SetSessionFolders) at startup.
+func (m *SandboxManager) SetSessionFolders(ctx context.Context, sessionID string, folders []string) ([]string, error) {
+	view, err := m.GetSandbox(ctx)
+	if err != nil {
+		return nil, err
+	}
+	canonical, err := sandboxhub.NormalizeSessionFolders(folders, view.WorkingDir(), view.Roots())
+	if err != nil {
+		return nil, kernel.AsSandboxError(err, view.ID())
+	}
+	for _, f := range canonical {
+		st, err := view.Stat(ctx, f)
+		if err != nil {
+			return nil, err
+		}
+		if st == nil {
+			return nil, kernel.NewSandboxError(`The folder "`+f+`" does not exist`, kernel.SandboxCodeNotFound, view.ID())
+		}
+		if st.Type != sandboxhub.EntryDirectory {
+			return nil, kernel.NewSandboxError(`"`+f+`" is not a folder`, kernel.SandboxCodeInvalidPath, view.ID())
+		}
+	}
+	return m.hub.SetSessionFolders(m.agentID, sessionID, canonical)
+}
+
+// ClearSessionFolders (A-216) gives the session the agent's whole sandbox back; it
+// reports whether the session had folders.
+func (m *SandboxManager) ClearSessionFolders(sessionID string) bool {
+	return m.hub.ClearSessionFolders(m.agentID, sessionID)
+}
+
+// SessionFolders (A-216) are the folders the session works in (its parent's while it
+// follows one); false = the whole sandbox.
+func (m *SandboxManager) SessionFolders(sessionID string) ([]string, bool) {
+	return m.hub.SessionFolders(m.agentID, m.sessionOf(sessionID))
 }
 
 // FollowSession (A-153): a subagent's run (child session) works where its parent
@@ -158,6 +212,48 @@ func (m *SandboxManager) DescribeRunner(sessionID string) string {
 		return "the folders " + strings.Join(names, ", ") + " on the user's computer" + offline
 	}
 	return `the folder "` + info.FolderName + `" on the user's computer` + offline
+}
+
+// DescribeSessionFolders (A-216) is the session's sandbox folders for /status; "" = the
+// session has none (or a runner, which wins).
+func (m *SandboxManager) DescribeSessionFolders(sessionID string) string {
+	session := m.sessionOf(sessionID)
+	if _, ok := m.hub.Runner(m.agentID, session); ok {
+		return ""
+	}
+	folders, ok := m.hub.SessionFolders(m.agentID, session)
+	if !ok {
+		return ""
+	}
+	return "Working in " + strings.Join(folders, ", ")
+}
+
+// SessionFoldersIndex (A-216) is the session's sandbox folders for the system message
+// (<workspace_folders>), so the model knows its bounds; false = the session has none
+// (or a runner, which RunnerFoldersIndex describes).
+func (m *SandboxManager) SessionFoldersIndex(sessionID string) (string, bool) {
+	session := m.sessionOf(sessionID)
+	if _, ok := m.hub.Runner(m.agentID, session); ok {
+		return "", false
+	}
+	folders, ok := m.hub.SessionFolders(m.agentID, session)
+	if !ok {
+		return "", false
+	}
+	lines := []string{"<workspace_folders>", "The workspace tools work only in these folders of the sandbox:"}
+	for i, f := range folders {
+		line := "- " + f
+		if i == 0 {
+			line += " (the working directory: relative paths and commands start here)"
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "Paths outside them are refused. Keep commands inside them too.")
+	if len(folders) > 1 {
+		lines = append(lines, "Use the full path for files in the other folders, and the terminal's cwd to run a command in one.")
+	}
+	lines = append(lines, "</workspace_folders>")
+	return strings.Join(lines, "\n"), true
 }
 
 // RunnerFoldersIndex (A-159) is the session's runner folders for the system message

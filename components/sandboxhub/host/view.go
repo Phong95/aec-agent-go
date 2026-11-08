@@ -61,6 +61,15 @@ func (v *view) WorkingDir() string { return v.workingDir }
 // Roots returns a fresh copy of the roots.
 func (v *view) Roots() []string { return slices.Clone(v.roots) }
 
+// WithRoots (A-216) is the same view re-rooted on roots (sandboxhub.RootNarrower), so
+// resolve checks every real path (after symlinks and junctions) against them; false when a root is outside this view's roots.
+func (v *view) WithRoots(workingDir string, roots []string) (sandboxhub.View, bool) {
+	if !sandboxhub.NarrowRoots(roots, v.roots) || !sandboxhub.IsWithinRoots(workingDir, roots) {
+		return nil, false
+	}
+	return &view{sb: v.sb, workingDir: workingDir, roots: slices.Clone(roots)}, true
+}
+
 // -- Guards --
 
 func (v *view) fail(message string, code kernel.SandboxErrorCode) error {

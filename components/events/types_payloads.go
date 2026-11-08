@@ -229,6 +229,15 @@ type SandboxRunnerChangedPayload struct {
 	Runner    *RunnerInfo `json:"runner"`
 }
 
+// SandboxSessionFoldersChangedPayload is the payload of the SandboxSessionFoldersChanged
+// kind (A-216): the folders of the agent's sandbox the session is scoped to now, the
+// working one first; empty = none, the session uses the whole sandbox.
+type SandboxSessionFoldersChangedPayload struct {
+	AgentID   string   `json:"agentId"`
+	SessionID string   `json:"sessionId"`
+	Folders   []string `json:"folders"`
+}
+
 // CommandExecutedPayload is the payload of the CommandExecuted kind (A-136): one slash
 // command that ran. Error is the command result's error code when it failed ("" when
 // it did not).

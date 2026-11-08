@@ -131,6 +131,10 @@ var (
 	// offline or was detached (the sandbox hub's AttachRunner / DetachRunner), with that
 	// session's id. No built-in subscribers (hosts).
 	SandboxRunnerChanged = Kind[SandboxRunnerChangedPayload]{Name: "sandbox:runner-changed"}
+	// A-216: a session was scoped to folders of the agent's sandbox, or its folders changed
+	// or were cleared (the sandbox hub's SetSessionFolders / ClearSessionFolders), with that
+	// session's id. No built-in subscribers (hosts).
+	SandboxSessionFoldersChanged = Kind[SandboxSessionFoldersChangedPayload]{Name: "sandbox:session-folders-changed"}
 	// A-136: a slash command ran (the agent's command manager, Agent.Commands().Run),
 	// whatever its outcome, with the session it ran in. No built-in subscribers (hosts).
 	CommandExecuted = Kind[CommandExecutedPayload]{Name: "command:executed"}
@@ -277,5 +281,6 @@ func KindNames() []string {
 		McpResourcesChanged.Name,
 		McpPromptsChanged.Name,
 		McpAuthChanged.Name,
+		SandboxSessionFoldersChanged.Name,
 	}
 }

@@ -47,6 +47,15 @@ func (v *inMemoryView) WorkingDir() string { return v.workingDir }
 // Roots returns a fresh copy of the roots.
 func (v *inMemoryView) Roots() []string { return slices.Clone(v.roots) }
 
+// WithRoots (A-216) is the same view re-rooted on roots (sandboxhub.RootNarrower), so
+// the symlink walk checks every path against them; false when a root is outside this view's roots.
+func (v *inMemoryView) WithRoots(workingDir string, roots []string) (sandboxhub.View, bool) {
+	if !sandboxhub.NarrowRoots(roots, v.roots) || !sandboxhub.IsWithinRoots(workingDir, roots) {
+		return nil, false
+	}
+	return &inMemoryView{sb: v.sb, workingDir: workingDir, roots: slices.Clone(roots)}, true
+}
+
 // -- Guards --
 
 func (v *inMemoryView) fail(message string, code kernel.SandboxErrorCode) error {

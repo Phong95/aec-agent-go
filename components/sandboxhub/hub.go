@@ -103,6 +103,9 @@ type SandboxHub struct {
 	// session's workspace tools fail instead of falling back to another sandbox;
 	// DetachRunner removes it.
 	runners map[runnerKey]*runnerEntry
+	// sessionFolders (A-216) are the folders of the agent's sandbox a session is scoped
+	// to, keyed by agent and session; canonical, the working one first.
+	sessionFolders map[runnerKey][]string
 }
 
 // runnerKey identifies one session of one agent.
@@ -132,6 +135,10 @@ func WithEvents(b events.Bus) Option {
 			// A-153: a removed agent's sessions lose their runners.
 			for _, sessionID := range h.runnerSessions(p.AgentID) {
 				h.DetachRunner(p.AgentID, sessionID, nil)
+			}
+			// A-216: ...and their sandbox folders.
+			for _, sessionID := range h.sessionFolderSessions(p.AgentID) {
+				h.ClearSessionFolders(p.AgentID, sessionID)
 			}
 			// ...and its folder in the shared sandbox by the hub.
 			if err := h.ReleaseAgentData(ctx, p.AgentID); err != nil {
@@ -179,8 +186,10 @@ func NewSandboxHub(opts ...Option) *SandboxHub {
 	h := &SandboxHub{
 		providers: map[Kind]Provider{},
 		runners:   map[runnerKey]*runnerEntry{},
-		policy:    DefaultHubPolicy(),
-		approval:  DefaultApprovalPolicy,
+		// A-216
+		sessionFolders: map[runnerKey][]string{},
+		policy:         DefaultHubPolicy(),
+		approval:       DefaultApprovalPolicy,
 	}
 	for _, o := range opts {
 		if o != nil {

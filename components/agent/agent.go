@@ -445,7 +445,11 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	// A-159: the folders on the user's computer the session works in, when it has a runner.
 	if a.sandboxes != nil {
 		ctxOpts = append(ctxOpts, WithWorkspaceIndex(func(_ context.Context, session kernel.Session) (string, bool) {
-			return a.sandboxes.RunnerFoldersIndex(session.ID)
+			if index, ok := a.sandboxes.RunnerFoldersIndex(session.ID); ok {
+				return index, true
+			}
+			// A-216: the folders of the agent's sandbox the session is scoped to.
+			return a.sandboxes.SessionFoldersIndex(session.ID)
 		}))
 	}
 	// A-213: the MCP servers' state and instructions, and the tools tool_search can load.
@@ -613,14 +617,20 @@ func (a *Agent) builtInCommandDeps() builtInCommandDeps {
 			if runner := a.sandboxes.DescribeRunner(sessionID); runner != "" {
 				return runner
 			}
+			var where string
 			switch a.sandboxSelection().Mode {
 			case sandboxhub.SelectionNone:
 				return "none"
 			case sandboxhub.SelectionOwn:
-				return "its own sandbox"
+				where = "its own sandbox"
 			default:
-				return "the shared sandbox"
+				where = "the shared sandbox"
 			}
+			// A-216: e.g. "the shared sandbox - Working in /workspace/api, /workspace/web".
+			if folders := a.sandboxes.DescribeSessionFolders(sessionID); folders != "" {
+				return where + " - " + folders
+			}
+			return where
 		},
 		sandbox: func(ctx context.Context, sessionID string) (commandWorkspace, error) {
 			v, err := a.SessionSandbox(ctx, sessionID)
@@ -1202,6 +1212,34 @@ func (a *Agent) SessionSandbox(ctx context.Context, sessionID string) (sandboxhu
 		return nil, errNoSandboxHub()
 	}
 	return a.sandboxes.GetSessionSandbox(ctx, sessionID)
+}
+
+// SetSessionFolders (A-216) scopes a session to folders of the agent's sandbox: its
+// workspace tools (files, search, terminal) then work only in them, the first being the
+// working directory. See SandboxManager.SetSessionFolders; the host app persists them.
+func (a *Agent) SetSessionFolders(ctx context.Context, sessionID string, folders []string) ([]string, error) {
+	if a.sandboxes == nil {
+		return nil, errNoSandboxHub()
+	}
+	return a.sandboxes.SetSessionFolders(ctx, sessionID, folders)
+}
+
+// ClearSessionFolders (A-216) gives the session the agent's whole sandbox back; it
+// reports whether the session had folders.
+func (a *Agent) ClearSessionFolders(sessionID string) bool {
+	if a.sandboxes == nil {
+		return false
+	}
+	return a.sandboxes.ClearSessionFolders(sessionID)
+}
+
+// SessionFolders (A-216) are the folders of the agent's sandbox the session is scoped
+// to; false = the whole sandbox.
+func (a *Agent) SessionFolders(sessionID string) ([]string, bool) {
+	if a.sandboxes == nil {
+		return nil, false
+	}
+	return a.sandboxes.SessionFolders(sessionID)
 }
 
 // UpdateSandbox changes where the agent's file and terminal tools run.
