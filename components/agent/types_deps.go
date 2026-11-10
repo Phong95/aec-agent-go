@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/Phong95/aec-agent-go/components/agent/command"
+	"github.com/Phong95/aec-agent-go/components/agent/conversation"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
@@ -79,6 +80,9 @@ type Deps struct {
 	// on every turn. Optional: nil, or a nil runner, means the agent's own Chat, which
 	// takes none of the host's bookkeeping (its lock, stop registry, usage).
 	ChannelRunner func() channel.TurnRunner
+	// ConversationScope (A-220) narrows what the conversations tool shows, for several users
+	// on one agent. It is called on every tool call; nil, or a nil result, means no host scope.
+	ConversationScope func() conversation.Scope
 	// Agents (A-105) is the agents a subagent can be - AgentCore passes its orchestration.
 	// Optional: nil means the agent cannot delegate.
 	Agents SubagentHost

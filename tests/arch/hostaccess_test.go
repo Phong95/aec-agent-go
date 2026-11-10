@@ -28,7 +28,7 @@ import (
 // sandboxhub.View, and the artifacts only through toolhub.Context.GetArtifacts (T-05-08,
 // T-11-07, T-11-13). builtin/web, the package of the web tools, is guarded too, with one
 // per-package exception for exactly net and net/http (hostAccessNetwork).
-var hostAccessGuarded = []string{"components/persistence", "components/skillhub/skill", "components/skillhub", "components/artifacthub/artifact", "components/artifacthub", "components/sandboxhub", "aecmock", "components/agent/agentloop", "components/agent", "components/orchestration", "components/agent/memorysystem", "components/toolhub/builtin/skills", "internal/toolkit", "components/toolhub/builtin/clarify", "components/toolhub/builtin/workspace", "components/toolhub/builtin/artifacts", "components/toolhub/builtin/web", "components/toolhub/builtin/jobs", "components/toolhub/builtin/subagents", "components/secrethub", "components/toolhub/builtin/secrets", "components/toolhub/builtin/preview"}
+var hostAccessGuarded = []string{"components/persistence", "components/skillhub/skill", "components/skillhub", "components/artifacthub/artifact", "components/artifacthub", "components/sandboxhub", "aecmock", "components/agent/agentloop", "components/agent", "components/orchestration", "components/agent/memorysystem", "components/toolhub/builtin/skills", "internal/toolkit", "components/toolhub/builtin/clarify", "components/toolhub/builtin/workspace", "components/toolhub/builtin/artifacts", "components/toolhub/builtin/web", "components/toolhub/builtin/jobs", "components/toolhub/builtin/subagents", "components/secrethub", "components/toolhub/builtin/secrets", "components/toolhub/builtin/preview", "components/toolhub/builtin/channels", "components/toolhub/builtin/conversations"}
 
 // hostAccessNetwork are the per-package exceptions to the host-access ban: the import
 // paths a guarded package may use although forbiddenHostImports names them. Only
@@ -261,7 +261,7 @@ func TestNoHostAccessCatchesForbiddenImport(t *testing.T) {
 			t.Errorf("%s is not guarded", pkg)
 		}
 	}
-	if len(hostAccessGuarded) != 22 { // Update (A-126): 18 - promptjob and builtin/scheduling merged into job and builtin/jobs; Update (A-105): 19 - builtin/subagents; Update (A-101): 21 - secrethub (with secrethub/secret) and builtin/secrets; Update (A-124): 22 - builtin/preview
+	if len(hostAccessGuarded) != 24 { // Update (A-126): 18 - promptjob and builtin/scheduling merged into job and builtin/jobs; Update (A-105): 19 - builtin/subagents; Update (A-101): 21 - secrethub (with secrethub/secret) and builtin/secrets; Update (A-124): 22 - builtin/preview; A-219, A-220: 24 - builtin/channels, builtin/conversations
 		t.Errorf("the guarded set has %d packages, want exactly 22: %v", len(hostAccessGuarded), hostAccessGuarded)
 	}
 	// A nested guarded package is matched by its directory prefix: its sub-directories

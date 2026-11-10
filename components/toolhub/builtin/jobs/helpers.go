@@ -257,7 +257,7 @@ func resolveDeliveries(tc toolhub.Context, deliver string, channels []string, wh
 	case deliver == "none":
 		return nil, true, ""
 	case len(channels) > 0:
-		homes, errText := matchHomes(opts.Homes, channels)
+		homes, errText := job.MatchHomes(opts.Homes, channels)
 		if errText != "" {
 			return nil, true, errText
 		}
@@ -281,38 +281,6 @@ func resolveDeliveries(tc toolhub.Context, deliver string, channels []string, wh
 		out[i].When = when
 	}
 	return out, deliver != "" || len(channels) > 0, ""
-}
-
-// matchHomes picks the home chats named: by channel name, platform or id, ignoring case.
-func matchHomes(homes []job.HomeChat, names []string) ([]job.HomeChat, string) {
-	var picked []job.HomeChat
-	for _, name := range names {
-		found := false
-		for _, h := range homes {
-			if strings.EqualFold(h.Name, name) || strings.EqualFold(h.Platform, name) || h.ChannelID == name {
-				found = true
-				if !slices.Contains(picked, h) {
-					picked = append(picked, h)
-				}
-			}
-		}
-		if !found {
-			return nil, `no channel "` + name + `" has a home chat ` + emDash + " " + homesText(homes)
-		}
-	}
-	return picked, ""
-}
-
-// homesText names the channels that have a home chat, for the model.
-func homesText(homes []job.HomeChat) string {
-	if len(homes) == 0 {
-		return "no channel has a home chat yet (the user sends /sethome in the chat that should get the results)"
-	}
-	names := make([]string, 0, len(homes))
-	for _, h := range homes {
-		names = append(names, `"`+h.Name+`" (`+h.Platform+`)`)
-	}
-	return "channels with a home chat: " + strings.Join(names, ", ")
 }
 
 // deliveryText is what a result says about where a job's results go.

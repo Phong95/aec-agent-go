@@ -5,7 +5,7 @@ import "encoding/json"
 // DefaultAccess is the access of a channel that sets none: pairing in direct messages,
 // groups ignored, and in groups only messages that mention the bot.
 func DefaultAccess() Access {
-	return Access{DmPolicy: DmPairing, AllowFrom: []string{}, GroupPolicy: GroupDisabled, Groups: []string{}, RequireMention: true}
+	return Access{DmPolicy: DmPairing, AllowFrom: []string{}, GroupPolicy: GroupDisabled, Groups: []string{}, RequireMention: true, ConversationAccess: ConversationAccessChat}
 }
 
 // DefaultSettings are the settings of a channel that sets none: streamed replies and the

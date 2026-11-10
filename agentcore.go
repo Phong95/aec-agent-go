@@ -10,6 +10,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/agent"
 	"github.com/Phong95/aec-agent-go/components/agent/command"
+	"github.com/Phong95/aec-agent-go/components/agent/conversation"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
@@ -103,9 +104,11 @@ type AgentCore struct {
 	// channels is the channel platform hub: the chat platforms agents' channels connect through
 	// (A-100); it has its own lock. channelRunner runs the channel turns of every agent (nil means
 	// each agent's Chat) and channelsStarted is set by StartChannels; both are guarded by mu.
-	channels        *channelplatformhub.ChannelPlatformHub
-	channelRunner   channel.TurnRunner
-	channelsStarted bool
+	channels      *channelplatformhub.ChannelPlatformHub
+	channelRunner channel.TurnRunner
+	// conversationScope (A-220) narrows what the conversations tool shows.
+	conversationScope conversation.Scope
+	channelsStarted   bool
 	// mcpStarted is set by StartMcp (A-208): every agent spawned afterwards connects its
 	// MCP servers too. Guarded by mu.
 	mcpStarted bool
@@ -525,6 +528,8 @@ func (c *AgentCore) spawnFactory(ctx context.Context, p profile.AgentProfile) (*
 		// A-100: the channel platform hub is shared; the runner is read on every turn.
 		ChannelPlatformHub: c.channels,
 		ChannelRunner:      c.channelTurnRunner,
+		// A-220: read on every conversations tool call.
+		ConversationScope: c.conversationScopeHook,
 		// A-105: the agents a subagent can be, and the runner of child turns (read on every
 		// child run).
 		Agents:         c.agents,
@@ -834,6 +839,23 @@ func (c *AgentCore) channelTurnRunner() channel.TurnRunner {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.channelRunner
+}
+
+// UseConversationScope limits what the conversations tool shows (A-220), for a host with
+// several users on one agent. Without it every conversation of the agent is visible to its
+// web sessions, so such a host must set this before giving agents that tool. It applies to
+// the agents that are already live too. A nil scope removes it.
+func (c *AgentCore) UseConversationScope(scope conversation.Scope) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.conversationScope = scope
+}
+
+// conversationScopeHook is the scope set with UseConversationScope (nil when none).
+func (c *AgentCore) conversationScopeHook() conversation.Scope {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.conversationScope
 }
 
 // HandleChannelWebhook routes an inbound webhook request to the channel it is for (A-100

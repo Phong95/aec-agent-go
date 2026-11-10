@@ -37,7 +37,7 @@ const (
 // Update (A-211): "job" replaces manage_job (list_jobs is its list action now).
 // Update (A-212): "secret" replaces manage_secret (list_secrets is its list action now).
 // Update (A-215): "variable" - no lasting changes from a child.
-var childExcludedTools = []string{"spawn_subagent", "clarify", "job", "skill_manage", "secret", "variable"}
+var childExcludedTools = []string{"spawn_subagent", "clarify", "job", "skill_manage", "secret", "variable", "channel", "conversations"}
 
 // ChildExcludedTools returns the tools a child never gets, whatever its access, as a
 // fresh slice.

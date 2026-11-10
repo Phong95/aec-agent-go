@@ -109,6 +109,8 @@ type FakeChannelAdapter struct {
 	typing  []channel.Target
 	nextID  int
 	cmds    []channel.BotCommand
+	// failNext is what the next Send returns (FailNextSend); nil means it succeeds.
+	failNext error
 }
 
 var (
@@ -155,10 +157,21 @@ func (a *FakeChannelAdapter) Started() bool {
 func (a *FakeChannelAdapter) Send(_ context.Context, target channel.Target, m channel.OutboundMessage) (channel.MessageRef, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.failNext; err != nil {
+		a.failNext = nil
+		return channel.MessageRef{}, err
+	}
 	a.nextID++
 	ref := channel.MessageRef{ChatID: target.ChatID, MessageID: fmt.Sprintf("out-%d", a.nextID)}
 	a.sent = append(a.sent, FakeSentMessage{MessageRef: ref, Target: target, Text: m.Text, Format: m.Format, Buttons: cloneButtons(m.Buttons)})
 	return ref, nil
+}
+
+// FailNextSend makes the next Send return err (A-219), as a platform refusing a message.
+func (a *FakeChannelAdapter) FailNextSend(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.failNext = err
 }
 
 // Edit replaces a sent message's text, format and buttons (none given = removed).

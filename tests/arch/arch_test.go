@@ -99,7 +99,9 @@ var layerTable = map[string][]string{
 	// Jobs, its Error, the filter, the prompt, the reply markers and the webhook
 	// signatures) - promptjob and trigger merged; agent/internal/jobkit is triggerkit.
 	"components/agent/internal/jobkit": {"internal/jsonx", "internal/jsstr", "kernel/ordered"},
-	"components/agent/job":             {"kernel", "kernel/ordered", "internal/jsonx", "internal/jsstr", "components/agent/internal/jobkit"},
+	// A-220: the conversations tool's contracts, shared by toolhub, agentloop, agent and the root.
+	"components/agent/conversation": {"kernel", "kernel/ordered"},
+	"components/agent/job":          {"kernel", "kernel/ordered", "internal/jsonx", "internal/jsstr", "components/agent/internal/jobkit"},
 	// A-105: subagent is the contract of subagents (Config, Request, Run, Runner, Subagents,
 	// its Error and the brief helpers), shared by profile, persistence, toolhub, agentloop,
 	// agent, conformance and the root.
@@ -146,8 +148,8 @@ var layerTable = map[string][]string{
 	"components/channelplatformhub/slack":               {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
 	"components/channelplatformhub/discord":             {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
 	"components/channelplatformhub/teams":               {"components/channelplatformhub/channel", "components/channelplatformhub/internal/adapterkit", "internal/jsonx"},
-	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret", "components/agent/skilllearning/learning", "components/mcphub/mcpserver", "components/variablehub/variable"}, // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets; A-208: AgentProfile.Mcp; A-215: AgentProfile.Variables
-	"components/toolhub":                                {"kernel", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "internal/jsonx", "kernel/ordered", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/variablehub/variable"},         // Update (A-70 agent tools): toolhub.Context.Triggers is a trigger.Triggers; A-105: toolhub.Context.Subagents; A-101: toolhub.Context.Secrets; A-215: toolhub.Context.Variables
+	"components/agent/profile":                          {"components/sandboxhub", "components/agent/memorysystem/memory", "kernel", "internal/jsonx", "components/agent/subagent", "components/secrethub/secret", "components/agent/skilllearning/learning", "components/mcphub/mcpserver", "components/variablehub/variable"},                                                                   // A-105: AgentProfile.Subagents; A-101: AgentProfile.Secrets; A-208: AgentProfile.Mcp; A-215: AgentProfile.Variables
+	"components/toolhub":                                {"kernel", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "internal/jsonx", "kernel/ordered", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/variablehub/variable", "components/channelplatformhub/channel", "components/agent/conversation"}, // A-219/A-220: toolhub.Context.Channels and Conversations; Update (A-70 agent tools): toolhub.Context.Triggers is a trigger.Triggers; A-105: toolhub.Context.Subagents; A-101: toolhub.Context.Secrets; A-215: toolhub.Context.Variables
 	"components/llmhub":                                 {"kernel", "components/toolhub", "internal/jsonx", "internal/jsstr", "internal/viewkit", "internal/redact", "kernel/ordered"},
 	"components/persistence":                            {"kernel", "components/agent/profile", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/llmhub", "kernel/ordered", "internal/jsonx", "internal/nilcheck", "internal/redact", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/subagenthub/subagenttype", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning", "components/mcphub/mcpserver", "components/variablehub/variable"}, // A-215: VariableStore; A-166: SkillProposalStore; A-105: SubagentRunStore; A-105 revision: SubagentTypeStore; A-101: SecretStore; A-106: GroupStore, GroupMessageStore; A-208: McpServerStore
 	"components/skillhub":                               {"kernel", "components/skillhub/skill", "components/persistence", "components/events", "kernel/ordered", "internal/nilcheck"},
@@ -155,7 +157,7 @@ var layerTable = map[string][]string{
 	// Phase 9: agentloop is the OTAR loop. It talks to the rest of the SDK only
 	// through its consumer-side ports, so it imports neither persistence nor a
 	// concrete tool hub; aecmock and conformance sit above it.
-	"components/agent/agentloop": {"kernel", "internal/redact", "components/events", "components/trace", "components/toolhub", "components/llmhub", "components/agent/profile", "components/agent/memorysystem/memory", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/variablehub/variable"}, // Update (A-70 agent tools): agentloop.Deps.Triggers, handed to the tools; A-105: agentloop.Deps.Subagents; A-101: agentloop.Deps.Secrets; A-215: agentloop.Deps.Variables
+	"components/agent/agentloop": {"kernel", "internal/redact", "components/events", "components/trace", "components/toolhub", "components/llmhub", "components/agent/profile", "components/agent/memorysystem/memory", "components/sandboxhub", "components/artifacthub/artifact", "components/skillhub/skill", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/variablehub/variable", "components/channelplatformhub/channel", "components/agent/conversation"}, // A-219/A-220: agentloop.Deps.Channels and Conversations; Update (A-70 agent tools): agentloop.Deps.Triggers, handed to the tools; A-105: agentloop.Deps.Subagents; A-101: agentloop.Deps.Secrets; A-215: agentloop.Deps.Variables
 	"aecmock":                    {"components/channelplatformhub/channel", "kernel", "components/toolhub", "components/llmhub", "components/persistence", "components/sandboxhub", "components/agent/agentloop", "components/agent/profile", "components/agent/memorysystem/memory", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/viewkit"},
 	"conformance":                {"kernel", "components/events", "components/toolhub", "components/llmhub", "components/persistence", "components/agent/memorysystem/memory", "components/artifacthub/artifact", "components/skillhub/skill", "components/agent/profile", "components/sandboxhub", "kernel/ordered", "components/agent/agentloop", "components/trace", "conformance/internal/check", "components/channelplatformhub/channel", "components/agent/job", "components/agent/subagent", "components/secrethub/secret", "components/grouphub/group", "components/agent/skilllearning/learning"},
 	"conformance/internal/check": {},
@@ -188,6 +190,8 @@ var layerTable = map[string][]string{
 		// shared JSON helpers.
 		// Update (A-126): the job contracts the agent's job manager implements.
 		"components/agent/job", "components/agent/internal/jobkit",
+		// A-220: the conversations contract the agent's conversation manager implements.
+		"components/agent/conversation",
 		// A-105: the subagent contracts the agent's subagent manager implements.
 		"components/agent/subagent",
 		// A-105 revision: the library of subagent types (Deps.SubagentHub) and their contract.
@@ -236,7 +240,12 @@ var layerTable = map[string][]string{
 	// Update (A-126): builtin/jobs holds manage_job and list_jobs; it reaches the agent's
 	// jobs only through toolhub.Context.Jobs; host-access guarded.
 	// Update (A-211): one job tool (manage_job + list_jobs); the same imports.
-	"components/toolhub/builtin/jobs": {"kernel", "components/toolhub", "components/agent/job", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
+	// A-219: builtin/channels holds the channel tool; it reaches chat apps only through
+	// toolhub.Context.Channels. A-220: builtin/conversations holds the conversations tool,
+	// through toolhub.Context.Conversations. Both host-access guarded.
+	"components/toolhub/builtin/channels":      {"components/toolhub", "components/channelplatformhub/channel", "kernel", "kernel/ordered", "internal/nilcheck", "internal/toolkit"},
+	"components/toolhub/builtin/conversations": {"components/toolhub", "components/agent/conversation", "kernel", "kernel/ordered", "internal/nilcheck", "internal/toolkit"},
+	"components/toolhub/builtin/jobs":          {"kernel", "components/toolhub", "components/agent/job", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
 	// A-105: builtin/subagents holds spawn_subagent; it reaches the agent's subagents only
 	// through toolhub.Context.Subagents; host-access guarded.
 	"components/toolhub/builtin/subagents": {"kernel", "components/toolhub", "components/agent/subagent", "kernel/ordered", "internal/jsstr", "internal/nilcheck", "internal/toolkit"},
@@ -271,6 +280,8 @@ var layerTable = map[string][]string{
 		// A-70: AgentCore.UseTriggerRunner / HandleTriggerWebhook take trigger types.
 		// Update (A-126): AgentCore.UseJobRunner / HandleJobWebhook take job types.
 		"components/agent/job",
+		// A-220: AgentCore.UseConversationScope takes a conversation.Scope.
+		"components/agent/conversation",
 		// A-105: AgentCore.UseSubagentRunner takes a subagent.Runner.
 		"components/agent/subagent",
 		// A-105 revision: AgentCore owns the subagent type library (UseSubagentType).

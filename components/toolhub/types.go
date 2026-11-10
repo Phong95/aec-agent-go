@@ -17,8 +17,10 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/Phong95/aec-agent-go/components/agent/conversation"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
+	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 
@@ -417,6 +419,12 @@ type Context struct {
 	// and the agent's channels with a home chat (Homes). By default a job delivers to Here,
 	// else to every home chat; manage_job can name the home chats instead.
 	JobDeliveryOptions job.DeliveryOptions
+	// Channels (A-219) posts to the agent's channels - used by the channel tool. Nil outside
+	// an agent.
+	Channels channel.ToolPort
+	// Conversations (A-220) is the agent's other conversations - used by the conversations
+	// tool. Nil outside an agent.
+	Conversations conversation.Conversations
 	// Subagents (A-105) is the agent's subagents - used by spawn_subagent. Nil outside an
 	// agent, or when the host wired none.
 	Subagents subagent.Subagents

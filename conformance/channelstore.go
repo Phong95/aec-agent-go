@@ -75,7 +75,7 @@ func ChannelStore(t *testing.T, newStore ChannelStoreFactory) {
 		s := fresh(t)
 		full := channelFixture("", "")
 		full.Credentials = map[string]string{"botToken": "123:abc", "extra": "x"}
-		full.Access = channel.Access{DmPolicy: channel.DmAllowlist, AllowFrom: []string{"1", "2"}, GroupPolicy: channel.GroupAllowlist, Groups: []string{"-100"}, RequireMention: false}
+		full.Access = channel.Access{DmPolicy: channel.DmAllowlist, AllowFrom: []string{"1", "2"}, GroupPolicy: channel.GroupAllowlist, Groups: []string{"-100"}, RequireMention: false, ConversationAccess: channel.ConversationAccessAgent}
 		full.Settings = channel.Settings{Streaming: false, ToolProgress: false}
 		full.Enabled = false
 		full.Account = &channel.AccountInfo{ID: "42", Username: "my_bot", DisplayName: "My Bot"}

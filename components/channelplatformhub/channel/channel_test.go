@@ -20,7 +20,7 @@ func TestChannelCloneIsDeep(t *testing.T) {
 	sample := channel.Channel{
 		ID: "c1", AgentID: "a1", Platform: "telegram", Name: "n",
 		Credentials: map[string]string{"botToken": "t"},
-		Access:      channel.Access{DmPolicy: channel.DmAllowlist, AllowFrom: []string{"1"}, GroupPolicy: channel.GroupOpen, Groups: []string{"g"}, RequireMention: true},
+		Access:      channel.Access{DmPolicy: channel.DmAllowlist, AllowFrom: []string{"1"}, GroupPolicy: channel.GroupOpen, Groups: []string{"g"}, RequireMention: true, ConversationAccess: channel.ConversationAccessAgent},
 		Settings:    channel.Settings{Streaming: true, ToolProgress: true},
 		Enabled:     true, Account: &channel.AccountInfo{ID: "42", Username: "u", DisplayName: "d"},
 		Home:      &channel.Home{ChatID: "c9", ThreadID: "t1", Title: "Site", SetBy: "1", SetAt: "s"},

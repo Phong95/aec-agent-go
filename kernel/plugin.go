@@ -20,7 +20,7 @@ import (
 // contract and with AgentCore in Phase 10.
 // Update: registration lives on AgentCore (UsePersistence, UseLLMProvider, UseTool,
 // UseSkill, UseSandboxProvider, UseJobRunner, UseSubagentType, UseSecretHubProvider,
-// UseSubagentRunner, UseChannelPlatform, UseChannelTurnRunner, UseCommand, UseMcp); there is no Kernel
+// UseSubagentRunner, UseChannelPlatform, UseChannelTurnRunner, UseConversationScope, UseCommand, UseMcp); there is no Kernel
 // interface in Go - AgentCore is the API.
 
 // Plugin is the required identity of every plugin.

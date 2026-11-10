@@ -52,6 +52,13 @@ func (l *Loop) buildToolContext(r *runState) toolhub.Context {
 	if l.deps.JobDeliveryOptions != nil {
 		tc.JobDeliveryOptions = l.deps.JobDeliveryOptions(r.session.ID)
 	}
+	// A-219: for the channel tool. A-220: for the conversations tool.
+	if !nilcheck.IsNil(l.deps.Channels) {
+		tc.Channels = l.deps.Channels
+	}
+	if !nilcheck.IsNil(l.deps.Conversations) {
+		tc.Conversations = l.deps.Conversations
+	}
 	// A-105: for spawn_subagent.
 	if !nilcheck.IsNil(l.deps.Subagents) {
 		tc.Subagents = l.deps.Subagents

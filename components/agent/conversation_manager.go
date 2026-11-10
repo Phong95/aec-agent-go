@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Phong95/aec-agent-go/components/agent/conversation"
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/persistence"
 	"github.com/Phong95/aec-agent-go/kernel"
@@ -126,6 +127,9 @@ type ConversationManager struct {
 	// no event).
 	bus     events.Bus
 	agentID string
+	// visibility (A-220) says who may see which conversations; nil means the conversations
+	// tool has nothing to show.
+	visibility *conversation.Visibility
 }
 
 // ConversationOption configures a ConversationManager.

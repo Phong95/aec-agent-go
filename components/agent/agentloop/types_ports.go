@@ -4,8 +4,10 @@ import (
 	"context"
 	"iter"
 
+	"github.com/Phong95/aec-agent-go/components/agent/conversation"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/subagent"
+	"github.com/Phong95/aec-agent-go/components/channelplatformhub/channel"
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 
@@ -278,6 +280,12 @@ type Deps struct {
 	// Update (A-127): JobDeliveryOptions - that chat, and the home chats of the agent's
 	// channels (where a job made outside a chat app reports).
 	JobDeliveryOptions func(sessionID string) job.DeliveryOptions
+	// Channels (A-219) is the channel tool's port, handed to tools as
+	// toolhub.Context.Channels. Nil means none.
+	Channels channel.ToolPort
+	// Conversations (A-220) is the conversations tool's port, handed to tools as
+	// toolhub.Context.Conversations. Nil means none.
+	Conversations conversation.Conversations
 	// Subagents (A-105) is the agent's subagents, handed to tools as
 	// toolhub.Context.Subagents for spawn_subagent. Nil means none.
 	Subagents subagent.Subagents

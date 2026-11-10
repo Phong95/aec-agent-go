@@ -10,6 +10,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/components/agent/agentloop"
 	"github.com/Phong95/aec-agent-go/components/agent/command"
+	"github.com/Phong95/aec-agent-go/components/agent/conversation"
 	"github.com/Phong95/aec-agent-go/components/agent/job"
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem"
 	"github.com/Phong95/aec-agent-go/components/agent/memorysystem/memory"
@@ -461,7 +462,9 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	// The runs' context ends with the lifetime one, so the cancel of a failed New (above)
 	// releases it too.
 	// A-135: it also holds each session's approval mode and announces changes on the bus.
-	a.conv = NewConversationManager(deps.PersistenceHub, withTurns(lifetime, a.maxConcurrentTurns), withApprovalEvents(deps.Events, own.ID)) //nolint:contextcheck // derived from the lifetime context on purpose (10-SECURITY UF-3)
+	a.conv = NewConversationManager(deps.PersistenceHub, withTurns(lifetime, a.maxConcurrentTurns), withApprovalEvents(deps.Events, own.ID), //nolint:contextcheck // derived from the lifetime context on purpose (10-SECURITY UF-3)
+		// A-220: what the conversations tool may show; the channel side answers for chat app turns.
+		withVisibility(conversation.Visibility{AgentID: own.ID, Reach: a.channels.conversationReach, Scope: deps.ConversationScope}))
 	// A-136: slash commands - the built-ins work through the managers (the loop is built
 	// below and read when a command runs); the host's (Deps.HostCommands) are read on
 	// every call.
@@ -554,6 +557,9 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		// Telegram) sends its results back to that chat.
 		// Update (A-127): and the home chats of the agent's channels.
 		JobDeliveryOptions: a.channels.deliveryOptions,
+		// A-219: for the channel tool. A-220: for the conversations tool.
+		Channels:      channelToolPort{a.channels},
+		Conversations: a.conv,
 		// Resolved on every tool batch, so a handler set on the hub after the agent was
 		// spawned is picked up.
 		// A-100 phase 2 - the interaction router: a channel turn's approvals and questions

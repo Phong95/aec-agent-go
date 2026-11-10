@@ -71,7 +71,22 @@ type Access struct {
 	// RequireMention: in groups, answer only messages that @-mention the bot or reply to
 	// it (default true).
 	RequireMention bool `json:"requireMention"`
+	// ConversationAccess (A-220) is what the conversations tool shows in this channel's
+	// turns. ConversationAccessChat (the default, and what an empty value means): only that
+	// chat's own earlier conversations. ConversationAccessAgent: a direct message from a
+	// sender in AllowFrom sees the agent's other conversations too, as on the web. Being in
+	// AllowFrom is not enough alone, because approving a pairing code adds a person to it.
+	ConversationAccess ConversationAccess `json:"conversationAccess,omitempty"`
 }
+
+// ConversationAccess is Access.ConversationAccess (A-220).
+type ConversationAccess string
+
+// The conversation accesses. The string values are stable wire values.
+const (
+	ConversationAccessChat  ConversationAccess = "chat"
+	ConversationAccessAgent ConversationAccess = "agent"
+)
 
 // Settings say how replies are shown in the chat (phase 2).
 type Settings struct {
@@ -148,6 +163,8 @@ type AccessInput struct {
 	GroupPolicy    *GroupPolicy `json:"groupPolicy,omitempty"`
 	Groups         []string     `json:"groups,omitempty"`
 	RequireMention *bool        `json:"requireMention,omitempty"`
+	// ConversationAccess (A-220).
+	ConversationAccess *ConversationAccess `json:"conversationAccess,omitempty"`
 }
 
 // SettingsInput is a partial Settings: a nil field is left as it is.

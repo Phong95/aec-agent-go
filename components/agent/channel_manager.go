@@ -199,6 +199,10 @@ type channelManager struct {
 	prompts     *channelPrompts
 	// unsubscribe drops the scheduled-job subscriptions (phase 3 delivery) on close.
 	unsubscribe []events.Unsubscribe
+	// recordCtx (A-219) bounds adding a sent message to a chat's conversation, which waits
+	// for that chat's turn; close ends it so it never holds up a dispose.
+	recordCtx   context.Context //nolint:containedctx // derived from the lifetime context, like d.lifetime
+	stopRecords context.CancelFunc
 	seenLog     []string
 	gen         uint64
 	started     bool
@@ -220,6 +224,7 @@ func newChannelManager(d channelManagerDeps) *channelManager {
 		chatSessions: map[string]string{}, chatRuns: map[string]*chatRun{}, chatQueues: map[string]*chatQueue{},
 		ops: map[string]*sync.Mutex{}, seen: map[string]struct{}{}, activeTurns: map[string]promptChat{},
 	}
+	m.recordCtx, m.stopRecords = context.WithCancel(d.lifetime)
 	m.prompts = newChannelPrompts(channelPromptsDeps{
 		send: func(ctx context.Context, chat promptChat, msg channel.OutboundMessage) (channel.MessageRef, bool) {
 			m.mu.Lock()
@@ -396,6 +401,7 @@ func (m *channelManager) start(ctx context.Context) error {
 func (m *channelManager) close(ctx context.Context, wait bool) error {
 	m.mu.Lock()
 	m.closed = true
+	m.stopRecords()
 	for _, run := range m.chatRuns {
 		run.cancel()
 	}
@@ -1697,23 +1703,34 @@ func (m *channelManager) deliver(sessionID string, origin resultOrigin, d events
 // message, so the chat's next turn knows what was posted. The job's own session keeps
 // the run as before. A failure is logged: the result was delivered either way.
 func (m *channelManager) recordResult(ctx context.Context, ch channel.Channel, platform channel.Platform, target channel.Target, origin resultOrigin, res jobResult) {
+	m.recordSent(ctx, ch, platform, target, resultText(origin, res, true), origin.label())
+}
+
+// recordSent (A-219) adds text that was posted in a chat to that chat's conversation. A
+// failure is logged.
+func (m *channelManager) recordSent(ctx context.Context, ch channel.Channel, platform channel.Platform, target channel.Target, content, what string) {
 	if m.d.appendMessage == nil {
 		return
 	}
 	sessionID, err := m.chatSession(ctx, ch, platform, target)
 	if err == nil {
-		err = m.d.appendMessage(ctx, sessionID, kernel.Message{Role: kernel.RoleAssistant, Content: resultText(origin, res, true)})
+		err = m.d.appendMessage(ctx, sessionID, kernel.Message{Role: kernel.RoleAssistant, Content: content})
 	}
 	if err != nil {
-		m.d.logger.Warn("[channels] could not add "+origin.label()+" to the chat's conversation", "agent", m.d.agentID, "channel", ch.ID, "error", err.Error())
+		m.d.logger.Warn("[channels] could not add "+what+" to the chat's conversation", "agent", m.d.agentID, "channel", ch.ID, "error", err.Error())
 	}
 }
 
 // sendResult sends a job's result as chat messages: Markdown when the adapter renders
 // it, split to its length.
 func (m *channelManager) sendResult(ctx context.Context, lc *liveChannel, target channel.Target, origin resultOrigin, res jobResult) ([]channel.MessageRef, error) {
+	return m.sendFormatted(ctx, lc, target, resultText(origin, res, lc.adapter.Capabilities().Markdown))
+}
+
+// sendFormatted (A-219) sends text as chat messages: Markdown when the adapter renders it,
+// split to its length.
+func (m *channelManager) sendFormatted(ctx context.Context, lc *liveChannel, target channel.Target, text string) ([]channel.MessageRef, error) {
 	caps := lc.adapter.Capabilities()
-	text := resultText(origin, res, caps.Markdown)
 	var parts []string
 	if caps.Markdown {
 		parts = channel.SplitMarkdown(text, caps.MaxMessageLength)
@@ -2285,6 +2302,7 @@ func mergeAccess(base channel.Access, in *channel.AccessInput) (channel.Access, 
 	out := channel.Access{
 		DmPolicy: base.DmPolicy, AllowFrom: slices.Clone(base.AllowFrom),
 		GroupPolicy: base.GroupPolicy, Groups: slices.Clone(base.Groups), RequireMention: base.RequireMention,
+		ConversationAccess: base.ConversationAccess,
 	}
 	if in != nil {
 		if in.DmPolicy != nil {
@@ -2302,6 +2320,18 @@ func mergeAccess(base channel.Access, in *channel.AccessInput) (channel.Access, 
 		if in.RequireMention != nil {
 			out.RequireMention = *in.RequireMention
 		}
+		if in.ConversationAccess != nil {
+			out.ConversationAccess = *in.ConversationAccess
+		}
+	}
+	// A-220: what the conversations tool shows in this channel's turns; a channel stored
+	// before it existed has none.
+	switch out.ConversationAccess {
+	case channel.ConversationAccessChat, channel.ConversationAccessAgent:
+	case "":
+		out.ConversationAccess = channel.ConversationAccessChat
+	default:
+		return channel.Access{}, channel.NewError(`"conversationAccess" must be "chat" or "agent"`, channel.CodeInvalidArgument, "")
 	}
 	switch out.GroupPolicy {
 	case channel.GroupDisabled, channel.GroupAllowlist, channel.GroupOpen:
