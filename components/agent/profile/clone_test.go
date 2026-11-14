@@ -12,6 +12,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/internal/clonecheck"
+	"github.com/Phong95/aec-agent-go/kernel"
 )
 
 // fullProfile fills every field of an AgentProfile and of every sub-config.
@@ -74,6 +75,8 @@ func fullProfile() profile.AgentProfile {
 			Enabled: true, Mode: learning.ModeAuto, MinToolCalls: &concurrent, MinFailedCalls: &keep, VerdictWaitMinutes: &maxIter,
 			MaxLearnedSkills: &maxResults, RetireAfterDays: &backoff, VerificationsPerDay: &maxIter,
 		},
+		// The approval mode new chat sessions start in.
+		DefaultApprovalMode: kernel.ApprovalModeYolo,
 	}
 }
 

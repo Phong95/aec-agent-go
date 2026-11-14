@@ -130,6 +130,10 @@ type ConversationManager struct {
 	// visibility (A-220) says who may see which conversations; nil means the conversations
 	// tool has nothing to show.
 	visibility *conversation.Visibility
+	// defaultApprovalMode is the approval mode new chat sessions start in
+	// (AgentProfile.DefaultApprovalMode), read at every start so a profile update applies.
+	// Nil, or "", means ApprovalModeAsk.
+	defaultApprovalMode func() kernel.ApprovalMode
 }
 
 // ConversationOption configures a ConversationManager.
@@ -165,6 +169,15 @@ func withApprovalEvents(bus events.Bus, agentID string) ConversationOption {
 	}
 }
 
+// WithDefaultApprovalMode makes new chat sessions (StartSession, and StartSessionFrom's
+// fresh session) start in the approval mode mode returns, read at every start. A mode
+// passed to StartSession wins. Nil (or "" from it) means ApprovalModeAsk.
+func WithDefaultApprovalMode(mode func() kernel.ApprovalMode) ConversationOption {
+	return func(c *ConversationManager) {
+		c.defaultApprovalMode = mode
+	}
+}
+
 // -> Superseded (A-97): runSessionKey ("the context key of the session a run is bound
 // to"), withRunSession ("returns ctx bound to the session of a run (see
 // ConversationManager)") and checkRunSession ("the guard of every write: it fails when
@@ -197,7 +210,33 @@ func NewConversationManager(hub *persistence.PersistenceHub, opts ...Conversatio
 // is stored on the session and the session is updated; when that update fails the
 // session stays active and the error is returned.
 // (A-97: "active" = the default session of the turns that name none.)
-func (c *ConversationManager) StartSession(ctx context.Context, metadata ordered.Object, llmModel string) (kernel.Session, error) {
+// The session starts in approvalMode, else the manager's default approval mode
+// (WithDefaultApprovalMode), else ApprovalModeAsk ("" = not given). A mode that is not
+// ask, yolo or plan is a kernel.SessionError with SessionCodeInvalid, returned before
+// anything is created.
+func (c *ConversationManager) StartSession(ctx context.Context, metadata ordered.Object, llmModel string, approvalMode kernel.ApprovalMode) (kernel.Session, error) {
+	s, err := c.createSession(ctx, metadata, llmModel, approvalMode, true)
+	if err != nil {
+		return kernel.Session{}, err
+	}
+	return s, nil
+}
+
+// CreateSession is StartSession without making the session the active one - for a host
+// that names the session of every turn (a server: another session of the agent may be
+// running a turn).
+func (c *ConversationManager) CreateSession(ctx context.Context, metadata ordered.Object, llmModel string, approvalMode kernel.ApprovalMode) (kernel.Session, error) {
+	return c.createSession(ctx, metadata, llmModel, approvalMode, false)
+}
+
+// createSession creates the session of StartSession and CreateSession; makeDefault makes
+// it the active one (before the update, so a failed update leaves it active, as
+// StartSession documents).
+func (c *ConversationManager) createSession(ctx context.Context, metadata ordered.Object, llmModel string, approvalMode kernel.ApprovalMode, makeDefault bool) (kernel.Session, error) {
+	mode, err := c.initialApprovalMode(approvalMode)
+	if err != nil {
+		return kernel.Session{}, err
+	}
 	s, err := c.hub.Sessions.Create(ctx, metadata)
 	if err != nil {
 		return kernel.Session{}, err
@@ -205,15 +244,37 @@ func (c *ConversationManager) StartSession(ctx context.Context, metadata ordered
 	if llmModel != "" {
 		s.LLMModel = llmModel
 	}
-	c.mu.Lock()
-	c.defaultID = s.ID
-	c.mu.Unlock()
-	if llmModel != "" {
+	s.ApprovalMode = mode
+	if makeDefault {
+		c.mu.Lock()
+		c.defaultID = s.ID
+		c.mu.Unlock()
+	}
+	if llmModel != "" || mode != "" {
 		if err := c.hub.Sessions.Update(ctx, s.Clone()); err != nil {
 			return kernel.Session{}, err
 		}
 	}
 	return s, nil
+}
+
+// initialApprovalMode is the approval mode to store on a new chat session: asked, else
+// the manager's default. "" for ApprovalModeAsk (the default, stored as no value, as
+// SetApprovalMode does). A mode that is not ask, yolo or plan is a kernel.SessionError
+// with SessionCodeInvalid.
+func (c *ConversationManager) initialApprovalMode(asked kernel.ApprovalMode) (kernel.ApprovalMode, error) {
+	mode := asked
+	if mode == "" && c.defaultApprovalMode != nil {
+		mode = c.defaultApprovalMode()
+	}
+	switch mode {
+	case "", kernel.ApprovalModeAsk:
+		return "", nil
+	case kernel.ApprovalModeYolo, kernel.ApprovalModePlan:
+		return mode, nil
+	default:
+		return "", kernel.NewSessionError(fmt.Sprintf("%q is not an approval mode (ask, yolo or plan)", string(mode)), kernel.SessionCodeInvalid, false)
+	}
 }
 
 // LoadSession makes the stored session the active one and loads its messages and
@@ -544,15 +605,21 @@ func (c *ConversationManager) StartSessionFrom(ctx context.Context, fromSessionI
 	}
 	metadata := from.Metadata.Clone()
 	metadata.Delete("title")
+	// A new chat: it starts in the default approval mode, not the old session's.
+	mode, err := c.initialApprovalMode("")
+	if err != nil {
+		return kernel.Session{}, true, err
+	}
 	s, err := c.hub.Sessions.Create(ctx, metadata)
 	if err != nil {
 		return kernel.Session{}, true, err
 	}
-	if from.LLMModel != "" || from.ContextWindowTokens != 0 || from.ReasoningEffort != "" {
+	if from.LLMModel != "" || from.ContextWindowTokens != 0 || from.ReasoningEffort != "" || mode != "" {
 		s.LLMModel = from.LLMModel
 		s.ContextWindowTokens = from.ContextWindowTokens
 		// A-164: the reasoning effort goes with the model.
 		s.ReasoningEffort = from.ReasoningEffort
+		s.ApprovalMode = mode
 		if err := c.hub.Sessions.Update(ctx, s.Clone()); err != nil {
 			return kernel.Session{}, true, err
 		}

@@ -205,8 +205,9 @@ func completeOptions(opts []CompleteOption) callOptions {
 
 // sessionOptions are the settings a SessionOption changes.
 type sessionOptions struct {
-	metadata ordered.Object
-	model    string
+	metadata     ordered.Object
+	model        string
+	approvalMode kernel.ApprovalMode
 }
 
 // SessionOption is an option of Agent.StartSession. Options are applied in order.
@@ -221,4 +222,11 @@ func WithMetadata(md ordered.Object) SessionOption {
 // when the call's options name no model. "" means none.
 func WithSessionModel(model string) SessionOption {
 	return func(o *sessionOptions) { o.model = model }
+}
+
+// WithSessionApprovalMode sets the approval mode the session starts in. Without it (or
+// with "") the session starts in the profile's DefaultApprovalMode, else
+// kernel.ApprovalModeAsk.
+func WithSessionApprovalMode(mode kernel.ApprovalMode) SessionOption {
+	return func(o *sessionOptions) { o.approvalMode = mode }
 }

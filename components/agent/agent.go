@@ -464,7 +464,9 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	// A-135: it also holds each session's approval mode and announces changes on the bus.
 	a.conv = NewConversationManager(deps.PersistenceHub, withTurns(lifetime, a.maxConcurrentTurns), withApprovalEvents(deps.Events, own.ID), //nolint:contextcheck // derived from the lifetime context on purpose (10-SECURITY UF-3)
 		// A-220: what the conversations tool may show; the channel side answers for chat app turns.
-		withVisibility(conversation.Visibility{AgentID: own.ID, Reach: a.channels.conversationReach, Scope: deps.ConversationScope}))
+		withVisibility(conversation.Visibility{AgentID: own.ID, Reach: a.channels.conversationReach, Scope: deps.ConversationScope}),
+		// The approval mode new chat sessions start in, read at every start.
+		WithDefaultApprovalMode(a.defaultApprovalMode))
 	// A-136: slash commands - the built-ins work through the managers (the loop is built
 	// below and read when a command runs); the host's (Deps.HostCommands) are read on
 	// every call.
@@ -744,6 +746,9 @@ func (a *Agent) Profile() profile.AgentProfile {
 // WithMetadata sets the metadata stored with the session, and
 // WithSessionModel the session's model override, which Chat and Complete apply when
 // the options name no model.
+// WithSessionApprovalMode sets the approval mode the session starts in; without it the
+// session starts in the profile's DefaultApprovalMode, else kernel.ApprovalModeAsk. An
+// unknown mode is a kernel.SessionError with SessionCodeInvalid.
 func (a *Agent) StartSession(ctx context.Context, opts ...SessionOption) (kernel.Session, error) {
 	var o sessionOptions
 	for _, opt := range opts {
@@ -751,7 +756,32 @@ func (a *Agent) StartSession(ctx context.Context, opts ...SessionOption) (kernel
 			opt(&o)
 		}
 	}
-	return a.conv.StartSession(ctx, o.metadata, o.model)
+	return a.conv.StartSession(ctx, o.metadata, o.model, o.approvalMode)
+}
+
+// CreateSession is StartSession without making the session the active one: for a host
+// whose turns all name their session (WithChatSession), e.g. a server creating a chat
+// while another session of the agent is running a turn.
+func (a *Agent) CreateSession(ctx context.Context, opts ...SessionOption) (kernel.Session, error) {
+	var o sessionOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return a.conv.CreateSession(ctx, o.metadata, o.model, o.approvalMode)
+}
+
+// UpdateDefaultApprovalMode sets the approval mode new chat sessions start in
+// (AgentProfile.DefaultApprovalMode; "" or kernel.ApprovalModeAsk clears it). Sessions
+// that exist keep their mode.
+func (a *Agent) UpdateDefaultApprovalMode(mode kernel.ApprovalMode) {
+	if mode == kernel.ApprovalModeAsk {
+		mode = ""
+	}
+	a.mu.Lock()
+	a.profile.DefaultApprovalMode = mode
+	a.mu.Unlock()
 }
 
 // LoadSession makes a stored session the active one. The bool is
@@ -961,6 +991,14 @@ func (a *Agent) maxConcurrentTurns() int {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return profile.ResolveLoopConfig(a.profile.LoopConfig).MaxConcurrentTurns
+}
+
+// defaultApprovalMode is the approval mode new chat sessions start in
+// (AgentProfile.DefaultApprovalMode; "" = ask).
+func (a *Agent) defaultApprovalMode() kernel.ApprovalMode {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.profile.DefaultApprovalMode
 }
 
 // errorChunkYield wraps the consumer's yield for ChatStream: an error chunk is passed

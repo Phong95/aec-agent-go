@@ -12,6 +12,7 @@ import (
 
 	"github.com/Phong95/aec-agent-go/aecmock"
 	"github.com/Phong95/aec-agent-go/components/agent"
+	"github.com/Phong95/aec-agent-go/components/agent/command"
 	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/components/events"
 	"github.com/Phong95/aec-agent-go/components/llmhub"
@@ -83,6 +84,13 @@ type yoloRig struct {
 // call (ids tc-1, tc-2, ...), then ends the turn. A nil handler means no interactive user.
 func newYoloRig(t *testing.T, calls int, handler toolhub.InteractionHandler) *yoloRig {
 	t.Helper()
+	return newYoloRigWith(t, calls, handler, kernel.ApprovalMode(""))
+}
+
+// newYoloRigWith is newYoloRig for an agent whose profile has defaultMode as its
+// DefaultApprovalMode ("" = none).
+func newYoloRigWith(t *testing.T, calls int, handler toolhub.InteractionHandler, defaultMode kernel.ApprovalMode) *yoloRig {
+	t.Helper()
 	r := &yoloRig{e: newEnv(t, "unused"), tool: &sendRFITool{}}
 	var step atomic.Int32
 	model := aecmock.NewMockProvider("scripted", nil, aecmock.WithResponse(func([]kernel.Message) kernel.ModelResponse {
@@ -112,6 +120,7 @@ func newYoloRig(t *testing.T, calls int, handler toolhub.InteractionHandler) *yo
 	p.Tools = []string{"send_rfi"}
 	zero := 0
 	p.LoopConfig = &profile.LoopConfig{MaxToolRetries: &zero, RetryBackoffMs: &zero}
+	p.DefaultApprovalMode = defaultMode
 	r.a = r.e.spawn(t, p)
 	s, err := r.a.StartSession(t.Context())
 	mustOK(t, err)
@@ -308,5 +317,88 @@ func TestYoloModeForAnUnknownSession(t *testing.T) {
 	}
 	if m := r.mode(t, "nope"); m != kernel.ApprovalModeAsk {
 		t.Fatalf("mode = %q", m)
+	}
+}
+
+// The approval mode a new chat session starts in: the profile's DefaultApprovalMode,
+// unless StartSession names one.
+
+func TestDefaultApprovalModeStartsANewSessionInTheAgentsDefault(t *testing.T) {
+	r := newYoloRigWith(t, 1, nil, kernel.ApprovalModeYolo)
+	if r.session.ApprovalMode != kernel.ApprovalModeYolo || r.stored(t).ApprovalMode != kernel.ApprovalModeYolo {
+		t.Fatalf("returned %q, stored %q", r.session.ApprovalMode, r.stored(t).ApprovalMode)
+	}
+	if m := r.mode(t, r.session.ID); m != kernel.ApprovalModeYolo {
+		t.Fatalf("mode = %q", m)
+	}
+	chat(t, r.a, "go")
+	if n := r.tool.runs.Load(); n != 1 {
+		t.Fatalf("runs = %d", n)
+	}
+	if n := len(r.ofKind(events.ToolAutoApproved.Name)); n != 1 {
+		t.Fatalf("auto-approved = %d", n)
+	}
+}
+
+func TestDefaultApprovalModeLosesToTheModeStartSessionNames(t *testing.T) {
+	r := newYoloRigWith(t, 0, nil, kernel.ApprovalModeYolo)
+	planned, err := r.a.StartSession(t.Context(), agent.WithSessionApprovalMode(kernel.ApprovalModePlan))
+	mustOK(t, err)
+	if m := r.mode(t, planned.ID); m != kernel.ApprovalModePlan {
+		t.Fatalf("plan session mode = %q", m)
+	}
+	asking, err := r.a.StartSession(t.Context(), agent.WithSessionApprovalMode(kernel.ApprovalModeAsk))
+	mustOK(t, err)
+	if asking.ApprovalMode != "" {
+		t.Fatalf("ask is stored as %q, want no value", asking.ApprovalMode)
+	}
+	if m := r.mode(t, asking.ID); m != kernel.ApprovalModeAsk {
+		t.Fatalf("ask session mode = %q", m)
+	}
+}
+
+func TestDefaultApprovalModeAbsentTakesAModePerSession(t *testing.T) {
+	r := newYoloRig(t, 0, nil)
+	if r.session.ApprovalMode != "" {
+		t.Fatalf("mode = %q", r.session.ApprovalMode)
+	}
+	s, err := r.a.StartSession(t.Context(), agent.WithSessionModel("some-model"), agent.WithSessionApprovalMode(kernel.ApprovalModeYolo))
+	mustOK(t, err)
+	if s.LLMModel != "some-model" || s.ApprovalMode != kernel.ApprovalModeYolo {
+		t.Fatalf("session = %+v", s)
+	}
+	if m := r.mode(t, s.ID); m != kernel.ApprovalModeYolo {
+		t.Fatalf("mode = %q", m)
+	}
+}
+
+func TestDefaultApprovalModeRefusesAnUnknownModeBeforeCreatingAnything(t *testing.T) {
+	r := newYoloRig(t, 0, nil)
+	before, err := r.e.hub.Sessions.List(t.Context(), kernel.SessionFilter{})
+	mustOK(t, err)
+	_, err = r.a.StartSession(t.Context(), agent.WithSessionApprovalMode("auto"))
+	var se *kernel.SessionError
+	if !errors.As(err, &se) || se.Code != kernel.SessionCodeInvalid {
+		t.Fatalf("err = %v", err)
+	}
+	after, err := r.e.hub.Sessions.List(t.Context(), kernel.SessionFilter{})
+	mustOK(t, err)
+	if len(after) != len(before) {
+		t.Fatalf("sessions %d -> %d", len(before), len(after))
+	}
+}
+
+func TestDefaultApprovalModeStartsClearsFreshSessionInTheDefaultNotTheOldMode(t *testing.T) {
+	r := newYoloRigWith(t, 0, nil, kernel.ApprovalModePlan)
+	r.setMode(t, kernel.ApprovalModeYolo)
+	res := r.a.Commands().Run(t.Context(), "/clear", command.Invocation{SessionID: r.session.ID, Client: "web"})
+	if res.Action == nil || res.Action.Type != command.ActionOpenSession || res.Action.SessionID == r.session.ID {
+		t.Fatalf("/clear = %+v", res)
+	}
+	if m := r.mode(t, res.Action.SessionID); m != kernel.ApprovalModePlan {
+		t.Fatalf("fresh mode = %q", m)
+	}
+	if m := r.mode(t, r.session.ID); m != kernel.ApprovalModeYolo {
+		t.Fatalf("old mode = %q", m)
 	}
 }

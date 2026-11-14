@@ -17,6 +17,7 @@ import (
 	"github.com/Phong95/aec-agent-go/components/secrethub/secret"
 	"github.com/Phong95/aec-agent-go/components/variablehub/variable"
 	"github.com/Phong95/aec-agent-go/internal/jsonx"
+	"github.com/Phong95/aec-agent-go/kernel"
 )
 
 // InitialContext is the optional seed context of an agent.
@@ -130,6 +131,12 @@ type AgentProfile struct {
 	Variables *variable.Config `json:"variables,omitempty"`
 	// Mcp (A-208) is the MCP servers (McpHub ids) this agent connects to. Nil = none.
 	Mcp *mcpserver.Config `json:"mcp,omitempty"`
+	// DefaultApprovalMode is the approval mode a new chat session starts in
+	// (StartSession, and /clear's fresh session), so the user does not have to switch it
+	// in every new chat. "" = kernel.ApprovalModeAsk. A mode passed to StartSession wins.
+	// Sessions not started as chats (jobs, chat apps, groups, subagents) keep their own
+	// rules, and a session that exists keeps its mode.
+	DefaultApprovalMode kernel.ApprovalMode `json:"defaultApprovalMode,omitempty"`
 }
 
 // MarshalJSON encodes the profile in its stable wire form. Nil Tools and Skills

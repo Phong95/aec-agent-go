@@ -52,7 +52,7 @@ func TestConversationManager_StoreFirst(t *testing.T) {
 	hub := persistence.NewPersistenceHub(persistence.WithMessages(msgs))
 	m := NewConversationManager(hub)
 	ctx := t.Context()
-	s, err := m.StartSession(ctx, ordered.Object{}, "")
+	s, err := m.StartSession(ctx, ordered.Object{}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestConversationManager_StoreFirst(t *testing.T) {
 func TestConversationManager_LoadUnknownKeepsActive(t *testing.T) {
 	c := NewConversationManager(persistence.NewPersistenceHub())
 	ctx := t.Context()
-	s, err := c.StartSession(ctx, ordered.Object{}, "")
+	s, err := c.StartSession(ctx, ordered.Object{}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestConversationManager_OpenReadsTheStores(t *testing.T) {
 	hub := persistence.NewPersistenceHub()
 	m := NewConversationManager(hub)
 	ctx := t.Context()
-	s, err := m.StartSession(ctx, ordered.Object{}, "")
+	s, err := m.StartSession(ctx, ordered.Object{}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,12 +157,12 @@ func TestConversationManager_ConversationBoundToSession(t *testing.T) {
 	m := NewConversationManager(hub)
 	ctx := t.Context()
 
-	s1, err := m.StartSession(ctx, ordered.Object{}, "")
+	s1, err := m.StartSession(ctx, ordered.Object{}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	c1 := mustOpen(t, m, s1.ID)
-	s2, err := m.StartSession(ctx, ordered.Object{}, "")
+	s2, err := m.StartSession(ctx, ordered.Object{}, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

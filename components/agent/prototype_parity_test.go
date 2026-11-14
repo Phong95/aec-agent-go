@@ -149,7 +149,7 @@ func TestPrototypeParity_Conversation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rs, err := mgr.StartSession(t.Context(), ordered.Object{}, "")
+			rs, err := mgr.StartSession(t.Context(), ordered.Object{}, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
