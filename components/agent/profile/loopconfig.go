@@ -1,6 +1,10 @@
 package profile
 
-import "time"
+import (
+	"time"
+
+	"github.com/Phong95/aec-agent-go/kernel"
+)
 
 // The agent-loop defaults. They are what an unset or invalid
 // LoopConfig field falls back to; an agent overrides them through
@@ -33,6 +37,8 @@ const (
 	minMaxConcurrentTurns = 0
 	// A-129: 0 is valid (no limit).
 	minMaxToolResultChars = 0
+	// A-222: a message carries at least one image.
+	minMaxImagesPerMessage = 1
 )
 
 // RetryBackoff returns RetryBackoffMs as a time.Duration.
@@ -52,16 +58,18 @@ func (c *LoopConfig) RetryBackoff() time.Duration {
 // falls back to the SDK defaults per field when a value is missing (nil, or a nil
 // config) or below the field's minimum: 1 for MaxIterations, 0 for MaxToolRetries and
 // RetryBackoffMs (and, since A-97, 0 for MaxConcurrentTurns; since A-129, 0 for
-// MaxToolResultChars). One invalid field does not reset the others.
+// MaxToolResultChars; since A-222, 1 for MaxImagesPerMessage, which is also cut to
+// kernel.MaxImagesPerMessageCeiling). One invalid field does not reset the others.
 //
 // The fields are *int, so a value is always a finite integer: there is no NaN,
 // Infinity or fraction to fall back from or to floor.
 func ResolveLoopConfig(c *LoopConfig) ResolvedLoopConfig {
-	var maxIterations, maxToolRetries, retryBackoffMs, maxConcurrentTurns, maxToolResultChars *int
+	var maxIterations, maxToolRetries, retryBackoffMs, maxConcurrentTurns, maxToolResultChars, maxImagesPerMessage *int
 	if c != nil {
 		maxIterations, maxToolRetries, retryBackoffMs = c.MaxIterations, c.MaxToolRetries, c.RetryBackoffMs
 		maxConcurrentTurns = c.MaxConcurrentTurns
 		maxToolResultChars = c.MaxToolResultChars
+		maxImagesPerMessage = c.MaxImagesPerMessage
 	}
 	return ResolvedLoopConfig{
 		MaxIterations:  resolveField(maxIterations, minMaxIterations, DefaultMaxIterations),
@@ -71,6 +79,8 @@ func ResolveLoopConfig(c *LoopConfig) ResolvedLoopConfig {
 		MaxConcurrentTurns: resolveField(maxConcurrentTurns, minMaxConcurrentTurns, DefaultMaxConcurrentTurns),
 		// A-129: read on every model turn by the agent loop.
 		MaxToolResultChars: resolveField(maxToolResultChars, minMaxToolResultChars, DefaultMaxToolResultChars),
+		// A-222: read at the start of every run and for every tool result.
+		MaxImagesPerMessage: min(resolveField(maxImagesPerMessage, minMaxImagesPerMessage, kernel.MaxImagesPerMessage), kernel.MaxImagesPerMessageCeiling),
 	}
 }
 

@@ -67,6 +67,10 @@ func (p AgentProfile) Clone() AgentProfile {
 			v := *c.MaxToolResultChars
 			c.MaxToolResultChars = &v
 		}
+		if c.MaxImagesPerMessage != nil {
+			v := *c.MaxImagesPerMessage
+			c.MaxImagesPerMessage = &v
+		}
 		p.LoopConfig = &c
 	}
 	p.Memory = p.Memory.Clone()

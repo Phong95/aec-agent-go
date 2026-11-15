@@ -436,9 +436,22 @@ type Context struct {
 	// it, terminal / run_code pass variables: [...] as environment variables, the variable
 	// tool lists and writes them. Nil outside an agent, or when the host has no VariableHub.
 	Variables variable.Variables
+	// MaxImages (A-222) is the most images the result may carry (Output.Images) - the
+	// agent's LoopConfig.MaxImagesPerMessage. 0 means kernel.MaxImagesPerMessage; read it
+	// with ImageLimit.
+	MaxImages int
 	// Emit publishes an event. ToolHub.Authorize replaces a nil Emit with a no-op, so
 	// a handler may always call it.
 	Emit func(eventType string, payload any)
+}
+
+// ImageLimit (A-222) is the most images the result may carry: MaxImages, or
+// kernel.MaxImagesPerMessage when it is not set.
+func (c Context) ImageLimit() int {
+	if c.MaxImages < 1 {
+		return kernel.MaxImagesPerMessage
+	}
+	return c.MaxImages
 }
 
 // Output is the result of a tool call.
@@ -466,7 +479,7 @@ type Output struct {
 	// call's arguments, and the UI keeps the original. Empty means none.
 	CompactArguments kernel.Arguments `json:"compactArguments,omitempty"`
 	// Images (A-180) are images for the model to look at (e.g. a screenshot), at most
-	// kernel.MaxImagesPerMessage and within kernel.CheckAttachments' limits (else they are
+	// kernel.MaxImagesPerMessage (A-222: Context.ImageLimit) and within kernel.CheckAttachments' limits (else they are
 	// left out with a note). The harness copies them onto the kernel.ToolResult
 	// (successful results only).
 	Images []kernel.MessageAttachment `json:"images,omitempty"`

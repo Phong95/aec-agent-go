@@ -336,7 +336,7 @@ func (e *executor) runSkill(ctx context.Context, call kernel.ToolCall, tc toolhu
 	if err != nil {
 		return attemptOutcome{}, err
 	}
-	return outcomeOf(o), nil
+	return outcomeOf(o, tc.ImageLimit()), nil
 }
 
 // runMemoryTool runs a memory tool (memory_search) directly, like runSkill: it only
@@ -346,7 +346,7 @@ func (e *executor) runMemoryTool(ctx context.Context, h toolhub.Handler, call ke
 	if err != nil {
 		return attemptOutcome{}, err
 	}
-	return outcomeOf(o), nil
+	return outcomeOf(o, tc.ImageLimit()), nil
 }
 
 // runTool runs the tool through its authorization. Attempt 0 uses the one from the
@@ -386,7 +386,7 @@ func (e *executor) runTool(ctx context.Context, run *toolRun, call kernel.ToolCa
 	if err != nil {
 		return attemptOutcome{}, err
 	}
-	return outcomeOf(o), nil
+	return outcomeOf(o, tc.ImageLimit()), nil
 }
 
 // authorize asks the tools port for a fresh authorization. It returns either the
@@ -441,8 +441,9 @@ func authError(call kernel.ToolCall, err error) (attemptOutcome, error) {
 	return attemptOutcome{}, err
 }
 
-// outcomeOf copies a tool's output into an attempt outcome.
-func outcomeOf(o toolhub.Output) attemptOutcome {
+// outcomeOf copies a tool's output into an attempt outcome. maxImages (A-222) is the most
+// images it may carry (toolhub.Context.ImageLimit).
+func outcomeOf(o toolhub.Output, maxImages int) attemptOutcome {
 	out := attemptOutcome{content: o.Content, empty: o.Empty}
 	if o.IsError != nil {
 		out.isError = boolPtr(*o.IsError)
@@ -458,7 +459,7 @@ func outcomeOf(o toolhub.Output) attemptOutcome {
 	// A-180: a tool's images must fit what every provider accepts; ones that don't are left
 	// out with a note, so the model knows it did not get them.
 	if len(o.Images) > 0 {
-		if err := kernel.CheckAttachments(o.Images); err != nil {
+		if err := kernel.CheckAttachmentsUpTo(o.Images, maxImages); err != nil {
 			out.content += "\n\n(The images this tool returned were left out: " + err.Error() + ".)"
 		} else {
 			out.images = slices.Clone(o.Images)

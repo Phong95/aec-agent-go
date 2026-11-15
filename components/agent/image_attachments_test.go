@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Phong95/aec-agent-go/components/agent"
+	"github.com/Phong95/aec-agent-go/components/agent/profile"
 	"github.com/Phong95/aec-agent-go/kernel"
 )
 
@@ -60,5 +61,46 @@ func TestChatRefusesInvalidAttachments(t *testing.T) {
 	mustOK(t, err)
 	if len(stored) != 0 {
 		t.Fatalf("stored = %+v", stored)
+	}
+}
+
+// A-222: a turn takes up to the agent's LoopConfig.MaxImagesPerMessage; without it a 5th
+// image is still refused.
+func TestChatTakesUpToMaxImagesPerMessage(t *testing.T) {
+	images := func(n int) []kernel.MessageAttachment {
+		out := make([]kernel.MessageAttachment, n)
+		for i := range out {
+			out[i] = dotPNG
+		}
+		return out
+	}
+	refused := func(err error) bool {
+		var me *kernel.ModelError
+		return errors.As(err, &me) && me.Code == kernel.ModelCodeInvalidRequest
+	}
+
+	e := newEnv(t)
+	p := testProfile("vision-8")
+	eight := 8
+	p.LoopConfig = &profile.LoopConfig{MaxImagesPerMessage: &eight}
+	a := e.spawn(t, p)
+	_, err := a.StartSession(t.Context())
+	mustOK(t, err)
+	_, err = a.Chat(t.Context(), "Eight?", agent.WithChatAttachments(images(8)...))
+	mustOK(t, err)
+	calls := e.mocks["primary"].Calls()
+	i := slices.IndexFunc(calls[0].Messages, func(m kernel.Message) bool { return m.Role == kernel.RoleUser })
+	if i < 0 || len(calls[0].Messages[i].Attachments) != 8 {
+		t.Fatalf("user message sent = %+v", calls[0].Messages)
+	}
+	if _, err = a.Chat(t.Context(), "Nine?", agent.WithChatAttachments(images(9)...)); !refused(err) || err.Error() != "at most 8 images per message" {
+		t.Fatalf("9 images: err = %v, want an invalid_request ModelError", err)
+	}
+
+	d := e.spawn(t, testProfile("vision-default"))
+	_, err = d.StartSession(t.Context())
+	mustOK(t, err)
+	if _, err = d.Chat(t.Context(), "Five?", agent.WithChatAttachments(images(kernel.MaxImagesPerMessage+1)...)); !refused(err) {
+		t.Fatalf("5 images by default: err = %v, want an invalid_request ModelError", err)
 	}
 }

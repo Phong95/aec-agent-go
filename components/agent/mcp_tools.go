@@ -430,11 +430,11 @@ func (t *McpTools) markLoaded(sessionID string, names []string) {
 	}
 }
 
-// call runs the tool on its server.
-func (t *McpTools) call(ctx context.Context, e *mcpToolEntry, args map[string]any, repeatable bool) toolhub.Output {
+// call runs the tool on its server. maxImages (A-222) is the most images its result keeps.
+func (t *McpTools) call(ctx context.Context, e *mcpToolEntry, args map[string]any, repeatable bool, maxImages int) toolhub.Output {
 	result, err := t.d.Mcp.CallTool(ctx, e.serverID, e.tool.Name, args, mcpserver.CallOptions{})
 	if err == nil {
-		return McpToolOutput(result)
+		return McpToolOutputUpTo(result, maxImages)
 	}
 	// Cut off by a lost connection: a call that is safe to repeat goes again once, on the new one.
 	var me *mcpserver.Error
@@ -442,7 +442,7 @@ func (t *McpTools) call(ctx context.Context, e *mcpToolEntry, args map[string]an
 		if t.waitConnected(ctx, e.serverID) {
 			again, err2 := t.d.Mcp.CallTool(ctx, e.serverID, e.tool.Name, args, mcpserver.CallOptions{})
 			if err2 == nil {
-				return McpToolOutput(again)
+				return McpToolOutputUpTo(again, maxImages)
 			}
 			return mcpFailure(e, err2)
 		}
@@ -552,7 +552,7 @@ func (h *mcpToolHandler) ApprovalFor(kernel.Arguments) toolhub.ToolApproval {
 	}
 }
 
-func (h *mcpToolHandler) Execute(ctx context.Context, args kernel.Arguments, _ toolhub.Context) (toolhub.Output, error) {
+func (h *mcpToolHandler) Execute(ctx context.Context, args kernel.Arguments, tc toolhub.Context) (toolhub.Output, error) {
 	var parsed map[string]any
 	if len(args) > 0 {
 		if err := args.Decode(&parsed); err != nil {
@@ -565,7 +565,7 @@ func (h *mcpToolHandler) Execute(ctx context.Context, args kernel.Arguments, _ t
 	}
 	ann := h.e.tool.Annotations
 	repeatable := h.e.readOnly || (ann != nil && ann.IdempotentHint != nil && *ann.IdempotentHint)
-	return h.tools.call(ctx, h.e, parsed, repeatable), nil
+	return h.tools.call(ctx, h.e, parsed, repeatable, tc.ImageLimit()), nil
 }
 
 // mcpSearchHandler is tool_search.

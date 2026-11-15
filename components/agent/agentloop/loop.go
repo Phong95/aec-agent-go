@@ -385,16 +385,19 @@ func (l *Loop) beginRun(ctx context.Context, userMessage, sessionID string, ro R
 	if sessionID != session.ID {
 		return nil, &sessionNotActiveError{given: sessionID, active: session.ID}
 	}
+	// The profile is read once per run: a profile updated between two runs
+	// applies to the next one.
+	prof := l.deps.Profile()
+	loopConfig := profile.ResolveLoopConfig(prof.LoopConfig)
+
 	// A-165: images attached to the user's message, checked before anything is written.
+	// A-222: up to the agent's LoopConfig.MaxImagesPerMessage.
 	if len(ro.Attachments) > 0 {
-		if err := kernel.CheckAttachments(ro.Attachments); err != nil {
+		if err := kernel.CheckAttachmentsUpTo(ro.Attachments, loopConfig.MaxImagesPerMessage); err != nil {
 			return nil, kernel.NewModelError(err.Error(), kernel.ModelCodeInvalidRequest, false)
 		}
 	}
 
-	// The profile is read once per run: a profile updated between two runs
-	// applies to the next one.
-	prof := l.deps.Profile()
 	r := &runState{
 		bus:            l.deps.Events,
 		conv:           conv,
@@ -408,7 +411,8 @@ func (l *Loop) beginRun(ctx context.Context, userMessage, sessionID string, ro R
 		trace:          newRunTrace(l.deps.Trace),
 		// Resolved once per run: a runtime profile change takes effect on the
 		// next turn.
-		maxIterations: profile.ResolveLoopConfig(prof.LoopConfig).MaxIterations,
+		maxIterations: loopConfig.MaxIterations,
+		maxImages:     loopConfig.MaxImagesPerMessage,
 		// A session may plan around a larger (or smaller) context window than the agent's.
 		compactor: l.compactor.forSession(session),
 	}
@@ -527,6 +531,7 @@ func (l *Loop) ExecuteToolCall(ctx context.Context, call kernel.ToolCall, sessio
 		persistTimeout: l.persistTimeout,
 		logger:         l.logger,
 		trace:          newRunTrace(l.deps.Trace),
+		maxImages:      profile.ResolveLoopConfig(prof.LoopConfig).MaxImagesPerMessage,
 	}
 	defer r.trace.close()
 	runSpan := r.trace.span("tool-job", trace.KindRun, obj("agentId", prof.ID, "sessionId", sessionID, "toolName", call.Name))

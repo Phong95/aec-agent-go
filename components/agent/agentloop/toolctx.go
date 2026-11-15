@@ -29,6 +29,7 @@ func (l *Loop) buildToolContext(r *runState) toolhub.Context {
 		SessionID: r.session.ID,
 		RunID:     r.runID,
 		AgentID:   r.agentID,
+		MaxImages: r.maxImages,
 	}
 	if l.deps.Interaction != nil {
 		if h := l.deps.Interaction(r.session.ID); !nilcheck.IsNil(h) {

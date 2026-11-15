@@ -95,6 +95,12 @@ type LoopConfig struct {
 	// and tail, and in an isolated sandbox the full output is saved to a file the model
 	// can read.
 	MaxToolResultChars *int `json:"maxToolResultChars,omitempty"`
+	// MaxImagesPerMessage (A-222) is the most images one message may carry: the images
+	// attached to the user's message, and those of one tool result (integer >= 1; default
+	// kernel.MaxImagesPerMessage, 4; a higher value is cut to
+	// kernel.MaxImagesPerMessageCeiling, 100). A provider may still refuse a request that
+	// is too large overall.
+	MaxImagesPerMessage *int `json:"maxImagesPerMessage,omitempty"`
 }
 
 // AgentProfile is the configuration for a spawnable agent instance.
@@ -167,4 +173,7 @@ type ResolvedLoopConfig struct {
 	// MaxToolResultChars (A-129) is the most characters of one tool result the model is
 	// given; 0 means no limit.
 	MaxToolResultChars int
+	// MaxImagesPerMessage (A-222) is the most images one message (or one tool result) may
+	// carry, between 1 and kernel.MaxImagesPerMessageCeiling.
+	MaxImagesPerMessage int
 }

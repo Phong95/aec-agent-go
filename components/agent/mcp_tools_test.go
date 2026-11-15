@@ -117,6 +117,25 @@ func TestMcpToolOutput(t *testing.T) {
 	}
 }
 
+// A-222: a result keeps up to the agent's image limit; the rest are noted as not shown.
+func TestMcpToolOutputUpTo(t *testing.T) {
+	var content []mcpserver.Content
+	for range 7 {
+		content = append(content, mcpserver.Content{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgo="})
+	}
+	result := mcpserver.CallToolResult{Content: content}
+	if got := agent.McpToolOutput(result).Images; len(got) != 4 {
+		t.Fatalf("default: %d images, want 4", len(got))
+	}
+	out := agent.McpToolOutputUpTo(result, 6)
+	if len(out.Images) != 6 || !strings.Contains(out.Content, "[image 6: image/png]") || !strings.Contains(out.Content, "can't be shown") {
+		t.Fatalf("up to 6: %d images, content %q", len(out.Images), out.Content)
+	}
+	if got := agent.McpToolOutputUpTo(result, 0).Images; len(got) != 4 {
+		t.Fatalf("up to 0: %d images, want the default 4", len(got))
+	}
+}
+
 func TestMcpPermissionRules(t *testing.T) {
 	cases := []struct {
 		rule, tool, server string

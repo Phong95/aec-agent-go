@@ -21,7 +21,12 @@ const (
 	// MaxImageBytes is the largest image, in bytes (decoded): 5 MB once base64 encoded.
 	MaxImageBytes = 3_750_000
 	// MaxImagesPerMessage is the most images one message may carry.
+	// Update (A-222): it is the default - an agent sets its own with
+	// LoopConfig.MaxImagesPerMessage, up to MaxImagesPerMessageCeiling.
 	MaxImagesPerMessage = 4
+	// MaxImagesPerMessageCeiling (A-222) is the highest LoopConfig.MaxImagesPerMessage
+	// takes: Anthropic accepts at most 100 images in one request.
+	MaxImagesPerMessageCeiling = 100
 	// ImageTokenEstimate is the tokens an image is counted as before the provider reports
 	// real usage - about what a 1-megapixel image costs on Anthropic and OpenAI.
 	ImageTokenEstimate = 1_600
@@ -48,8 +53,18 @@ var base64Form = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
 // data of at most MaxImageBytes and a name of at most 255 characters. The same rules as
 // core/ts checkAttachments.
 func CheckAttachments(attachments []MessageAttachment) error {
-	if len(attachments) > MaxImagesPerMessage {
-		return fmt.Errorf("at most %d images per message", MaxImagesPerMessage)
+	return CheckAttachmentsUpTo(attachments, MaxImagesPerMessage)
+}
+
+// CheckAttachmentsUpTo (A-222) is CheckAttachments with maxImages in place of
+// MaxImagesPerMessage - the agent's LoopConfig.MaxImagesPerMessage. A maxImages below 1
+// means MaxImagesPerMessage. (core/ts: checkAttachments(value, maxImages).)
+func CheckAttachmentsUpTo(attachments []MessageAttachment, maxImages int) error {
+	if maxImages < 1 {
+		maxImages = MaxImagesPerMessage
+	}
+	if len(attachments) > maxImages {
+		return fmt.Errorf("at most %d images per message", maxImages)
 	}
 	for i, a := range attachments {
 		at := fmt.Sprintf("attachments[%d]", i)

@@ -46,6 +46,9 @@ type runState struct {
 	// first one.
 	stopReason    kernel.StopReason
 	maxIterations int
+	// maxImages (A-222) is the agent's LoopConfig.MaxImagesPerMessage, resolved once per
+	// run: the most images one tool result may carry.
+	maxImages int
 	// compactor is the compactor of this run: the loop's, or one with the session's
 	// context window override (Session.ContextWindowTokens).
 	compactor *Compactor

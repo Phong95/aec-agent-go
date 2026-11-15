@@ -35,3 +35,25 @@ func TestCheckAttachments(t *testing.T) {
 		}
 	}
 }
+
+// A-222: CheckAttachmentsUpTo checks the count against the agent's limit; below 1 means
+// MaxImagesPerMessage.
+func TestCheckAttachmentsUpTo(t *testing.T) {
+	img := MessageAttachment{Type: AttachmentTypeImage, MIMEType: "image/png", Data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}
+	nine := make([]MessageAttachment, 9)
+	for i := range nine {
+		nine[i] = img
+	}
+	if err := CheckAttachmentsUpTo(nine[:8], 8); err != nil {
+		t.Errorf("8 images up to 8: %v", err)
+	}
+	if err := CheckAttachmentsUpTo(nine, 8); err == nil || err.Error() != "at most 8 images per message" {
+		t.Errorf("9 images up to 8: err = %v", err)
+	}
+	if err := CheckAttachmentsUpTo(nine[:MaxImagesPerMessage+1], 0); err == nil {
+		t.Errorf("%d images with no limit: want the default limit", MaxImagesPerMessage+1)
+	}
+	if err := CheckAttachmentsUpTo(nine[:2], 1); err == nil {
+		t.Error("2 images up to 1: want an error")
+	}
+}

@@ -280,10 +280,20 @@ var mcpImageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "imag
 // kernel.MaxImagesPerMessage); other blocks as a short note; structuredContent as JSON
 // when there is no text. isError results are not retried.
 func McpToolOutput(result mcpserver.CallToolResult) toolhub.Output {
+	return McpToolOutputUpTo(result, kernel.MaxImagesPerMessage)
+}
+
+// McpToolOutputUpTo (A-222) is McpToolOutput keeping at most maxImages images - the
+// call's toolhub.Context.ImageLimit (below 1 means kernel.MaxImagesPerMessage). (core/ts:
+// mcpToolOutput(result, maxImages).)
+func McpToolOutputUpTo(result mcpserver.CallToolResult, maxImages int) toolhub.Output {
+	if maxImages < 1 {
+		maxImages = kernel.MaxImagesPerMessage
+	}
 	var parts []string
 	var images []kernel.MessageAttachment
 	for _, block := range result.Content {
-		parts = append(parts, describeMcpBlock(block, &images)...)
+		parts = append(parts, describeMcpBlock(block, &images, maxImages)...)
 	}
 	hasText := slices.ContainsFunc(parts, func(p string) bool { return strings.TrimSpace(p) != "" })
 	if !hasText && result.StructuredContent != nil {
@@ -309,7 +319,7 @@ func McpToolOutput(result mcpserver.CallToolResult) toolhub.Output {
 	return out
 }
 
-func describeMcpBlock(block mcpserver.Content, images *[]kernel.MessageAttachment) []string {
+func describeMcpBlock(block mcpserver.Content, images *[]kernel.MessageAttachment, maxImages int) []string {
 	str := func(k string) string { s, _ := block[k].(string); return s }
 	switch t := str("type"); t {
 	case "text":
@@ -319,7 +329,7 @@ func describeMcpBlock(block mcpserver.Content, images *[]kernel.MessageAttachmen
 		return nil
 	case "image":
 		mime, data := str("mimeType"), str("data")
-		if data != "" && mcpImageTypes[mime] && len(*images) < kernel.MaxImagesPerMessage {
+		if data != "" && mcpImageTypes[mime] && len(*images) < maxImages {
 			*images = append(*images, kernel.MessageAttachment{Type: kernel.AttachmentTypeImage, MIMEType: mime, Data: data})
 			return []string{fmt.Sprintf("[image %d: %s]", len(*images), mime)}
 		}

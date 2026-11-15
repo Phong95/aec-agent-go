@@ -297,16 +297,17 @@ func (t *ScreenshotTool) Execute(ctx context.Context, args kernel.Arguments, tc 
 		if len(result.Shots) == 0 {
 			return toolkit.Fail("screenshot failed: nothing was captured of " + shown), nil
 		}
-		return t.output(ctx, shown, result)
+		return t.output(ctx, shown, result, tc.ImageLimit())
 	}), nil
 }
 
 // output is the result the model reads: the captures as images (a contact sheet when there
-// are more than one result may carry), the page's errors and failed requests.
-func (t *ScreenshotTool) output(ctx context.Context, shown string, result ScreenshotResult) (toolhub.Output, error) {
+// are more than one result may carry), the page's errors and failed requests. maxImages
+// (A-222) is the most images the result may carry (toolhub.Context.ImageLimit).
+func (t *ScreenshotTool) output(ctx context.Context, shown string, result ScreenshotResult, maxImages int) (toolhub.Output, error) {
 	images := result.Shots
 	sheetNote := ""
-	if len(result.Shots) > kernel.MaxImagesPerMessage {
+	if len(result.Shots) > maxImages {
 		if sheeter, ok := t.renderer.(ContactSheeter); ok {
 			sheet, err := sheeter.ContactSheet(ctx, result.Shots)
 			if err != nil {
@@ -315,8 +316,8 @@ func (t *ScreenshotTool) output(ctx context.Context, shown string, result Screen
 			images = []Screenshot{sheet}
 			sheetNote = "\nThe " + strconv.Itoa(len(result.Shots)) + " captures are combined into one labelled contact sheet; call again with fewer viewports or times to see one at full size."
 		} else {
-			images = result.Shots[:kernel.MaxImagesPerMessage]
-			sheetNote = "\nOnly the first " + strconv.Itoa(kernel.MaxImagesPerMessage) + " of " + strconv.Itoa(len(result.Shots)) + " captures are shown; call again for the rest."
+			images = result.Shots[:maxImages]
+			sheetNote = "\nOnly the first " + strconv.Itoa(maxImages) + " of " + strconv.Itoa(len(result.Shots)) + " captures are shown; call again for the rest."
 		}
 	}
 	labels := make([]string, 0, len(result.Shots))
