@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Phong95/aec-agent-go/components/sandboxhub"
@@ -162,6 +164,151 @@ type appManifestData struct {
 	entry       string
 	opens       []string
 	openURL     string
+	// service (A-223) is the recipe of a service app - set when app.json has a "service"
+	// block. Such an app is started with StartApp (the service tool's start with "app", or
+	// the host's start-app route) instead of served as files.
+	service *AppServiceRecipe
+}
+
+// AppServiceRecipe is the "service" block of app.json (A-223) - the recipe that runs a
+// project as a service, so the user can start it again without asking the agent. The
+// only contract is ServiceSpec's: the command listens on 127.0.0.1:$PORT (or on Port).
+type AppServiceRecipe struct {
+	// Name is the service's name (default: the app folder's name, lower-cased, other
+	// characters as dashes).
+	Name string `json:"name"`
+	// Cwd is the workspace folder to run in, relative to the working directory (default:
+	// the app folder).
+	Cwd string `json:"cwd"`
+	// Setup runs before Command when SetupInputs changed (or on every start without
+	// SetupInputs), e.g. "npm ci". "" = none.
+	Setup string `json:"setup,omitempty"`
+	// SetupInputs are files (globs relative to Cwd) whose change makes Setup run again,
+	// e.g. ["package-lock.json"].
+	SetupInputs []string `json:"setupInputs,omitempty"`
+	// Command starts the service, e.g. "npx vite --host 127.0.0.1 --port $PORT".
+	Command string `json:"command"`
+	// Path is the page the app opens, e.g. "docs" ("" = the root page).
+	Path string `json:"path"`
+	// Port, only when the server cannot take $PORT, is the fixed port it listens on.
+	Port *int `json:"port,omitempty"`
+	// Env holds environment variables; values may hold {{var:NAME}} and {{secret:NAME}}.
+	Env map[string]string `json:"env"`
+}
+
+var (
+	// serviceNamePattern is the sandbox's rule for service names.
+	serviceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
+	envNamePattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	notServiceChars    = regexp.MustCompile(`[^a-z0-9-]+`)
+	leadingDashes      = regexp.MustCompile(`^-+`)
+	trailingDashes     = regexp.MustCompile(`-+$`)
+	trailingSlashes    = regexp.MustCompile(`/+$`)
+	leadingSlashes     = regexp.MustCompile(`^/+`)
+	badPageChars       = regexp.MustCompile(`[\s#]`)
+)
+
+// DefaultServiceName is the service name an app gets by default (A-223): lower-cased,
+// other characters as dashes, at most 40.
+func DefaultServiceName(app string) string {
+	name := leadingDashes.ReplaceAllString(notServiceChars.ReplaceAllString(strings.ToLower(app), "-"), "")
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	return trailingDashes.ReplaceAllString(name, "")
+}
+
+// readRecipe checks the "service" block of app.json (A-223); a problem is what is wrong
+// with it.
+func readRecipe(raw any, app, p string) (*AppServiceRecipe, string) {
+	s, ok := raw.(map[string]any)
+	if !ok {
+		return nil, p + `: "service" must be an object`
+	}
+	str := func(key string) string {
+		v, _ := s[key].(string)
+		return jsstr.Trim(v)
+	}
+	command := str("command")
+	if command == "" {
+		return nil, p + `: "service" needs a "command"`
+	}
+	name := str("name")
+	if name == "" {
+		name = DefaultServiceName(app)
+	}
+	if !serviceNamePattern.MatchString(name) {
+		return nil, p + `: "service.name" must be lower-case letters, digits and dashes (at most 40)`
+	}
+	cwd := trailingSlashes.ReplaceAllString(leadingDotSlash.ReplaceAllString(str("cwd"), ""), "")
+	if cwd == "" {
+		cwd = appsDir + "/" + app
+	}
+	if containsDotDot(cwd) {
+		return nil, p + `: "service.cwd" must stay inside the workspace`
+	}
+	page := leadingSlashes.ReplaceAllString(str("path"), "")
+	if badPageChars.MatchString(page) || pageHasDotDot(page) {
+		return nil, p + `: "service.path" is not a page of the service`
+	}
+	var port *int
+	if v, present := s["port"]; present && v != nil && v != float64(0) {
+		n, isNum := v.(float64)
+		if !isNum || n != math.Trunc(n) || n < 1 || n > 65535 {
+			return nil, p + `: "service.port" must be a port number`
+		}
+		pn := int(n)
+		port = &pn
+	}
+	var inputs []string
+	if v, present := s["setupInputs"]; present {
+		list, isList := v.([]any)
+		if !isList {
+			return nil, p + `: "service.setupInputs" must be a list of file paths or globs`
+		}
+		for _, x := range list {
+			if _, isStr := x.(string); !isStr {
+				return nil, p + `: "service.setupInputs" must be a list of file paths or globs`
+			}
+		}
+		for _, x := range list {
+			if in := leadingDotSlash.ReplaceAllString(jsstr.Trim(x.(string)), ""); in != "" {
+				inputs = append(inputs, in)
+			}
+		}
+		for _, in := range inputs {
+			if containsDotDot(in) {
+				return nil, p + `: "service.setupInputs" must stay inside "cwd"`
+			}
+		}
+	}
+	env := map[string]string{}
+	if v, present := s["env"]; present {
+		obj, isObj := v.(map[string]any)
+		if !isObj {
+			return nil, p + `: "service.env" must be an object`
+		}
+		keys := make([]string, 0, len(obj))
+		for k := range obj {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if !envNamePattern.MatchString(k) || k == "PORT" {
+				return nil, p + `: "service.env" cannot set "` + k + `"`
+			}
+			value, isStr := obj[k].(string)
+			if !isStr {
+				return nil, p + `: "service.env.` + k + `" must be a string`
+			}
+			env[k] = value
+		}
+	}
+	recipe := &AppServiceRecipe{Name: name, Cwd: cwd, Setup: str("setup"), Command: command, Path: page, Port: port, Env: env}
+	if recipe.Setup != "" && len(inputs) > 0 {
+		recipe.SetupInputs = inputs
+	}
+	return recipe, ""
 }
 
 // normalizeExtension: ".IFC" / "ifc" -> ".ifc".
@@ -240,11 +387,20 @@ func readManifest(ctx context.Context, env sandboxhub.View, app string) (*appMan
 	if containsDotDot(strings.SplitN(openURL, "?", 2)[0]) {
 		return nil, p + `: "openUrl" must stay inside the app folder`, nil
 	}
+	// A-223: a service app.
+	var service *AppServiceRecipe
+	if raw, present := m["service"]; present && raw != nil {
+		recipe, problem := readRecipe(raw, app, p)
+		if problem != "" {
+			return nil, problem, nil
+		}
+		service = recipe
+	}
 	name := str("name")
 	if name == "" {
 		name = app
 	}
-	return &appManifestData{name: name, description: str("description"), entry: entry, opens: opens, openURL: openURL}, "", nil
+	return &appManifestData{name: name, description: str("description"), entry: entry, opens: opens, openURL: openURL, service: service}, "", nil
 }
 
 func containsDotDot(p string) bool {

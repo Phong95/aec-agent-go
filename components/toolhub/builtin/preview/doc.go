@@ -33,4 +33,11 @@
 // stop_service, list_services, service_logs; per-action risk and sandbox operation).
 // list_apps is gone: the essential live-preview skill tells the model to read the
 // app.json files itself. RetiredToolNames maps the old names for stored profiles.
+//
+// Update (A-223): service apps. An app.json may hold a "service" recipe (cwd, setup,
+// setupInputs, command, path, port, env) that runs a project of any stack as a service.
+// StartApp (serviceapp.go) runs its setup when the setupInputs changed, then its command;
+// the service tool's start with "app" and the hosts' start-app route both call it, and
+// ListApps lists static and service apps. preview with "app" shows a service app only
+// while it runs (starting it runs commands, which preview, read-only, does not).
 package preview

@@ -1,6 +1,6 @@
 ---
 name: live-preview
-description: Show the user what you built, live next to the chat, and give them a public link to it. Use after you build or change a web page, a site, a browser game, an image or a document they should look at; when they want a file opened in one of your apps (an IFC model in a viewer); when the thing needs a running server (npm run dev, an API, a Python app); and when they ask for a link or URL to open elsewhere or send to someone.
+description: Show the user what you built, live next to the chat, and give them a public link to it. Use after you build or change a web page, a site, a browser game, an image or a document they should look at; when they want a file opened in one of your apps (an IFC model in a viewer); when the thing needs a running server (npm run dev, an API, a Python app); when they want a server saved as an app to start again later; and when they ask for a link or URL to open elsewhere or send to someone.
 metadata:
   requires-tools: preview
 ---
@@ -26,6 +26,20 @@ An app is a folder `apps/<app>/` with an `app.json`:
 ```
 
 To find one, `list_files apps` and read the `app.json` files: `opens` says which file extensions it takes. `preview` fills `{path}` with the file's URL relative to the app folder, so the app reads the query parameter and `fetch()`es it as it is. Files the user uploads land in `files/`. To make an app, write a static web app in `apps/<app>/` with that manifest; it may load libraries from https CDNs, but it can only fetch its own files.
+
+### Service apps
+
+A service app is a saved recipe that runs a project as a service (a Vite or React dev server, a Go or Python API, anything that listens on a port), so the user can start it again later without asking you. Its `app.json` has a `service` block instead of files:
+
+```json
+{ "name": "Takeoff API", "description": "Go API for quantity takeoff", "service": { "cwd": "projects/takeoff", "setup": "go build -o bin/server ./cmd/server", "setupInputs": ["go.mod", "go.sum", "**/*.go"], "command": "./bin/server -addr 127.0.0.1:$PORT", "path": "health" } }
+```
+
+- `command` starts it and must listen on `$PORT` on 127.0.0.1, as for `service`. `cwd` is the project folder (default: the app folder).
+- `setup` (optional) installs or builds first: `npm ci`, `go build ...`, `pip install -r requirements.txt`. With `setupInputs` (files or globs in `cwd`, e.g. `["package-lock.json"]`) it runs only when they changed; without, on every start.
+- `path` is the page it opens (default the root). `env` may set variables; write `{{var:NAME}}` or `{{secret:NAME}}` for values that must not be in the file. `port` only when the server cannot take `$PORT`.
+- When the user asks to keep or save a service as an app, write `apps/<app>/app.json` from what worked: the command and folder you started it with, and the install or build steps you ran before. Then start it with `service` (`action: "start"`, `app`) to check the recipe.
+- To run a saved one, `service` with `action: "start"` and `app`; `preview` with `app` shows it while it runs. The user can also start it themselves from the Preview panel.
 
 ## Services
 

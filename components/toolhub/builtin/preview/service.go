@@ -2,6 +2,7 @@ package preview
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ import (
 // instead of a static preview lives in the live-preview skill. Risk and sandbox operation
 // follow the action: list and logs are read-only reads; start and stop are drafts that run
 // commands (exec). The definition states the worst case.
+//
+// Update (A-223): start with "app" starts a saved service app (apps/<app>/app.json with a
+// "service" recipe) through StartApp - its setup when needed, then its command - so the
+// model reruns what it saved instead of working the commands out again.
 // ---------------------------------------------------------------------------
 
 const (
@@ -151,8 +156,9 @@ func (*ServiceTool) Definition() toolhub.Definition {
 		Description: "Run long-running web servers in your workspace (a dev server with hot reload, an API, a Python server). " +
 			"start: name and command, which gets its port in $PORT and must listen on it on 127.0.0.1 " +
 			`(e.g. "npx vite --host 127.0.0.1 --port $PORT"); it keeps running and the user sees it live next to the chat. ` +
+			"start with app: a saved service app of apps/ (its setup when needed, then its command). " +
 			"stop: name. list: your services and their state. logs: the end of a service's output. For plain HTML files " +
-			"use preview instead; the live-preview skill says which to use.",
+			"use preview instead; the live-preview skill says which to use and how to save a service as an app.",
 		Parameters: toolhub.JSONSchema{
 			Type: "object",
 			Properties: toolhub.NewProperties(
@@ -160,6 +166,7 @@ func (*ServiceTool) Definition() toolhub.Definition {
 				toolhub.Property{Name: "name", Schema: str(`start/stop/logs: short name, lower-case letters, digits and dashes, e.g. "web"`)},
 				toolhub.Property{Name: "command", Schema: str("start: shell command that starts the server (use $PORT)")},
 				toolhub.Property{Name: "cwd", Schema: str("start: folder to run it in (default: your working directory)")},
+				toolhub.Property{Name: "app", Schema: str("start: instead of name and command, a service app's folder name in apps/")},
 				toolhub.Property{Name: "port", Schema: toolhub.JSONSchema{Type: "number", Description: "start: only when the server cannot take $PORT, the fixed port it listens on"}},
 				toolhub.Property{Name: "max_bytes", Schema: toolhub.JSONSchema{Type: "number", Description: "logs: how much of the end to return (default " + strconv.Itoa(serviceLogsDefaultBytes) + ")"}},
 			),
@@ -198,6 +205,17 @@ func (t *ServiceTool) Execute(ctx context.Context, args kernel.Arguments, tc too
 	}
 	label := "service " + action
 	a := toolkit.DecodeArgs(args)
+	// A-223: start with app. Strict-schema models (OpenAI) fill every field: "" means not given.
+	if action == "start" {
+		if app := strings.TrimSuffix(trailingSlashes.ReplaceAllString(strings.TrimPrefix(trimmedString(a, "app"), "apps/"), ""), "/"); app != "" {
+			if !validAppName(app) {
+				return argError(label, `"`+app+`" is not an app folder name`), nil
+			}
+			return withSandbox(ctx, tc, label, func(env sandboxhub.View) (toolhub.Output, error) {
+				return startAppTool(ctx, env, app, label, tc)
+			}), nil
+		}
+	}
 	name := trimmedString(a, "name")
 	if action != "list" && name == "" {
 		return argError(label, `"name" is required`), nil
@@ -339,4 +357,58 @@ func serviceLogs(ctx context.Context, svc sandboxhub.ServicesView, name string, 
 	meta.Set("name", name)
 	meta.Set("truncated", logs.Truncated)
 	return toolkit.Result(content, meta), nil
+}
+
+// startAppTool starts a saved service app through StartApp (A-223).
+func startAppTool(ctx context.Context, env sandboxhub.View, app, label string, tc toolhub.Context) (toolhub.Output, error) {
+	started, err := StartApp(ctx, env, app, StartAppOptions{Secrets: tc.Secrets, Variables: tc.Variables, SessionID: tc.SessionID})
+	if err != nil {
+		var ae *AppStartError
+		if !errors.As(err, &ae) {
+			return toolhub.Output{}, err
+		}
+		output := ""
+		if ae.Output != "" {
+			text := ae.Output
+			if tc.Secrets != nil {
+				text = tc.Secrets.Redact(text)
+			}
+			output = " Its output:\n" + text
+		}
+		meta := ordered.NewObject()
+		meta.Set("app", app)
+		meta.Set("step", string(ae.Step))
+		return toolkit.Failure(label+": "+ae.Message+"."+output, false, meta), nil
+	}
+	svc := started.Service
+	port := strconv.Itoa(svc.Port)
+	ran := ""
+	switch started.Setup {
+	case SetupRan:
+		ran = ` Setup ran ("` + started.Recipe.Setup + `").`
+	case SetupSkipped:
+		ran = " Setup was skipped (its inputs did not change)."
+	}
+	var content string
+	switch {
+	case started.AlreadyRunning:
+		content = started.Name + " is already running on port " + port + " " + emDash + " the user sees it live next to the chat." + toolhub.CiteLinkNote(started.Link)
+	case svc.Status == sandboxhub.ServiceListening:
+		content = started.Name + " is running on port " + port + " " + emDash + " the user sees it live next to the chat." + ran + toolhub.CiteLinkNote(started.Link)
+	default:
+		views, _ := sandboxhub.AsServicesView(env)
+		content = started.Name + " started but is not listening on port " + port + " yet (still starting after " +
+			strconv.Itoa(int(startWait/time.Second)) + " s)." + ran + " Check it with action list or logs. Its output so far:\n" +
+			logTail(ctx, views, svc.Name) + toolhub.CiteLinkNote(started.Link)
+	}
+	meta := ordered.NewObject()
+	meta.Set("app", app)
+	meta.Set("name", svc.Name)
+	meta.Set("port", svc.Port)
+	meta.Set("status", string(svc.Status))
+	meta.Set("setup", started.Setup)
+	out := toolkit.Result(content, meta)
+	link := started.Link
+	out.Link = &link
+	return out, nil
 }

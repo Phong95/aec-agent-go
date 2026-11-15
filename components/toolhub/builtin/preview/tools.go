@@ -383,6 +383,11 @@ func showApp(ctx context.Context, env sandboxhub.View, app, file string) (*shown
 		}
 		return nil, `no app "` + app + `" ` + emDash + ` there is no ` + appsDir + "/" + app + "/" + appManifest + ". " + hint, nil
 	}
+	// A-223: a service app shows its running service; starting it runs commands, so that
+	// is the service tool's job (preview stays read-only).
+	if m.service != nil {
+		return showServiceApp(ctx, env, app, file, m)
+	}
 	appDir := appsDir + "/" + app
 	entry, err := env.Stat(ctx, path.Join(appDir, m.entry))
 	if err != nil {
@@ -484,4 +489,34 @@ func showService(ctx context.Context, env sandboxhub.View, name, p string) (*sho
 	meta.Set("port", found.Port)
 	meta.Set("uri", link.URI)
 	return &shown{link: link, content: label + " is live next to the chat.", label: "the service " + label, meta: meta, isService: true}, "", nil
+}
+
+// showServiceApp shows a service app's running service (A-223).
+func showServiceApp(ctx context.Context, env sandboxhub.View, app, file string, m *appManifestData) (*shown, string, error) {
+	if file != "" {
+		return nil, m.name + ` is a service app and does not open files ` + emDash + ` leave out "file"`, nil
+	}
+	recipe := *m.service
+	var found *sandboxhub.ServiceInfo
+	if svc, ok := sandboxhub.AsServicesView(env); ok {
+		list, err := svc.ListServices(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		for i := range list {
+			if list[i].Name == recipe.Name && list[i].Status != sandboxhub.ServiceExited {
+				found = &list[i]
+			}
+		}
+	}
+	if found == nil {
+		return nil, m.name + ` is a service app that is not running ` + emDash + ` start it with service (action start, app "` + app + `") first`, nil
+	}
+	link := AppServiceLink(recipe, m.name)
+	meta := ordered.NewObject()
+	meta.Set("app", app)
+	meta.Set("service", recipe.Name)
+	meta.Set("port", found.Port)
+	meta.Set("uri", link.URI)
+	return &shown{link: &link, content: m.name + " is live next to the chat.", label: "the app " + m.name, meta: meta, isService: true}, "", nil
 }

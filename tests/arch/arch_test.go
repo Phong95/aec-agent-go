@@ -233,8 +233,8 @@ var layerTable = map[string][]string{
 	// A-124: builtin/preview holds preview, list_apps and open_in_app; it reaches files only
 	// through the agent's sandbox (host-access guarded).
 	// Update (A-210): preview and service (the same imports).
-	"components/toolhub/builtin/preview": {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsstr", "internal/toolkit"},
-	"components/toolhub/builtin/web":     {"kernel", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret", "components/variablehub/variable"}, // A-101: http_request puts the agent's secrets in; A-215: and its variables
+	"components/toolhub/builtin/preview": {"kernel", "components/toolhub", "components/sandboxhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/toolkit", "components/secrethub/secret", "components/variablehub/variable"}, // A-223: StartApp fills {{secret:}} / {{var:}} in a service app's env and writes its setup state
+	"components/toolhub/builtin/web":     {"kernel", "components/toolhub", "kernel/ordered", "internal/jsonx", "internal/jsstr", "internal/nilcheck", "internal/toolkit", "components/secrethub/secret", "components/variablehub/variable"},     // A-101: http_request puts the agent's secrets in; A-215: and its variables
 	// A-70: builtin/triggers holds manage_trigger and list_triggers. It reaches the agent's
 	// triggers only through toolhub.Context.Triggers; host-access guarded.
 	// Update (A-126): builtin/jobs holds manage_job and list_jobs; it reaches the agent's
