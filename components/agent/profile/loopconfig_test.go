@@ -11,7 +11,7 @@ func intp(v int) *int { return &v }
 // fractions (L6) cannot be a *int.
 
 func TestResolveLoopConfigDefaults(t *testing.T) {
-	want := ResolvedLoopConfig{MaxIterations: 100, MaxToolRetries: 2, RetryBackoffMs: 500, MaxToolResultChars: 50_000, MaxImagesPerMessage: 4}
+	want := ResolvedLoopConfig{MaxIterations: 100, MaxToolRetries: 2, RetryBackoffMs: 500, MaxToolResultChars: 50_000, MaxImagesPerMessage: 4, ProjectInstructions: true, ProjectInstructionsMaxBytes: DefaultProjectInstructionsMaxBytes}
 	if got := ResolveLoopConfig(nil); got != want {
 		t.Fatalf("ResolveLoopConfig(nil) = %+v, want %+v", got, want)
 	}
@@ -25,7 +25,7 @@ func TestResolveLoopConfigDefaults(t *testing.T) {
 
 func TestResolveLoopConfigValidValuesPassThrough(t *testing.T) {
 	got := ResolveLoopConfig(&LoopConfig{MaxIterations: intp(3), MaxToolRetries: intp(0), RetryBackoffMs: intp(0)})
-	want := ResolvedLoopConfig{MaxIterations: 3, MaxToolRetries: 0, RetryBackoffMs: 0, MaxToolResultChars: DefaultMaxToolResultChars, MaxImagesPerMessage: 4}
+	want := ResolvedLoopConfig{MaxIterations: 3, MaxToolRetries: 0, RetryBackoffMs: 0, MaxToolResultChars: DefaultMaxToolResultChars, MaxImagesPerMessage: 4, ProjectInstructions: true, ProjectInstructionsMaxBytes: DefaultProjectInstructionsMaxBytes}
 	if got != want {
 		t.Fatalf("got %+v, want %+v (0 retries and 0 backoff are valid)", got, want)
 	}
@@ -37,16 +37,16 @@ func TestResolveLoopConfigFallsBackPerField(t *testing.T) {
 		in   LoopConfig
 		want ResolvedLoopConfig
 	}{
-		{"maxIterations 0", LoopConfig{MaxIterations: intp(0), MaxToolRetries: intp(7)}, ResolvedLoopConfig{100, 7, 500, 0, 50_000, 4}},
-		{"maxIterations -1", LoopConfig{MaxIterations: intp(-1), RetryBackoffMs: intp(40)}, ResolvedLoopConfig{100, 2, 40, 0, 50_000, 4}},
-		{"maxToolRetries -1", LoopConfig{MaxToolRetries: intp(-1), MaxIterations: intp(4)}, ResolvedLoopConfig{4, 2, 500, 0, 50_000, 4}},
-		{"retryBackoffMs -5", LoopConfig{RetryBackoffMs: intp(-5), MaxToolRetries: intp(1)}, ResolvedLoopConfig{100, 1, 500, 0, 50_000, 4}},
-		{"all invalid", LoopConfig{MaxIterations: intp(-9), MaxToolRetries: intp(-9), RetryBackoffMs: intp(-9)}, ResolvedLoopConfig{100, 2, 500, 0, 50_000, 4}},
-		{"minimums", LoopConfig{MaxIterations: intp(1), MaxToolRetries: intp(0), RetryBackoffMs: intp(0)}, ResolvedLoopConfig{1, 0, 0, 0, 50_000, 4}},
+		{"maxIterations 0", LoopConfig{MaxIterations: intp(0), MaxToolRetries: intp(7)}, ResolvedLoopConfig{100, 7, 500, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"maxIterations -1", LoopConfig{MaxIterations: intp(-1), RetryBackoffMs: intp(40)}, ResolvedLoopConfig{100, 2, 40, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"maxToolRetries -1", LoopConfig{MaxToolRetries: intp(-1), MaxIterations: intp(4)}, ResolvedLoopConfig{4, 2, 500, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"retryBackoffMs -5", LoopConfig{RetryBackoffMs: intp(-5), MaxToolRetries: intp(1)}, ResolvedLoopConfig{100, 1, 500, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"all invalid", LoopConfig{MaxIterations: intp(-9), MaxToolRetries: intp(-9), RetryBackoffMs: intp(-9)}, ResolvedLoopConfig{100, 2, 500, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"minimums", LoopConfig{MaxIterations: intp(1), MaxToolRetries: intp(0), RetryBackoffMs: intp(0)}, ResolvedLoopConfig{1, 0, 0, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
 		// A-129: 0 is valid (no limit); below it falls back to the default.
-		{"maxToolResultChars 0", LoopConfig{MaxToolResultChars: intp(0)}, ResolvedLoopConfig{100, 2, 500, 0, 0, 4}},
-		{"maxToolResultChars 8000", LoopConfig{MaxToolResultChars: intp(8_000)}, ResolvedLoopConfig{100, 2, 500, 0, 8_000, 4}},
-		{"maxToolResultChars -1", LoopConfig{MaxToolResultChars: intp(-1)}, ResolvedLoopConfig{100, 2, 500, 0, 50_000, 4}},
+		{"maxToolResultChars 0", LoopConfig{MaxToolResultChars: intp(0)}, ResolvedLoopConfig{100, 2, 500, 0, 0, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"maxToolResultChars 8000", LoopConfig{MaxToolResultChars: intp(8_000)}, ResolvedLoopConfig{100, 2, 500, 0, 8_000, 4, true, DefaultProjectInstructionsMaxBytes}},
+		{"maxToolResultChars -1", LoopConfig{MaxToolResultChars: intp(-1)}, ResolvedLoopConfig{100, 2, 500, 0, 50_000, 4, true, DefaultProjectInstructionsMaxBytes}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -121,6 +121,32 @@ func TestResolveLoopConfigMaxImagesPerMessage(t *testing.T) {
 		got := ResolveLoopConfig(&LoopConfig{MaxImagesPerMessage: tc.in, MaxIterations: intp(4)})
 		if got.MaxImagesPerMessage != tc.want || got.MaxIterations != 4 {
 			t.Errorf("%s: got %+v, want MaxImagesPerMessage %d and MaxIterations 4", name, got, tc.want)
+		}
+	}
+}
+
+// A-227: project instructions are on unless set to false, and their byte cap defaults to
+// 32 KiB, keeps a value from 1 up and falls back for one below 1.
+func TestResolveLoopConfigProjectInstructions(t *testing.T) {
+	off := false
+	if got := ResolveLoopConfig(nil); !got.ProjectInstructions || got.ProjectInstructionsMaxBytes != 32*1024 {
+		t.Fatalf("nil config: got %+v", got)
+	}
+	if got := ResolveLoopConfig(&LoopConfig{ProjectInstructions: &off}); got.ProjectInstructions {
+		t.Fatalf("off: got %+v", got)
+	}
+	for name, tc := range map[string]struct {
+		in   *int
+		want int
+	}{
+		"unset":    {nil, DefaultProjectInstructionsMaxBytes},
+		"one":      {intp(1), 1},
+		"set":      {intp(4096), 4096},
+		"zero":     {intp(0), DefaultProjectInstructionsMaxBytes},
+		"negative": {intp(-1), DefaultProjectInstructionsMaxBytes},
+	} {
+		if got := ResolveLoopConfig(&LoopConfig{ProjectInstructionsMaxBytes: tc.in}); got.ProjectInstructionsMaxBytes != tc.want {
+			t.Errorf("%s: got %d, want %d", name, got.ProjectInstructionsMaxBytes, tc.want)
 		}
 	}
 }

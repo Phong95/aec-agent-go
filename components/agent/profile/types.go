@@ -101,6 +101,15 @@ type LoopConfig struct {
 	// kernel.MaxImagesPerMessageCeiling, 100). A provider may still refuse a request that
 	// is too large overall.
 	MaxImagesPerMessage *int `json:"maxImagesPerMessage,omitempty"`
+	// ProjectInstructions (A-227) loads the AGENTS.md files of the folders the session
+	// works in (a runner's folders, the session's sandbox folders): the folder's own in
+	// the system message, a sub-folder's with the first file tool result that reaches it.
+	// Default true; false turns both off from the next model call.
+	ProjectInstructions *bool `json:"projectInstructions,omitempty"`
+	// ProjectInstructionsMaxBytes (A-227) is the most bytes of AGENTS.md text loaded into
+	// one session's system message (integer >= 1; default 32 768). The files past it are
+	// left out, and the block names them.
+	ProjectInstructionsMaxBytes *int `json:"projectInstructionsMaxBytes,omitempty"`
 }
 
 // AgentProfile is the configuration for a spawnable agent instance.
@@ -176,4 +185,9 @@ type ResolvedLoopConfig struct {
 	// MaxImagesPerMessage (A-222) is the most images one message (or one tool result) may
 	// carry, between 1 and kernel.MaxImagesPerMessageCeiling.
 	MaxImagesPerMessage int
+	// ProjectInstructions (A-227) says whether AGENTS.md files are loaded.
+	ProjectInstructions bool
+	// ProjectInstructionsMaxBytes (A-227) is the most bytes of AGENTS.md text in the
+	// system message, at least 1.
+	ProjectInstructionsMaxBytes int
 }

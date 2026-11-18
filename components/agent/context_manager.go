@@ -58,6 +58,10 @@ type ContextManager struct {
 	// workspaceIndex (A-159) resolves the folders on the user's computer the turn's
 	// session works in (<workspace_folders>) on every PrepareMessages. Nil means none.
 	workspaceIndex func(ctx context.Context, session kernel.Session) (string, bool)
+	// projectInstructions (A-227) resolves the AGENTS.md files of the folders the turn's
+	// session works in (<project_instructions>) on every PrepareMessages, from the
+	// conversation the model is about to see. Nil means none.
+	projectInstructions func(ctx context.Context, session kernel.Session, msgs []kernel.Message) (string, bool)
 	// mcpIndex (A-213) resolves the agent's MCP servers (<mcp_servers>: state,
 	// instructions, deferred tool names) on every PrepareMessages, for the turn's session.
 	// Nil means none.
@@ -130,6 +134,20 @@ func WithWorkspaceIndex(f func(ctx context.Context, session kernel.Session) (str
 	return func(c *ContextManager) {
 		if f != nil {
 			c.workspaceIndex = f
+		}
+	}
+}
+
+// WithProjectInstructions sets the source of the project instructions (A-227): the
+// AGENTS.md files of the folders the turn's session works in, appended after the
+// workspace index and counted as part of the system prompt in the context breakdown. It
+// is called on every PrepareMessages with the ctx of the model call, the turn's session
+// and the conversation messages; the bool is false (or the text empty) when there are
+// none. A nil function is ignored.
+func WithProjectInstructions(f func(ctx context.Context, session kernel.Session, msgs []kernel.Message) (string, bool)) ContextOption {
+	return func(c *ContextManager) {
+		if f != nil {
+			c.projectInstructions = f
 		}
 	}
 }
@@ -265,6 +283,14 @@ func (c *ContextManager) Prepare(ctx context.Context, msgs []kernel.Message, mc 
 		if index, ok := c.workspaceIndex(ctx, mc.Session); ok && index != "" {
 			system = withIndex(system, index)
 			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextSystemPrompt, Text: index})
+		}
+	}
+	// A-227: the project's AGENTS.md files, right after the folders they belong to.
+	if c.projectInstructions != nil {
+		if block, ok := c.projectInstructions(ctx, mc.Session, msgs); ok && block != "" {
+			system = withIndex(system, block)
+			// Counted with the memory files, as Claude Code counts CLAUDE.md.
+			sections = append(sections, agentloop.ContextSection{Key: agentloop.ContextMemoryFiles, Text: block})
 		}
 	}
 	if c.mcpIndex != nil {

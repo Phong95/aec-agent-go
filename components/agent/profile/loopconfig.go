@@ -25,6 +25,9 @@ const (
 	// of one tool result the model is given (~12k tokens); the rest is cut from the middle
 	// and, in an isolated sandbox, saved to a file. 0 = no limit.
 	DefaultMaxToolResultChars = 50_000
+	// DefaultProjectInstructionsMaxBytes (A-227) is the most bytes of AGENTS.md text in one
+	// session's system message (Codex's 32 KiB).
+	DefaultProjectInstructionsMaxBytes = 32 * 1024
 )
 
 // The smallest value each LoopConfig field accepts; a value below it is invalid
@@ -39,6 +42,8 @@ const (
 	minMaxToolResultChars = 0
 	// A-222: a message carries at least one image.
 	minMaxImagesPerMessage = 1
+	// A-227: at least one byte of instructions.
+	minProjectInstructionsMaxBytes = 1
 )
 
 // RetryBackoff returns RetryBackoffMs as a time.Duration.
@@ -59,13 +64,20 @@ func (c *LoopConfig) RetryBackoff() time.Duration {
 // config) or below the field's minimum: 1 for MaxIterations, 0 for MaxToolRetries and
 // RetryBackoffMs (and, since A-97, 0 for MaxConcurrentTurns; since A-129, 0 for
 // MaxToolResultChars; since A-222, 1 for MaxImagesPerMessage, which is also cut to
-// kernel.MaxImagesPerMessageCeiling). One invalid field does not reset the others.
+// kernel.MaxImagesPerMessageCeiling; since A-227, 1 for ProjectInstructionsMaxBytes, and
+// ProjectInstructions is true unless set to false). One invalid field does not reset the
+// others.
 //
 // The fields are *int, so a value is always a finite integer: there is no NaN,
 // Infinity or fraction to fall back from or to floor.
 func ResolveLoopConfig(c *LoopConfig) ResolvedLoopConfig {
-	var maxIterations, maxToolRetries, retryBackoffMs, maxConcurrentTurns, maxToolResultChars, maxImagesPerMessage *int
+	var maxIterations, maxToolRetries, retryBackoffMs, maxConcurrentTurns, maxToolResultChars, maxImagesPerMessage, instructionsMaxBytes *int
+	instructions := true
 	if c != nil {
+		instructionsMaxBytes = c.ProjectInstructionsMaxBytes
+		if c.ProjectInstructions != nil {
+			instructions = *c.ProjectInstructions
+		}
 		maxIterations, maxToolRetries, retryBackoffMs = c.MaxIterations, c.MaxToolRetries, c.RetryBackoffMs
 		maxConcurrentTurns = c.MaxConcurrentTurns
 		maxToolResultChars = c.MaxToolResultChars
@@ -81,6 +93,9 @@ func ResolveLoopConfig(c *LoopConfig) ResolvedLoopConfig {
 		MaxToolResultChars: resolveField(maxToolResultChars, minMaxToolResultChars, DefaultMaxToolResultChars),
 		// A-222: read at the start of every run and for every tool result.
 		MaxImagesPerMessage: min(resolveField(maxImagesPerMessage, minMaxImagesPerMessage, kernel.MaxImagesPerMessage), kernel.MaxImagesPerMessageCeiling),
+		// A-227: read on every model call by the project instructions.
+		ProjectInstructions:         instructions,
+		ProjectInstructionsMaxBytes: resolveField(instructionsMaxBytes, minProjectInstructionsMaxBytes, DefaultProjectInstructionsMaxBytes),
 	}
 }
 

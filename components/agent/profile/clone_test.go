@@ -18,6 +18,7 @@ import (
 // fullProfile fills every field of an AgentProfile and of every sub-config.
 func fullProfile() profile.AgentProfile {
 	lean, maxTokens, maxIter, retries, backoff, maxResults, concurrent, keep, images := 30000, 4096, 25, 0, 500, 8, 4, 2, 6
+	instructionsOn, instructionsCap := true, 4096 // A-227
 	temperature, topP, cpus, interval := 0.0, 0.9, 0.5, 60.0
 	mem, pids := 512, 128
 	return profile.AgentProfile{
@@ -43,7 +44,7 @@ func fullProfile() profile.AgentProfile {
 		InferenceConfig: &profile.InferenceConfig{
 			MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, StopSequences: []string{"END", "STOP"}, PromptCaching: new(bool),
 		},
-		LoopConfig: &profile.LoopConfig{MaxIterations: &maxIter, MaxToolRetries: &retries, RetryBackoffMs: &backoff, MaxConcurrentTurns: &concurrent, MaxToolResultChars: &keep, MaxImagesPerMessage: &images},
+		LoopConfig: &profile.LoopConfig{MaxIterations: &maxIter, MaxToolRetries: &retries, RetryBackoffMs: &backoff, MaxConcurrentTurns: &concurrent, MaxToolResultChars: &keep, MaxImagesPerMessage: &images, ProjectInstructions: &instructionsOn, ProjectInstructionsMaxBytes: &instructionsCap},
 		Memory: memory.Config{
 			Enabled: true, UpdateSoul: true, UpdateUser: true,
 			Consolidation: &memory.ConsolidationTrigger{IntervalMinutes: &interval},

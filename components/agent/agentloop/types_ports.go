@@ -225,6 +225,15 @@ type SessionSandboxes interface {
 	GetSessionSandbox(ctx context.Context, sessionID string) (sandboxhub.View, error)
 }
 
+// ToolNotes (A-229) adds to the result of a successful workspace tool call
+// (toolhub.Definition.SessionWorkspace): AfterTool returns the text to append to it - the
+// AGENTS.md files of the sub-folders the call reached, not shown to the session yet - or
+// "" for none. It is called once per call, after the call ran, with the call's session,
+// tool name and arguments.
+type ToolNotes interface {
+	AfterTool(ctx context.Context, sessionID, toolName string, args kernel.Arguments) string
+}
+
 // Deps is everything a Loop needs.
 type Deps struct {
 	// Models, Tools, Context and Conversation are required.
@@ -313,4 +322,7 @@ type Deps struct {
 	// Variables (A-215) is the agent's variables, handed to tools as
 	// toolhub.Context.Variables. Nil means none.
 	Variables variable.Variables
+	// ToolNotes (A-229) adds the AGENTS.md files of the sub-folders a workspace tool call
+	// reached to its result. Nil means none.
+	ToolNotes ToolNotes
 }

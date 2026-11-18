@@ -135,6 +135,10 @@ var (
 	// or were cleared (the sandbox hub's SetSessionFolders / ClearSessionFolders), with that
 	// session's id. No built-in subscribers (hosts).
 	SandboxSessionFoldersChanged = Kind[SandboxSessionFoldersChangedPayload]{Name: "sandbox:session-folders-changed"}
+	// A-227: the AGENTS.md files an agent follows in a session changed (a file was loaded,
+	// changed, left out or dropped), emitted by the agent's project instructions with that
+	// session's id. No built-in subscribers (hosts).
+	SessionInstructionsChanged = Kind[SessionInstructionsChangedPayload]{Name: "session:instructions-changed"}
 	// A-136: a slash command ran (the agent's command manager, Agent.Commands().Run),
 	// whatever its outcome, with the session it ran in. No built-in subscribers (hosts).
 	CommandExecuted = Kind[CommandExecutedPayload]{Name: "command:executed"}
@@ -206,6 +210,7 @@ var (
 // (Update (A-208): 68, with the seven MCP kinds.)
 // (Update (A-214): 69, with mcp-server:auth-changed.)
 // (Update (A-215): 72, with the three variable kinds.)
+// (Update (A-227): session:instructions-changed, last.)
 // The slice is fresh on every call.
 func KindNames() []string {
 	return []string{
@@ -282,5 +287,6 @@ func KindNames() []string {
 		McpPromptsChanged.Name,
 		McpAuthChanged.Name,
 		SandboxSessionFoldersChanged.Name,
+		SessionInstructionsChanged.Name,
 	}
 }

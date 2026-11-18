@@ -303,6 +303,26 @@ func (m *SandboxManager) RunnerFoldersIndex(sessionID string) (string, bool) {
 	return strings.Join(lines, "\n"), true
 }
 
+// WorkspaceFolders (A-227) are the logical paths of the folders the session works in, the
+// working directory first: its runner's folders (/workspace, or /workspace/<name> each),
+// else its sandbox folders (A-216). False = neither: the session works in the agent's
+// whole sandbox, which has no project folder of its own.
+func (m *SandboxManager) WorkspaceFolders(sessionID string) ([]string, bool) {
+	session := m.sessionOf(sessionID)
+	if sb, ok := m.hub.Runner(m.agentID, session); ok {
+		folders := sb.Folders()
+		if sb.Layout() == sandboxhub.RunnerLayoutFlat {
+			return []string{sandboxhub.WorkspaceRoot}, true
+		}
+		paths := make([]string, 0, len(folders))
+		for _, f := range folders {
+			paths = append(paths, sandboxhub.WorkspaceRoot+"/"+f.Name)
+		}
+		return paths, len(paths) > 0
+	}
+	return m.hub.SessionFolders(m.agentID, session)
+}
+
 // sessionOf is the session whose runner sessionID uses: its parent's while it follows one.
 func (m *SandboxManager) sessionOf(sessionID string) string {
 	m.mu.Lock()

@@ -68,6 +68,9 @@ type builtInCommandDeps struct {
 	// listCommands is every command, for /help (the command manager's List, in the asking
 	// client).
 	listCommands func(ac command.AvailabilityContext) []command.Info
+	// instructions (A-230) is /instructions: the AGENTS.md files the session's agent
+	// follows.
+	instructions func(ctx context.Context, sessionID string) InstructionsState
 	// confirmLastTurn (A-166) is /learn: the skill learner's confirmation of the session's
 	// last finished turn.
 	confirmLastTurn func(ctx context.Context, sessionID string) (learning.LearnResult, error)
@@ -141,6 +144,8 @@ func BuiltInCommandSpecs() []command.Entry {
 			Safety:    command.SafetySession,
 		}),
 		builtIn(command.Spec{Name: "init", Description: "Create or improve the project's AGENTS.md instructions", Arguments: none, Safety: command.SafetySession}),
+		// A-230: the AGENTS.md files this conversation follows.
+		builtIn(command.Spec{Name: "instructions", Description: "Show the AGENTS.md files this conversation follows", Arguments: none, Safety: command.SafetyReadOnly}),
 		builtIn(command.Spec{Name: "diff", Description: "Show the workspace's uncommitted changes (git)", Arguments: none, Safety: command.SafetyReadOnly}),
 		builtIn(command.Spec{
 			Name: "review", Description: "Review the uncommitted changes (read-only)",
@@ -188,12 +193,14 @@ func builtInCommands(d builtInCommandDeps) []command.Entry {
 			}
 			return d.permissions(ctx, rc, wanted)
 		},
-		"plan":   d.plan,
-		"init":   d.initCmd,
-		"diff":   d.diff,
-		"review": d.review,
-		"learn":  d.learn,
-		"copy":   d.copyCmd,
+		"plan": d.plan,
+		"init": d.initCmd,
+		// A-230
+		"instructions": d.instructionsCmd,
+		"diff":         d.diff,
+		"review":       d.review,
+		"learn":        d.learn,
+		"copy":         d.copyCmd,
 		"exit": func(context.Context, command.RunContext) (command.Result, error) {
 			return command.Result{Text: "Bye.", Action: &command.Action{Type: command.ActionExit}}, nil
 		},
@@ -492,6 +499,70 @@ func (d builtInCommandDeps) contextCmd(ctx context.Context, rc command.RunContex
 		}
 	}
 	return command.Result{Text: strings.Join(lines, "\n")}, nil
+}
+
+// instructionsCmd (A-230) is /instructions: the AGENTS.md files the session's agent
+// follows - the folders' own (and whether each fits the byte limit), then those loaded
+// from sub-folders while it worked.
+func (d builtInCommandDeps) instructionsCmd(ctx context.Context, rc command.RunContext) (command.Result, error) {
+	if _, ok, err := d.getSession(ctx, rc.SessionID); err != nil || !ok {
+		if err != nil {
+			return command.Result{}, err
+		}
+		return notFoundResult(), nil
+	}
+	state := d.instructions(ctx, rc.SessionID)
+	switch {
+	case len(state.Folders) == 0:
+		return command.Result{Text: "This conversation works in no project folder, so no AGENTS.md is loaded. Attach a folder (or choose folders of the sandbox) to load its AGENTS.md."}, nil
+	case !state.Enabled:
+		return command.Result{Text: "Project instructions are off for this agent: AGENTS.md files are not loaded. Turn them on in the agent's settings."}, nil
+	}
+	var root, sub []string
+	for _, f := range state.Files {
+		line := bullet + " " + f.Path
+		if f.Status != InstructionUnreadable {
+			line += " (" + bytesText(f.Size) + ")"
+		}
+		switch f.Status {
+		case InstructionCut:
+			line += ": cut at the limit"
+		case InstructionLeftOut:
+			line += ": left out (over the limit)"
+		case InstructionUnreadable:
+			line += ": could not be read"
+		}
+		if f.SubFolder {
+			sub = append(sub, line)
+		} else {
+			root = append(root, line)
+		}
+	}
+	if len(root) == 0 && len(sub) == 0 {
+		return command.Result{Text: "No AGENTS.md in " + strings.Join(state.Folders, ", ") + ". /init writes one."}, nil
+	}
+	lines := []string{"Project instructions (AGENTS.md, up to " + bytesText(state.MaxBytes) + " in the system message):"}
+	if len(root) == 0 {
+		lines = append(lines, bullet+" none in "+strings.Join(state.Folders, ", "))
+	}
+	lines = append(lines, root...)
+	if len(sub) > 0 {
+		lines = append(lines, "", "Loaded from sub-folders in this conversation:")
+		lines = append(lines, sub...)
+	}
+	return command.Result{Text: strings.Join(lines, "\n")}, nil
+}
+
+// bytesText is a byte count for /instructions: "512 B", "1.5 KB", "32 KB".
+func bytesText(n int) string {
+	if n < 1024 {
+		return strconv.Itoa(n) + " B"
+	}
+	kb := float64(n) / 1024
+	if kb < 10 && n%1024 != 0 {
+		return strconv.FormatFloat(kb, 'f', 1, 64) + " KB"
+	}
+	return strconv.Itoa(int(kb+0.5)) + " KB"
 }
 
 // categoryLabel names a context category in /context.

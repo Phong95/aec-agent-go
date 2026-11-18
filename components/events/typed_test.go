@@ -188,6 +188,7 @@ func lifecycleSamples() []sample {
 		mk("McpAuthChanged", events.McpAuthChanged, events.McpAuthChangedPayload{ServerID: "files", SignedIn: true}),
 		// A-216: a session's sandbox folders changed.
 		mk("SandboxSessionFoldersChanged", events.SandboxSessionFoldersChanged, events.SandboxSessionFoldersChangedPayload{AgentID: agentID, SessionID: "s-1", Folders: []string{"/workspace/api"}}),
+		mk("SessionInstructionsChanged", events.SessionInstructionsChanged, events.SessionInstructionsChangedPayload{AgentID: agentID, SessionID: "s-1", Paths: []string{"/workspace/AGENTS.md"}}),
 	}
 }
 
@@ -305,8 +306,8 @@ func sdkEventTypeValues(t *testing.T) []string {
 
 func TestKindNames(t *testing.T) {
 	got := events.KindNames()
-	if len(got) != 73 {
-		t.Fatalf("KindNames has %d entries, want 73", len(got))
+	if len(got) != 74 {
+		t.Fatalf("KindNames has %d entries, want 74", len(got))
 	}
 	seen := map[string]bool{}
 	for _, n := range got {

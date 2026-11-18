@@ -77,6 +77,9 @@ type Agent struct {
 	// (Deps.SandboxHub or Deps.ArtifactHub nil).
 	sandboxes *SandboxManager
 	artifacts *ArtifactManager
+	// instructions (A-227) is the AGENTS.md files of the folders a session works in; nil
+	// when the agent has no sandbox hub.
+	instructions *ProjectInstructions
 	// jobs is the agent's scheduled jobs. They run under the
 	// lifetime context and are stopped and waited for by Dispose.
 	// Update (A-126): the scheduled tasks (plugin code) were removed; every job is a
@@ -305,6 +308,10 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 	if deps.SandboxHub != nil {
 		a.sandboxes = NewSandboxManager(deps.SandboxHub, own.ID, a.sandboxSelection)
 		sandboxes = a.sandboxes
+		// A-227: read through the session's workspace, with the agent's current settings.
+		a.instructions = newProjectInstructions(own.ID, a.sandboxes, func() profile.ResolvedLoopConfig {
+			return profile.ResolveLoopConfig(a.Profile().LoopConfig)
+		}, deps.Events)
 	}
 	var artifacts func(sessionID string) artifact.View
 	if deps.ArtifactHub != nil {
@@ -452,6 +459,10 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 			// A-216: the folders of the agent's sandbox the session is scoped to.
 			return a.sandboxes.SessionFoldersIndex(session.ID)
 		}))
+		// A-227: the AGENTS.md files of those folders.
+		ctxOpts = append(ctxOpts, WithProjectInstructions(func(ctx context.Context, session kernel.Session, msgs []kernel.Message) (string, bool) {
+			return a.instructions.Index(ctx, session.ID, msgs)
+		}))
 	}
 	// A-213: the MCP servers' state and instructions, and the tools tool_search can load.
 	ctxOpts = append(ctxOpts, WithMcpIndex(func(_ context.Context, session kernel.Session) (string, bool) {
@@ -538,6 +549,10 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		loopOpts = append(loopOpts, agentloop.WithLogger(deps.Logger))
 	}
 	loopOpts = append(loopOpts, o.loopOpts...)
+	var toolNotes agentloop.ToolNotes
+	if a.instructions != nil {
+		toolNotes = a.instructions
+	}
 	loop, err := agentloop.New(agentloop.Deps{
 		Models:  a.models,
 		Tools:   a.tools,
@@ -587,6 +602,8 @@ func New(ctx context.Context, deps Deps, p profile.AgentProfile, opts ...Option)
 		Secrets: a.secrets,
 		// A-215: for the tools that use variables ({{var:NAME}}, variables, the variable tool).
 		Variables: a.variables,
+		// A-229: the AGENTS.md of a sub-folder a file tool reached.
+		ToolNotes: toolNotes,
 	}, loopOpts...)
 	if err != nil {
 		return nil, err
@@ -618,6 +635,7 @@ func (a *Agent) builtInCommandDeps() builtInCommandDeps {
 		setApprovalMode:  a.conv.SetApprovalMode,
 		contextUsage:     a.ContextUsage,
 		compact:          a.Compact,
+		instructions:     a.ProjectInstructions,
 		describeWorkspace: func(sessionID string) string {
 			if a.sandboxes == nil {
 				return "none"
@@ -1284,6 +1302,16 @@ func (a *Agent) SessionFolders(sessionID string) ([]string, bool) {
 		return nil, false
 	}
 	return a.sandboxes.SessionFolders(sessionID)
+}
+
+// ProjectInstructions (A-230) is the AGENTS.md files the agent follows in a session:
+// whether they are on, their byte limit, and each file with its status. The folders'
+// files are checked again when they are due. Without a sandbox hub it is off.
+func (a *Agent) ProjectInstructions(ctx context.Context, sessionID string) InstructionsState {
+	if a.instructions == nil {
+		return InstructionsState{Folders: []string{}, Files: []InstructionFile{}}
+	}
+	return a.instructions.State(ctx, sessionID)
 }
 
 // UpdateSandbox changes where the agent's file and terminal tools run.

@@ -238,6 +238,15 @@ type SandboxSessionFoldersChangedPayload struct {
 	Folders   []string `json:"folders"`
 }
 
+// SessionInstructionsChangedPayload is the payload of the SessionInstructionsChanged kind
+// (A-227): the paths of the AGENTS.md files the agent now follows in the session, the
+// folders' own first, then the sub-folders' in the order they were loaded.
+type SessionInstructionsChangedPayload struct {
+	AgentID   string   `json:"agentId"`
+	SessionID string   `json:"sessionId"`
+	Paths     []string `json:"paths"`
+}
+
 // CommandExecutedPayload is the payload of the CommandExecuted kind (A-136): one slash
 // command that ran. Error is the command result's error code when it failed ("" when
 // it did not).

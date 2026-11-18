@@ -327,6 +327,12 @@ func (e *executor) executeOne(ctx context.Context, run *toolRun, call kernel.Too
 		// The completion or failure event of the result the call keeps.
 		d.done()
 	}
+	// A-229: a workspace tool call that reached a sub-folder with an AGENTS.md brings it in.
+	if !isErrorResult(result) && pre != nil && pre.err == nil && e.deps.ToolNotes != nil && callDefinition(pre.auth).SessionWorkspace {
+		if note := e.deps.ToolNotes.AfterTool(ctx, run.tc.SessionID, call.Name, call.Arguments); note != "" {
+			result.Content += "\n\n" + note
+		}
+	}
 	span.End(obj("isError", isErrorResult(result), "resultPreview", jsstr.TruncateUTF16(result.Content, resultPreviewUnits)))
 	return result
 }
